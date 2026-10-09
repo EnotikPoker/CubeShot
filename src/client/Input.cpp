@@ -15,6 +15,7 @@ PlayerInput readPlayerInput(SDL_Window* window)
     const bool left = keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT];
     const bool right = keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT];
     input.moveDirection = static_cast<float>(right) - static_cast<float>(left);
+    input.jump = keys[SDL_SCANCODE_SPACE];
     return input;
 }
 

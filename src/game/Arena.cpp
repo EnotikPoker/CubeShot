@@ -10,6 +10,7 @@ Arena Arena::createDefault()
     arena.bounds = {{0.0f, 0.0f}, {960.0f, 540.0f}};
     const Rect floor{{0.0f, 440.0f}, {960.0f, 100.0f}};
     arena.platforms.push_back(floor);
+    arena.platforms.push_back({{620.0f, 350.0f}, {200.0f, 24.0f}});
     arena.spawnPoints.push_back({(arena.bounds.size.x - Player::defaultSize) / 2.0f,
                                  floor.position.y - Player::defaultSize});
     return arena;

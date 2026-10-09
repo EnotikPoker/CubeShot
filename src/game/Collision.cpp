@@ -36,4 +36,40 @@ float moveHorizontally(const Rect& body, float distance, const Rect& bounds,
     return std::clamp(nextX, bounds.position.x, maxX);
 }
 
+VerticalMove moveVertically(const Rect& body, float distance, const Rect& bounds,
+                           const std::vector<Rect>& platforms)
+{
+    const float targetY = body.position.y + distance;
+    float nextY = targetY;
+    bool blocked = false;
+    for (const Rect& platform : platforms) {
+        if (body.position.x + body.size.x <= platform.position.x ||
+            body.position.x >= platform.position.x + platform.size.x) {
+            continue;
+        }
+        if (distance > 0.0f && body.position.y + body.size.y <= platform.position.y &&
+            nextY + body.size.y >= platform.position.y) {
+            nextY = platform.position.y - body.size.y;
+            blocked = true;
+        } else if (distance < 0.0f &&
+                   body.position.y >= platform.position.y + platform.size.y &&
+                   nextY <= platform.position.y + platform.size.y) {
+            nextY = platform.position.y + platform.size.y;
+            blocked = true;
+        }
+    }
+    const float maxY = std::max(bounds.position.y,
+                               bounds.position.y + bounds.size.y - body.size.y);
+    if ((distance < 0.0f && nextY <= bounds.position.y) ||
+        (distance > 0.0f && nextY >= maxY)) {
+        blocked = true;
+    }
+    return {std::clamp(nextY, bounds.position.y, maxY), blocked};
+}
+
+bool isSupported(const Rect& body, const Rect& bounds, const std::vector<Rect>& platforms)
+{
+    return moveVertically(body, 1.0f, bounds, platforms).y == body.position.y;
+}
+
 } // namespace cubeshot::collision
