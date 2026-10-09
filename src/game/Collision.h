@@ -13,4 +13,14 @@ bool overlaps(const Rect& first, const Rect& second);
 float moveHorizontally(const Rect& body, float distance, const Rect& bounds,
                        const std::vector<Rect>& platforms);
 
+struct VerticalMove {
+    float y;
+    bool blocked;
+};
+
+// Проверяет весь вертикальный путь, включая верх и низ платформ.
+VerticalMove moveVertically(const Rect& body, float distance, const Rect& bounds,
+                           const std::vector<Rect>& platforms);
+bool isSupported(const Rect& body, const Rect& bounds, const std::vector<Rect>& platforms);
+
 } // namespace cubeshot::collision

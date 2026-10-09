@@ -1,5 +1,7 @@
 #include "game/World.h"
 
+#include "game/Collision.h"
+
 namespace cubeshot {
 
 World::World() : arena_(Arena::createDefault())
@@ -7,6 +9,7 @@ World::World() : arena_(Arena::createDefault())
     Player player;
     player.id = localPlayerId;
     player.position = arena_.spawnPoints.front();
+    player.grounded = collision::isSupported(player.bounds(), arena_.bounds, arena_.platforms);
     players_.push_back(player);
 }
 
