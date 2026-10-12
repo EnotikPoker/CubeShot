@@ -13,6 +13,9 @@ Arena Arena::createDefault()
     arena.platforms.push_back({{620.0f, 350.0f}, {200.0f, 24.0f}});
     arena.spawnPoints.push_back({(arena.bounds.size.x - Player::defaultSize) / 2.0f,
                                  floor.position.y - Player::defaultSize});
+    arena.spawnPoints.push_back({140.0f, 392.0f});
+    arena.spawnPoints.push_back({860.0f, 392.0f});
+    arena.spawnPoints.push_back({710.0f, 302.0f});
     return arena;
 }
 

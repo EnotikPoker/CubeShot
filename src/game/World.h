@@ -12,7 +12,7 @@ class World {
 public:
     static constexpr PlayerId localPlayerId = 1;
 
-    World();
+    explicit World(Arena arena = Arena::createDefault());
 
     void setPlayerInput(PlayerId id, const PlayerInput& input);
     void update(float deltaSeconds);
@@ -22,9 +22,12 @@ public:
     const std::vector<Bullet>& bullets() const;
 
 private:
+    bool moveBullet(Bullet& bullet, Vec2 destination);
+    void updateBullets(float deltaSeconds);
+
     Arena arena_;
     std::vector<Player> players_;
-    std::vector<Bullet> bullets_; // Пока пусто: стрельба ещё не реализована.
+    std::vector<Bullet> bullets_;
 };
 
 } // namespace cubeshot

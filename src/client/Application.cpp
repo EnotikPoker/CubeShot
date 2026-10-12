@@ -57,6 +57,20 @@ int Application::run()
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             }
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                event.key.scancode == SDL_SCANCODE_R) {
+                world_ = World{};
+                accumulator = 0.0;
+            }
+            // Сохраняем даже короткий клик между двумя шагами физики.
+            if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                 event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+                event.button.button == SDL_BUTTON_LEFT &&
+                (SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) != 0) {
+                auto input = readPlayerInput(window_, renderer_, world_.players().front());
+                input.shoot = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                world_.setPlayerInput(World::localPlayerId, input);
+            }
         }
         if (!running) {
             break;
@@ -67,7 +81,8 @@ int Application::run()
         previousTime = now;
         // После долгой паузы не пытаемся разом наверстать всё пропущенное время.
         accumulator += std::min(elapsed, 0.1);
-        world_.setPlayerInput(World::localPlayerId, readPlayerInput(window_));
+        world_.setPlayerInput(World::localPlayerId,
+                             readPlayerInput(window_, renderer_, world_.players().front()));
         while (accumulator >= stepSeconds) {
             world_.update(static_cast<float>(stepSeconds));
             accumulator -= stepSeconds;
