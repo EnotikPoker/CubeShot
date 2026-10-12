@@ -272,6 +272,36 @@ void testSingleShots()
     expect(world.players().front().health == 100, "Shooter is immune to own bullets");
 }
 
+void testSimultaneousActions()
+{
+    using namespace cubeshot;
+    constexpr float step = 1.0f / 120.0f;
+    World world;
+    const Player& player = world.players().front();
+    const Vec2 start = player.position;
+    PlayerInput input;
+    input.moveDirection = 1.0f;
+    input.jump = true;
+    input.shoot = true;
+    input.aimDirection = {-3, -4};
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(step);
+    expect(player.position.x > start.x && player.position.y < start.y &&
+               near(player.aimDirection.x, -0.6f) && near(player.aimDirection.y, -0.8f) &&
+               world.bullets().size() == 1 && world.bullets().front().velocity.x < 0,
+           "Walking, jumping, aiming left and shooting work in the same step");
+
+    input.jump = false;
+    input.shoot = false;
+    input.aimDirection = {3, -4};
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(step);
+    expect(player.position.x > start.x + Player::moveSpeed * step &&
+               player.velocity.y < 0 && near(player.aimDirection.x, 0.6f) &&
+               world.bullets().size() == 1,
+           "Changing aim and releasing trigger do not stop movement or repeat shot");
+}
+
 void testBulletPhysics()
 {
     using namespace cubeshot;
@@ -401,6 +431,7 @@ int main()
         testPlatform();
         testVerticalCollisions();
         testSingleShots();
+        testSimultaneousActions();
         testBulletPhysics();
         testBulletHits();
         testBulletSweepsAndAim();

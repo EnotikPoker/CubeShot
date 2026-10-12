@@ -17,9 +17,12 @@ bool fillRect(SDL_Renderer* renderer, const Rect& rectangle)
 }
 
 bool gunPart(SDL_Renderer* renderer, Vec2 origin, Vec2 direction,
-             float x, float y, float width, float height, SDL_FColor color)
+             float x, float y, float width, float height, SDL_FColor color,
+             bool mirrored = false)
 {
     const auto vertex = [&](float along, float across) {
+        // При прицеливании влево рукоять остаётся снизу от ствола.
+        across *= mirrored ? -1.0f : 1.0f;
         return SDL_Vertex{{origin.x + direction.x * along - direction.y * across,
                            origin.y + direction.y * along + direction.x * across}, color, {0, 0}};
     };
@@ -33,13 +36,14 @@ bool renderWeapon(SDL_Renderer* renderer, const Player& player)
 {
     const Vec2 origin = player.weaponOrigin();
     const Vec2 aim = player.aimDirection;
+    const bool mirrored = aim.x < 0.0f;
     // Рука, рукоять, ствол и светлая верхняя грань пистолета.
-    return gunPart(renderer, origin, aim, 0, -3, 15, 8, {0.94f, 0.73f, 0.49f, 1}) &&
-           gunPart(renderer, origin, aim, 12, 0, 8, 15, {0.22f, 0.25f, 0.3f, 1}) &&
+    return gunPart(renderer, origin, aim, 0, -3, 15, 8, {0.94f, 0.73f, 0.49f, 1}, mirrored) &&
+           gunPart(renderer, origin, aim, 12, 0, 8, 15, {0.22f, 0.25f, 0.3f, 1}, mirrored) &&
            gunPart(renderer, origin, aim, 10, -5, Weapon::barrelLength - 10, 10,
-                   {0.7f, 0.75f, 0.82f, 1}) &&
+                   {0.7f, 0.75f, 0.82f, 1}, mirrored) &&
            gunPart(renderer, origin, aim, 11, -5, Weapon::barrelLength - 12, 3,
-                   {0.91f, 0.94f, 1, 1});
+                   {0.91f, 0.94f, 1, 1}, mirrored);
 }
 
 } // namespace

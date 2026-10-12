@@ -17,3 +17,9 @@
 Thumbs.db
 *.swp
 *.swo
+
+# Локальные инструкции и настройки инструментов разработки
+/AGENTS.md
+/agents.md
+/.agents/
+/.codex/
