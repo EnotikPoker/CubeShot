@@ -24,7 +24,7 @@ void testMovement()
 {
     using namespace cubeshot;
     World world;
-    expect(world.players().size() == 1 && world.bullets().empty(), "Initial world contents");
+    expect(world.players().size() == 4 && world.bullets().empty(), "Player and three targets");
     const Player& player = world.players().front();
     const float startX = player.position.x;
     const float startY = player.position.y;
@@ -104,15 +104,6 @@ void testInputAndWeaponState()
     Player player;
     player.applyInput(PlayerInput{5.0f});
     expect(near(player.velocity.x, Player::moveSpeed), "Input cannot exceed maximum speed");
-    PlayerInput reservedInput;
-    reservedInput.shoot = true;
-    World world;
-    world.setPlayerInput(World::localPlayerId, reservedInput);
-    const float startY = world.players().front().position.y;
-    world.update(0.1f);
-    expect(world.bullets().empty() && near(world.players().front().position.y, startY),
-           "Shooting remains unimplemented");
-
     Weapon weapon;
     weapon.cooldown = 0.25f;
     weapon.update(0.1f);
@@ -242,6 +233,191 @@ void testVerticalCollisions()
            "Jump physics agree at 30 and 120 updates per second");
 }
 
+void testSingleShots()
+{
+    using namespace cubeshot;
+    constexpr float step = 1.0f / 120.0f;
+    World world;
+    PlayerInput input;
+    input.aimDirection = {0, -1};
+    input.shoot = true;
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(0);
+    world.update(-1);
+    expect(world.bullets().empty(), "Invalid time does not execute shot");
+    world.update(step);
+    expect(world.bullets().size() == 1, "One bullet per press");
+    expect(near(world.bullets().front().position.y, world.players().front().muzzlePosition().y),
+           "Bullet starts at muzzle");
+    for (int i = 0; i < 36; ++i) {
+        world.setPlayerInput(World::localPlayerId, input);
+        world.update(step);
+    }
+    expect(world.bullets().size() == 1, "Holding trigger does not repeat after cooldown");
+
+    input.shoot = false;
+    world.setPlayerInput(World::localPlayerId, input);
+    input.shoot = true;
+    world.setPlayerInput(World::localPlayerId, input);
+    input.shoot = false;
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(step);
+    expect(world.bullets().size() == 2, "Short click between physics steps survives release");
+    input.shoot = true;
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(step);
+    expect(world.bullets().size() == 2, "Cooldown rejects early click");
+    world.update(4.0f);
+    expect(world.bullets().empty(), "Old bullets expire or leave arena; no delayed automatic shot");
+    expect(world.players().front().health == 100, "Shooter is immune to own bullets");
+}
+
+void testSimultaneousActions()
+{
+    using namespace cubeshot;
+    constexpr float step = 1.0f / 120.0f;
+    World world;
+    const Player& player = world.players().front();
+    const Vec2 start = player.position;
+    PlayerInput input;
+    input.moveDirection = 1.0f;
+    input.jump = true;
+    input.shoot = true;
+    input.aimDirection = {-3, -4};
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(step);
+    expect(player.position.x > start.x && player.position.y < start.y &&
+               near(player.aimDirection.x, -0.6f) && near(player.aimDirection.y, -0.8f) &&
+               world.bullets().size() == 1 && world.bullets().front().velocity.x < 0,
+           "Walking, jumping, aiming left and shooting work in the same step");
+
+    input.jump = false;
+    input.shoot = false;
+    input.aimDirection = {3, -4};
+    world.setPlayerInput(World::localPlayerId, input);
+    world.update(step);
+    expect(player.position.x > start.x + Player::moveSpeed * step &&
+               player.velocity.y < 0 && near(player.aimDirection.x, 0.6f) &&
+               world.bullets().size() == 1,
+           "Changing aim and releasing trigger do not stop movement or repeat shot");
+}
+
+void testBulletPhysics()
+{
+    using namespace cubeshot;
+    Bullet bullet;
+    bullet.position = {100, 100};
+    bullet.velocity = {800, 0};
+    bullet.update(0.5f);
+    expect(near(bullet.position.x, 500) && near(bullet.position.y, 130) &&
+               near(bullet.velocity.y, 120), "Visible projectile has flight time and gravity");
+    expect(near(bullet.lifetime, 2.5f), "Bullet lifetime decreases");
+    bullet.update(0);
+    bullet.update(-1);
+    expect(near(bullet.position.x, 500), "Invalid time does not move bullet");
+
+    World slow;
+    World fast;
+    PlayerInput input;
+    input.shoot = true;
+    input.aimDirection = {0, -1};
+    slow.setPlayerInput(1, input);
+    fast.setPlayerInput(1, input);
+    for (int i = 0; i < 6; ++i) slow.update(1.0f / 30.0f);
+    for (int i = 0; i < 24; ++i) fast.update(1.0f / 120.0f);
+    expect(slow.bullets().size() == 1 && fast.bullets().size() == 1, "Both shots are in flight");
+    expect(near(slow.bullets().front().position.y, fast.bullets().front().position.y),
+           "Bullet physics agree at 30 and 120 updates per second");
+}
+
+cubeshot::Arena shootingArena()
+{
+    cubeshot::Arena arena;
+    arena.bounds = {{0, 0}, {2000, 1200}};
+    arena.platforms = {{{0, 1000}, {2000, 200}}};
+    // Дальний игрок раньше ближнего: попадание зависит от расстояния, а не порядка.
+    arena.spawnPoints = {{100, 952}, {400, 952}, {250, 952}};
+    return arena;
+}
+
+void testBulletHits()
+{
+    using namespace cubeshot;
+    PlayerInput input;
+    input.shoot = true;
+    World world(shootingArena());
+    world.setPlayerInput(1, input);
+    world.update(0.05f);
+    expect(world.players()[2].alive() && world.bullets().size() == 1,
+           "Damage waits for bullet to reach target");
+    world.update(0.3f);
+    expect(world.players()[2].health == 0 && world.players()[1].health == 100 &&
+               world.players()[0].health == 100 && world.bullets().empty(),
+           "Only nearest target dies from one shot; bullet is consumed");
+    world.setPlayerInput(3, PlayerInput{1, true, true});
+    world.update(0.5f);
+    expect(near(world.players()[2].position.x, 250) && world.bullets().empty(),
+           "Dead player cannot move, jump or fire");
+    world.setPlayerInput(1, {});
+    world.setPlayerInput(1, input);
+    world.update(0.4f);
+    expect(!world.players()[1].alive(), "Dead target does not shield the next target");
+
+    auto arena = shootingArena();
+    arena.platforms.push_back({{200, 800}, {1, 200}});
+    World wall(arena);
+    wall.setPlayerInput(1, input);
+    wall.update(0.4f);
+    expect(wall.players()[2].alive() && wall.bullets().empty(), "Thin wall shields target");
+    arena.platforms.back().position.x = 152;
+    World muzzleWall(arena);
+    muzzleWall.setPlayerInput(1, input);
+    muzzleWall.update(1.0f / 120.0f);
+    expect(muzzleWall.bullets().empty() && muzzleWall.players()[2].alive(),
+           "Gun protruding through wall cannot shoot through it");
+
+    World floor(shootingArena());
+    input.aimDirection = {0, 1};
+    floor.setPlayerInput(1, input);
+    floor.update(0.1f);
+    expect(floor.bullets().empty(), "Floor absorbs bullets even beside muzzle");
+}
+
+void testBulletSweepsAndAim()
+{
+    using namespace cubeshot;
+    const Rect thinWall{{500, 100}, {1, 200}};
+    const auto hit = collision::segmentHit({0, 150}, {1000, 150}, thinWall, Bullet::radius);
+    expect(hit && near(*hit, 0.497f), "Swept bullet cannot tunnel through thin wall");
+    expect(!collision::segmentHit({0, 50}, {1000, 50}, thinWall, Bullet::radius),
+           "Near miss is not a collision");
+    expect(collision::segmentHit({500, 150}, {500, 150}, thinWall).has_value(),
+           "Bullet starting inside obstacle is blocked");
+    expect(collision::segmentHit({800, 400}, {200, 0}, thinWall).has_value(),
+           "Diagonal reverse sweep hits obstacle");
+
+    Player player;
+    PlayerInput input;
+    input.aimDirection = {3, 4};
+    player.applyInput(input);
+    expect(near(player.aimDirection.x, 0.6f) && near(player.aimDirection.y, 0.8f),
+           "Aim is normalized so diagonal shots have same speed");
+    input.aimDirection = {};
+    player.applyInput(input);
+    expect(near(player.aimDirection.x, 0.6f), "Zero aim preserves last valid direction");
+    player.takeDamage(100);
+    expect(!player.alive() && player.health == 0, "One hit also kills a normal Player");
+
+    World world;
+    const auto initial = world.players();
+    world.update(2);
+    for (std::size_t i = 1; i < initial.size(); ++i) {
+        expect(near(initial[i].position.x, world.players()[i].position.x) &&
+                   near(initial[i].position.y, world.players()[i].position.y),
+               "Targets stay stationary on floor and platform");
+    }
+}
+
 } // namespace
 
 int main()
@@ -254,6 +430,11 @@ int main()
         testJump();
         testPlatform();
         testVerticalCollisions();
+        testSingleShots();
+        testSimultaneousActions();
+        testBulletPhysics();
+        testBulletHits();
+        testBulletSweepsAndAim();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

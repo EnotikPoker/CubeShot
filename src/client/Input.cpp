@@ -1,12 +1,14 @@
 #include "client/Input.h"
+#include "game/Player.h"
 
 #include <SDL3/SDL.h>
 
 namespace cubeshot::client {
 
-PlayerInput readPlayerInput(SDL_Window* window)
+PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Player& player)
 {
     PlayerInput input;
+    input.aimDirection = player.aimDirection;
     if ((SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) == 0) {
         return input;
     }
@@ -16,6 +18,16 @@ PlayerInput readPlayerInput(SDL_Window* window)
     const bool right = keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT];
     input.moveDirection = static_cast<float>(right) - static_cast<float>(left);
     input.jump = keys[SDL_SCANCODE_SPACE];
+    float mouseX = 0.0f;
+    float mouseY = 0.0f;
+    const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&mouseX, &mouseY);
+    float aimX = 0.0f;
+    float aimY = 0.0f;
+    if (SDL_RenderCoordinatesFromWindow(renderer, mouseX, mouseY, &aimX, &aimY)) {
+        const Vec2 origin = player.weaponOrigin();
+        input.aimDirection = {aimX - origin.x, aimY - origin.y};
+    }
+    input.shoot = (buttons & SDL_BUTTON_LMASK) != 0;
     return input;
 }
 

@@ -4,6 +4,32 @@
 
 namespace cubeshot::collision {
 
+std::optional<float> segmentHit(Vec2 start, Vec2 end, const Rect& rectangle, float halfSize)
+{
+    float enter = 0.0f;
+    float leave = 1.0f;
+    const auto clip = [&](float origin, float delta, float low, float high) {
+        if (delta == 0.0f) {
+            return origin >= low && origin <= high;
+        }
+        float first = (low - origin) / delta;
+        float last = (high - origin) / delta;
+        if (first > last) {
+            std::swap(first, last);
+        }
+        enter = std::max(enter, first);
+        leave = std::min(leave, last);
+        return enter <= leave;
+    };
+    if (!clip(start.x, end.x - start.x, rectangle.position.x - halfSize,
+              rectangle.position.x + rectangle.size.x + halfSize) ||
+        !clip(start.y, end.y - start.y, rectangle.position.y - halfSize,
+              rectangle.position.y + rectangle.size.y + halfSize)) {
+        return std::nullopt;
+    }
+    return enter;
+}
+
 bool overlaps(const Rect& first, const Rect& second)
 {
     return first.position.x < second.position.x + second.size.x &&

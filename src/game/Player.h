@@ -1,8 +1,11 @@
 #pragma once
 
 #include "game/PlayerInput.h"
+#include "game/Bullet.h"
 #include "game/Types.h"
 #include "game/Weapon.h"
+
+#include <optional>
 
 namespace cubeshot {
 
@@ -21,14 +24,22 @@ struct Player {
     int health = 100;
     Weapon weapon;
     bool grounded = false;
+    Vec2 aimDirection{1.0f, 0.0f};
 
     Rect bounds() const;
+    bool alive() const;
+    Vec2 weaponOrigin() const;
+    Vec2 muzzlePosition() const;
+    std::optional<Bullet> takeShot();
+    void takeDamage(int damage);
     void applyInput(const PlayerInput& input);
     void update(float deltaSeconds, const Arena& arena);
 
 private:
     bool jumpHeld_ = false;
     bool jumpRequested_ = false;
+    bool shootHeld_ = false;
+    bool shootRequested_ = false;
 };
 
 } // namespace cubeshot

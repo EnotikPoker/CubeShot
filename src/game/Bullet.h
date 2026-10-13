@@ -4,12 +4,17 @@
 
 namespace cubeshot {
 
-// Формат состояния будущей пули. Создание и симуляция пока не реализованы.
 struct Bullet {
-    Vec2 position;
+    static constexpr float radius = 3.0f;
+    static constexpr float gravity = 240.0f; // Пикселей/с², падение пули.
+
+    Vec2 position; // Центр пули.
     Vec2 velocity;
-    int damage = 10;
+    int damage = 100;
     PlayerId shooterId = 0;
+    float lifetime = 3.0f;
+
+    void update(float deltaSeconds);
 };
 
 } // namespace cubeshot
