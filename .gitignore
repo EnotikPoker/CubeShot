@@ -17,3 +17,11 @@
 Thumbs.db
 *.swp
 *.swo
+
+# Локальные инструкции и настройки инструментов разработки
+AGENTS.md
+agents.md
+PROJECT_CONTEXT.md
+project_context.md
+.agents/
+.codex/
