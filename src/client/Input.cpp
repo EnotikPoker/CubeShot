@@ -31,4 +31,19 @@ PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Pl
     return input;
 }
 
+void GameplayInputGate::reset(const PlayerInput& heldInput)
+{
+    blockJump_ = heldInput.jump;
+    blockShoot_ = heldInput.shoot;
+}
+
+PlayerInput GameplayInputGate::filter(PlayerInput input)
+{
+    if (!input.jump) blockJump_ = false;
+    if (!input.shoot) blockShoot_ = false;
+    input.jump = input.jump && !blockJump_;
+    input.shoot = input.shoot && !blockShoot_;
+    return input;
+}
+
 } // namespace cubeshot::client

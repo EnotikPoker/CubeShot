@@ -72,6 +72,13 @@ void Player::applyInput(const PlayerInput& input)
     }
 }
 
+void Player::clearInput()
+{
+    velocity.x = 0;
+    jumpHeld_ = jumpRequested_ = false;
+    shootHeld_ = shootRequested_ = false;
+}
+
 void Player::update(float deltaSeconds, const Arena& arena)
 {
     if (!alive() || !(deltaSeconds > 0.0f)) {

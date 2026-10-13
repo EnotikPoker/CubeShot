@@ -15,6 +15,7 @@ public:
     explicit World(Arena arena = Arena::createDefault());
 
     void setPlayerInput(PlayerId id, const PlayerInput& input);
+    void clearPlayerInput(PlayerId id);
     void update(float deltaSeconds);
 
     const Arena& arena() const;

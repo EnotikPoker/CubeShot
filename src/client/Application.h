@@ -1,6 +1,8 @@
 #pragma once
 
 #include "game/World.h"
+#include "client/Input.h"
+#include "client/Menu.h"
 
 struct SDL_Window;
 struct SDL_Renderer;
@@ -25,6 +27,8 @@ private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Cursor* crosshair_ = nullptr;
     World world_;
+    Menu menu_;
+    GameplayInputGate inputGate_;
 };
 
 } // namespace cubeshot::client

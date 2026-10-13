@@ -8,6 +8,6 @@ class World;
 
 namespace cubeshot::client {
 
-bool renderScene(SDL_Renderer* renderer, const World& world);
+bool renderScene(SDL_Renderer* renderer, const World& world, bool present = true);
 
 } // namespace cubeshot::client

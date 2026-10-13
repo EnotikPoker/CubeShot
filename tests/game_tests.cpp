@@ -454,6 +454,31 @@ void testHealth()
     expect(player.health == 0, "Health cannot become negative after death");
 }
 
+void testCancelInput()
+{
+    using namespace cubeshot;
+    World world;
+    PlayerInput input;
+    input.moveDirection = 1;
+    input.jump = input.shoot = true;
+    input.aimDirection = {-1, 0};
+    world.setPlayerInput(1, input);
+    const Vec2 start = world.players().front().position;
+    world.clearPlayerInput(1);
+    world.clearPlayerInput(999);
+    world.update(1.0f / 120.0f);
+    expect(world.players().front().position.x == start.x &&
+               world.players().front().position.y == start.y && world.bullets().empty() &&
+               world.players().front().aimDirection.x == -1,
+           "Opening menu cancels queued movement, jump and shot while preserving aim");
+    world.setPlayerInput(1, input);
+    world.update(1.0f / 120.0f);
+    const float vertical = world.players().front().velocity.y;
+    world.clearPlayerInput(1);
+    expect(world.players().front().velocity.y == vertical,
+           "Clearing input does not change vertical momentum for resume");
+}
+
 } // namespace
 
 int main()
@@ -472,6 +497,7 @@ int main()
         testBulletHits();
         testBulletSweepsAndAim();
         testHealth();
+        testCancelInput();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

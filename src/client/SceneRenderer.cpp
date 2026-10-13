@@ -64,7 +64,7 @@ bool renderHealthBar(SDL_Renderer* renderer, const Player& player, float arenaTo
 
 } // namespace
 
-bool renderScene(SDL_Renderer* renderer, const World& world)
+bool renderScene(SDL_Renderer* renderer, const World& world, bool present)
 {
     if (!SDL_SetRenderDrawColor(renderer, 24, 28, 38, 255) ||
         !SDL_RenderClear(renderer) ||
@@ -103,7 +103,7 @@ bool renderScene(SDL_Renderer* renderer, const World& world)
             return false;
         }
     }
-    return SDL_RenderPresent(renderer);
+    return !present || SDL_RenderPresent(renderer);
 }
 
 } // namespace cubeshot::client

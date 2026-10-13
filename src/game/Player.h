@@ -34,6 +34,7 @@ struct Player {
     std::optional<Bullet> takeShot();
     void takeDamage(int damage);
     void applyInput(const PlayerInput& input);
+    void clearInput();
     void update(float deltaSeconds, const Arena& arena);
 
 private:
