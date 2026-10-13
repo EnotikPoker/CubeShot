@@ -8,3 +8,13 @@ add_executable(cubeshot_renderer_tests
 )
 target_link_libraries(cubeshot_renderer_tests PRIVATE cubeshot_game SDL3::SDL3)
 add_test(NAME renderer COMMAND cubeshot_renderer_tests)
+
+add_executable(cubeshot_menu_tests
+    menu_tests.cpp
+    ../src/client/Menu.cpp
+    ../src/client/MenuRenderer.cpp
+    ../src/client/BitmapFont.cpp
+    ../src/client/Input.cpp
+)
+target_link_libraries(cubeshot_menu_tests PRIVATE cubeshot_game SDL3::SDL3)
+add_test(NAME menu COMMAND cubeshot_menu_tests)

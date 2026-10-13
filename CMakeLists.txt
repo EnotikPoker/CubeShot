@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(CubeShot VERSION 0.4.0 LANGUAGES CXX)
+project(CubeShot VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,9 @@ add_executable(cubeshot_client
     src/client/main.cpp
     src/client/Application.cpp
     src/client/Input.cpp
+    src/client/Menu.cpp
+    src/client/MenuRenderer.cpp
+    src/client/BitmapFont.cpp
     src/client/SceneRenderer.cpp
 )
 target_link_libraries(cubeshot_client PRIVATE cubeshot_game cubeshot_network SDL3::SDL3)

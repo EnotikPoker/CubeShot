@@ -29,6 +29,16 @@ void World::setPlayerInput(PlayerId id, const PlayerInput& input)
     }
 }
 
+void World::clearPlayerInput(PlayerId id)
+{
+    for (Player& player : players_) {
+        if (player.id == id) {
+            player.clearInput();
+            return;
+        }
+    }
+}
+
 void World::update(float deltaSeconds)
 {
     if (!(deltaSeconds > 0.0f) || !std::isfinite(deltaSeconds)) {
