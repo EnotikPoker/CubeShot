@@ -4,6 +4,7 @@
 
 struct SDL_Window;
 struct SDL_Renderer;
+struct SDL_Cursor;
 
 namespace cubeshot::client {
 
@@ -22,6 +23,7 @@ private:
     bool sdlInitialized_ = false;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
+    SDL_Cursor* crosshair_ = nullptr;
     World world_;
 };
 

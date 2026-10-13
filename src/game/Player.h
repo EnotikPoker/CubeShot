@@ -12,6 +12,7 @@ namespace cubeshot {
 struct Arena;
 
 struct Player {
+    static constexpr int maxHealth = 100;
     static constexpr float defaultSize = 48.0f;
     static constexpr float moveSpeed = 280.0f; // Пикселей в секунду.
     static constexpr float jumpSpeed = 620.0f; // Начальная скорость вверх, пикселей/с.
@@ -21,7 +22,7 @@ struct Player {
     Vec2 position;
     Vec2 velocity;
     Vec2 size{defaultSize, defaultSize};
-    int health = 100;
+    int health = maxHealth;
     Weapon weapon;
     bool grounded = false;
     Vec2 aimDirection{1.0f, 0.0f};

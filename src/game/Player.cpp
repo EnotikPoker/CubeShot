@@ -48,7 +48,7 @@ std::optional<Bullet> Player::takeShot()
 
 void Player::takeDamage(int damage)
 {
-    health = std::max(0, health - std::max(0, damage));
+    health = std::max(0, std::clamp(health, 0, maxHealth) - std::max(0, damage));
     if (!alive()) {
         velocity = {};
         jumpRequested_ = false;
