@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -247,6 +248,7 @@ void testSingleShots()
     expect(world.bullets().empty(), "Invalid time does not execute shot");
     world.update(step);
     expect(world.bullets().size() == 1, "One bullet per press");
+    expect(world.bullets().front().damage == 20, "Pistol bullet deals 20 damage");
     expect(near(world.bullets().front().position.y, world.players().front().muzzlePosition().y),
            "Bullet starts at muzzle");
     for (int i = 0; i < 36; ++i) {
@@ -351,17 +353,32 @@ void testBulletHits()
     expect(world.players()[2].alive() && world.bullets().size() == 1,
            "Damage waits for bullet to reach target");
     world.update(0.3f);
-    expect(world.players()[2].health == 0 && world.players()[1].health == 100 &&
+    expect(world.players()[2].health == 80 && world.players()[1].health == 100 &&
                world.players()[0].health == 100 && world.bullets().empty(),
-           "Only nearest target dies from one shot; bullet is consumed");
+           "Only nearest target loses 20 health; bullet is consumed");
+    for (int hits = 2; hits <= 5; ++hits) {
+        world.setPlayerInput(1, {});
+        world.setPlayerInput(1, input);
+        world.update(0.35f);
+        expect(world.players()[2].health == Player::maxHealth - hits * 20 &&
+                   world.players()[1].health == Player::maxHealth && world.bullets().empty(),
+               "Nearest target takes five pistol hits to die and shields target behind it");
+    }
     world.setPlayerInput(3, PlayerInput{1, true, true});
     world.update(0.5f);
     expect(near(world.players()[2].position.x, 250) && world.bullets().empty(),
            "Dead player cannot move, jump or fire");
-    world.setPlayerInput(1, {});
-    world.setPlayerInput(1, input);
-    world.update(0.4f);
-    expect(!world.players()[1].alive(), "Dead target does not shield the next target");
+    for (int hits = 1; hits <= 5; ++hits) {
+        world.setPlayerInput(1, {});
+        world.setPlayerInput(1, input);
+        world.update(0.4f);
+        expect(world.players()[1].health == Player::maxHealth - hits * 20,
+               "Dead target does not shield the next target");
+    }
+    world = World(shootingArena());
+    expect(world.bullets().empty() && world.players()[1].health == Player::maxHealth &&
+               world.players()[2].health == Player::maxHealth,
+           "Resetting world restores full health and living targets");
 
     auto arena = shootingArena();
     arena.platforms.push_back({{200, 800}, {1, 200}});
@@ -406,7 +423,7 @@ void testBulletSweepsAndAim()
     player.applyInput(input);
     expect(near(player.aimDirection.x, 0.6f), "Zero aim preserves last valid direction");
     player.takeDamage(100);
-    expect(!player.alive() && player.health == 0, "One hit also kills a normal Player");
+    expect(!player.alive() && player.health == 0, "Damage equal to maximum health kills Player");
 
     World world;
     const auto initial = world.players();
@@ -416,6 +433,25 @@ void testBulletSweepsAndAim()
                    near(initial[i].position.y, world.players()[i].position.y),
                "Targets stay stationary on floor and platform");
     }
+}
+
+void testHealth()
+{
+    using namespace cubeshot;
+    Player player;
+    expect(player.health == 100 && Player::maxHealth == 100, "Players start with maximum 100 health");
+    player.applyInput(PlayerInput{1.0f});
+    player.takeDamage(20);
+    expect(player.health == 80 && player.alive() && player.velocity.x > 0,
+           "Nonlethal damage does not disable a living player");
+    player.takeDamage(0);
+    player.takeDamage(-20);
+    expect(player.health == 80, "Zero or negative damage cannot heal a player");
+    player.takeDamage(std::numeric_limits<int>::max());
+    expect(player.health == 0 && !player.alive() && near(player.velocity.x, 0),
+           "Overkill clamps health to zero and stops movement");
+    player.takeDamage(20);
+    expect(player.health == 0, "Health cannot become negative after death");
 }
 
 } // namespace
@@ -435,6 +471,7 @@ int main()
         testBulletPhysics();
         testBulletHits();
         testBulletSweepsAndAim();
+        testHealth();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

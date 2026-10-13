@@ -4,6 +4,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cubeshot::client {
@@ -46,6 +47,21 @@ bool renderWeapon(SDL_Renderer* renderer, const Player& player)
                    {0.91f, 0.94f, 1, 1}, mirrored);
 }
 
+bool renderHealthBar(SDL_Renderer* renderer, const Player& player, float arenaTop)
+{
+    const Vec2 position{player.position.x,
+                        std::max(player.position.y - 12.0f, arenaTop + 1.0f)};
+    const float width = player.size.x;
+    const float fraction = static_cast<float>(std::clamp(player.health, 0, Player::maxHealth)) /
+                           Player::maxHealth;
+    return SDL_SetRenderDrawColor(renderer, 12, 16, 24, 255) &&
+           fillRect(renderer, {{position.x - 1, position.y - 1}, {width + 2, 8}}) &&
+           SDL_SetRenderDrawColor(renderer, 80, 35, 45, 255) &&
+           fillRect(renderer, {position, {width, 6}}) &&
+           SDL_SetRenderDrawColor(renderer, 85, 210, 125, 255) &&
+           fillRect(renderer, {position, {width * fraction, 6}});
+}
+
 } // namespace
 
 bool renderScene(SDL_Renderer* renderer, const World& world)
@@ -68,7 +84,8 @@ bool renderScene(SDL_Renderer* renderer, const World& world)
         const bool local = player.id == World::localPlayerId;
         if (!SDL_SetRenderDrawColor(renderer, local ? 80 : 230, local ? 175 : 85,
                                     local ? 255 : 85, 255) ||
-            !fillRect(renderer, player.bounds()) || !renderWeapon(renderer, player)) {
+            !fillRect(renderer, player.bounds()) || !renderWeapon(renderer, player) ||
+            !renderHealthBar(renderer, player, world.arena().bounds.position.y)) {
             return false;
         }
     }

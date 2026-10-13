@@ -10,7 +10,7 @@ struct Bullet {
 
     Vec2 position; // Центр пули.
     Vec2 velocity;
-    int damage = 100;
+    int damage = 20;
     PlayerId shooterId = 0;
     float lifetime = 3.0f;
 

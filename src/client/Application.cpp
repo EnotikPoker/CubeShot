@@ -11,6 +11,10 @@ namespace cubeshot::client {
 
 Application::~Application()
 {
+    if (crosshair_) {
+        SDL_SetCursor(SDL_GetDefaultCursor());
+        SDL_DestroyCursor(crosshair_);
+    }
     SDL_DestroyRenderer(renderer_);
     SDL_DestroyWindow(window_);
     if (sdlInitialized_) {
@@ -36,6 +40,11 @@ bool Application::initialize()
                                          static_cast<int>(size.y),
                                          SDL_LOGICAL_PRESENTATION_LETTERBOX)) {
         SDL_Log("Renderer setup failed: %s", SDL_GetError());
+        return false;
+    }
+    crosshair_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
+    if (!crosshair_ || !SDL_SetCursor(crosshair_)) {
+        SDL_Log("Crosshair setup failed: %s", SDL_GetError());
         return false;
     }
     return true;

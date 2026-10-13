@@ -3,6 +3,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -20,14 +21,19 @@ void expect(bool condition, const char* message)
     }
 }
 
-Surface drawPlayer(cubeshot::Vec2 aim)
+Surface drawWorld(const cubeshot::World& world)
 {
     Surface surface(SDL_CreateSurface(imageSize, imageSize, SDL_PIXELFORMAT_RGBA32),
                     SDL_DestroySurface);
     expect(surface != nullptr, "Create test surface");
     Renderer renderer(SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
     expect(renderer != nullptr, "Create software renderer");
+    expect(cubeshot::client::renderScene(renderer.get(), world), "Render test scene");
+    return surface;
+}
 
+Surface drawPlayer(cubeshot::Vec2 aim)
+{
     cubeshot::Arena arena;
     arena.bounds = {{0, 0}, {imageSize, imageSize}};
     // Положение руки точно в (64, 64) для сравнения зеркальных пикселей.
@@ -36,8 +42,7 @@ Surface drawPlayer(cubeshot::Vec2 aim)
     cubeshot::PlayerInput input;
     input.aimDirection = aim;
     world.setPlayerInput(cubeshot::World::localPlayerId, input);
-    expect(cubeshot::client::renderScene(renderer.get(), world), "Render test scene");
-    return surface;
+    return drawWorld(world);
 }
 
 SDL_Color pixel(SDL_Surface* surface, int x, int y)
@@ -76,6 +81,57 @@ void testMirroredWeapon(cubeshot::Vec2 aim)
     }
 }
 
+void testHealthBars()
+{
+    using namespace cubeshot;
+    Arena arena;
+    arena.bounds = {{0, 0}, {imageSize, imageSize}};
+    arena.platforms = {{{0, 100}, {imageSize, 28}}};
+    arena.spawnPoints = {{4, 52}, {76, 52}};
+    World world(arena);
+    const SDL_Color green{85, 210, 125, 255};
+    const SDL_Color empty{80, 35, 45, 255};
+    const SDL_Color background{24, 28, 38, 255};
+    for (int hits = 0; hits <= 5; ++hits) {
+        const auto surface = drawWorld(world);
+        int filledPixels = 0;
+        for (int x = 76; x < 124; ++x) {
+            const SDL_Color color = pixel(surface.get(), x, 42);
+            if (hits == 5) {
+                expect(sameColor(color, background), "Dead player's health bar disappears");
+            } else {
+                expect(sameColor(color, green) || sameColor(color, empty),
+                       "Health bar shows remaining health and missing health");
+                filledPixels += sameColor(color, green);
+            }
+        }
+        expect(std::abs(filledPixels - 48.0f * (100 - 20 * hits) / 100.0f) <= 1.0f,
+               "Health bar width follows real damage proportionally");
+        expect(sameColor(pixel(surface.get(), 20, 42), green),
+               "Undamaged player's health bar stays full");
+        if (hits < 5) {
+            world.setPlayerInput(1, {});
+            PlayerInput input;
+            input.shoot = true;
+            world.setPlayerInput(1, input);
+            world.update(0.3f);
+        }
+    }
+    world = World(arena);
+    const auto reset = drawWorld(world);
+    expect(sameColor(pixel(reset.get(), 120, 42), green), "Reset restores full health bar");
+    world.setPlayerInput(2, PlayerInput{0.0f, true});
+    world.update(1.0f / 120.0f);
+    const auto jumped = drawWorld(world);
+    expect(sameColor(pixel(jumped.get(), 100, 37), green) &&
+               sameColor(pixel(jumped.get(), 100, 42), background),
+           "Health bar follows character during jump");
+    world.update(0.12f);
+    const auto ceiling = drawWorld(world);
+    expect(sameColor(pixel(ceiling.get(), 100, 3), green),
+           "Health bar stays visible when character reaches arena ceiling");
+}
+
 } // namespace
 
 int main()
@@ -89,6 +145,7 @@ int main()
         testMirroredWeapon({1, 0});
         testMirroredWeapon({3, -4});
         testMirroredWeapon({3, 4});
+        testHealthBars();
         std::cout << "Renderer tests passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
