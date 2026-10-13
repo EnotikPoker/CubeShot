@@ -19,7 +19,9 @@ Thumbs.db
 *.swo
 
 # Локальные инструкции и настройки инструментов разработки
-/AGENTS.md
-/agents.md
-/.agents/
-/.codex/
+AGENTS.md
+agents.md
+PROJECT_CONTEXT.md
+project_context.md
+.agents/
+.codex/
