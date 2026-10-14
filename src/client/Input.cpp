@@ -2,6 +2,7 @@
 #include "game/Player.h"
 
 #include <SDL3/SDL.h>
+#include <cmath>
 
 namespace cubeshot::client {
 
@@ -25,7 +26,8 @@ PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Pl
     float aimY = 0.0f;
     if (SDL_RenderCoordinatesFromWindow(renderer, mouseX, mouseY, &aimX, &aimY)) {
         const Vec2 origin = player.weaponOrigin();
-        input.aimDirection = {aimX - origin.x, aimY - origin.y};
+        const Vec2 aim{aimX - origin.x, aimY - origin.y};
+        if (std::hypot(aim.x, aim.y) > 0.0001f) input.aimDirection = aim;
     }
     input.shoot = (buttons & SDL_BUTTON_LMASK) != 0;
     return input;

@@ -12,6 +12,7 @@ struct Arena {
     std::vector<Vec2> spawnPoints; // Положение верхнего левого угла персонажа.
 
     static Arena createDefault();
+    static Arena createDuel();
 };
 
 } // namespace cubeshot

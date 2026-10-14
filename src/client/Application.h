@@ -3,6 +3,10 @@
 #include "game/World.h"
 #include "client/Input.h"
 #include "client/Menu.h"
+#include "client/HostProcess.h"
+#include "network/Session.h"
+#include "network/Discovery.h"
+#include <memory>
 
 struct SDL_Window;
 struct SDL_Renderer;
@@ -21,6 +25,12 @@ public:
 
 private:
     bool initialize();
+    Player ownPlayer() const;
+    PlayerInput rawInput() const;
+    bool handle(MenuAction action);
+    void leaveRoom();
+    void screenChanged(Screen before);
+    void updateNetwork();
 
     bool sdlInitialized_ = false;
     SDL_Window* window_ = nullptr;
@@ -29,6 +39,11 @@ private:
     World world_;
     Menu menu_;
     GameplayInputGate inputGate_;
+    std::unique_ptr<network::Client> network_;
+    std::unique_ptr<network::Discovery> discovery_;
+    HostProcess host_;
+    bool hosting_ = false;
+    std::uint32_t lastRound_ = 0;
 };
 
 } // namespace cubeshot::client

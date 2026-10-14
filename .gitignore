@@ -25,3 +25,7 @@ PROJECT_CONTEXT.md
 project_context.md
 .agents/
 .codex/
+
+# Python helpers
+__pycache__/
+*.py[cod]

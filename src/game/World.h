@@ -16,6 +16,8 @@ public:
 
     void setPlayerInput(PlayerId id, const PlayerInput& input);
     void clearPlayerInput(PlayerId id);
+    void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim);
+    void resetPlayers(bool swapSpawns = false);
     void update(float deltaSeconds);
 
     const Arena& arena() const;
@@ -29,6 +31,8 @@ private:
     Arena arena_;
     std::vector<Player> players_;
     std::vector<Bullet> bullets_;
+    BulletId nextBulletId_ = 1;
+    std::vector<int> pendingDamage_;
 };
 
 } // namespace cubeshot

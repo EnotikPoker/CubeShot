@@ -1,0 +1,42 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            triplet: x64-linux
+          - os: windows-2022
+            triplet: x64-windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev wayland-protocols
+      - name: Bootstrap pinned vcpkg
+        shell: bash
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/cubeshot-vcpkg"
+          git -C "$RUNNER_TEMP/cubeshot-vcpkg" checkout e456309491fd875487bf02b8a0dca76c1b1b00cc
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "$RUNNER_TEMP/cubeshot-vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          else
+            "$RUNNER_TEMP/cubeshot-vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          fi
+      - name: Configure
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/cubeshot-vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel 2
+      - name: Upload programs and runtime libraries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: CubeShot-${{ runner.os }}-0.6.0
+          path: build/bin/
