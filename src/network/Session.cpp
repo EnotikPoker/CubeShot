@@ -90,7 +90,9 @@ struct Server::Impl {
     std::uint16_t port = 0;
     bool hostGone = false;
     explicit Impl(std::uint16_t requested, std::string owner) : token(std::move(owner)) {
-        SteamNetworkingIPAddr address; address.Clear(); address.m_port = requested;
+        // LAN v1 uses IPv4. An unspecified IPv6 address lets GNS retry IPv4
+        // after a failed bind; on Windows that can hide an occupied dual-stack port.
+        SteamNetworkingIPAddr address; address.SetIPv4(0, requested);
         SteamNetworkingConfigValue_t config[4]; options(config);
         group = SteamNetworkingSockets()->CreatePollGroup();
         listener = SteamNetworkingSockets()->CreateListenSocketIP(address, 4, config);

@@ -1,3 +1,13 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 #include "network/Session.h"
 #include <steam/steamnetworkingsockets.h>
 #include <chrono>
@@ -10,6 +20,35 @@ using namespace cubeshot::network;
 namespace {
 using Clock = std::chrono::steady_clock;
 void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+void portOwnership() {
+    // Keep Winsock initialized while the native socket is alive on Windows.
+    Client runtime;
+    const auto socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+#ifdef _WIN32
+    expect(socket != INVALID_SOCKET, "Create native IPv4 port occupant");
+    const auto closeSocket = [&] { closesocket(socket); };
+#else
+    expect(socket >= 0, "Create native IPv4 port occupant");
+    const auto closeSocket = [&] { close(socket); };
+#endif
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(29721);
+    const int bound = bind(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+    if (bound != 0) { closeSocket(); throw std::runtime_error("Bind native IPv4 port occupant"); }
+    bool rejected = false;
+    try { Server second(29721); }
+    catch (const std::runtime_error&) { rejected = true; }
+    closeSocket();
+    expect(rejected, "Server rejects port occupied by native IPv4 socket");
+
+    Server first(29722);
+    rejected = false;
+    try { Server second(29722); }
+    catch (const std::runtime_error&) { rejected = true; }
+    expect(rejected, "Two servers cannot listen on the same game port");
+}
 struct Rig {
     Server server{29720, "test-owner"};
     Client host, guest;
@@ -113,6 +152,6 @@ void impairedCombat() {
 }
 }
 int main() {
-    try { connectionAndTimeout(); impairedCombat(); std::cout << "Real UDP transport and impaired combat passed\n"; }
+    try { portOwnership(); connectionAndTimeout(); impairedCombat(); std::cout << "Real UDP transport and impaired combat passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
