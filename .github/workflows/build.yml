@@ -20,7 +20,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            autoconf autoconf-archive automake libtool pkg-config \
+            autoconf autoconf-archive automake libtool libtool-bin libltdl-dev autopoint pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev wayland-protocols
       - name: Bootstrap pinned vcpkg
@@ -32,6 +32,22 @@ jobs:
             "$RUNNER_TEMP/cubeshot-vcpkg/bootstrap-vcpkg.bat" -disableMetrics
           else
             "$RUNNER_TEMP/cubeshot-vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          fi
+      - name: Verify Linux autotools prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          check_dir="$RUNNER_TEMP/cubeshot-autotools-check"
+          mkdir -p "$check_dir"
+          cp "$RUNNER_TEMP/cubeshot-vcpkg/ports/vcpkg-make/configure.ac" "$check_dir/configure.ac"
+          cd "$check_dir"
+          if ! aclocal --dry-run >aclocal.log 2>&1; then
+            cat aclocal.log
+            exit 1
+          fi
+          cat aclocal.log
+          if grep -q 'System package .* is missing' aclocal.log; then
+            exit 1
           fi
       - name: Configure
         shell: bash
