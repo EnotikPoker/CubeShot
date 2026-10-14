@@ -13,6 +13,7 @@ struct Bullet {
     int damage = 20;
     PlayerId shooterId = 0;
     float lifetime = 3.0f;
+    BulletId id = 0;
 
     void update(float deltaSeconds);
 };

@@ -40,7 +40,7 @@ std::optional<Bullet> Player::takeShot()
     // World проверит путь от руки до дула, чтобы не стрелять сквозь стену.
     Bullet bullet;
     bullet.position = weaponOrigin();
-    bullet.velocity = {aimDirection.x * weapon.bulletSpeed, aimDirection.y * weapon.bulletSpeed};
+    bullet.velocity = {shotAim_.x * weapon.bulletSpeed, shotAim_.y * weapon.bulletSpeed};
     bullet.damage = weapon.damage;
     bullet.shooterId = id;
     return bullet;
@@ -64,11 +64,25 @@ void Player::applyInput(const PlayerInput& input)
     velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * moveSpeed;
     jumpRequested_ = jumpRequested_ || (input.jump && !jumpHeld_);
     jumpHeld_ = input.jump;
-    shootRequested_ = shootRequested_ || (input.shoot && !shootHeld_);
+    const bool shot = input.shoot && !shootHeld_ && !shootRequested_;
+    shootRequested_ = shootRequested_ || shot;
     shootHeld_ = input.shoot;
     const float length = std::hypot(input.aimDirection.x, input.aimDirection.y);
     if (std::isfinite(length) && length > 0.0001f) {
         aimDirection = {input.aimDirection.x / length, input.aimDirection.y / length};
+    }
+    if (shot) shotAim_ = aimDirection;
+}
+
+void Player::requestAction(bool jump, bool shoot, Vec2 aim)
+{
+    if (!alive()) return;
+    jumpRequested_ = jumpRequested_ || jump;
+    if (shoot && !shootRequested_) {
+        const float length = std::hypot(aim.x, aim.y);
+        if (!std::isfinite(length) || length < 0.0001f) return;
+        shootRequested_ = true;
+        shotAim_ = {aim.x / length, aim.y / length};
     }
 }
 

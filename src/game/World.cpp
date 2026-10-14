@@ -10,12 +10,35 @@ namespace cubeshot {
 
 World::World(Arena arena) : arena_(std::move(arena))
 {
+    resetPlayers();
+}
+
+void World::resetPlayers(bool swapSpawns)
+{
+    players_.clear();
+    bullets_.clear();
     for (const Vec2 spawn : arena_.spawnPoints) {
         Player player;
         player.id = static_cast<PlayerId>(players_.size()) + localPlayerId;
         player.position = spawn;
         player.grounded = collision::isSupported(player.bounds(), arena_.bounds, arena_.platforms);
         players_.push_back(player);
+    }
+    if (swapSpawns && players_.size() == 2) {
+        std::swap(players_[0].position, players_[1].position);
+    }
+    if (players_.size() == 2) {
+        const float direction = players_[0].position.x < players_[1].position.x ? 1.0f : -1.0f;
+        players_[0].aimDirection = {direction, 0};
+        players_[1].aimDirection = {-direction, 0};
+    }
+    pendingDamage_.assign(players_.size(), 0);
+}
+
+void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim)
+{
+    for (auto& player : players_) {
+        if (player.id == id) player.requestAction(jump, shoot, aim);
     }
 }
 
@@ -49,17 +72,24 @@ void World::update(float deltaSeconds)
     while (remaining > 0.0) {
         const float step = static_cast<float>(std::min(remaining, maxStep));
         remaining -= std::min(remaining, maxStep);
+        std::fill(pendingDamage_.begin(), pendingDamage_.end(), 0);
         for (Player& player : players_) {
             player.update(step, arena_);
         }
         updateBullets(step);
         for (Player& player : players_) {
             if (auto bullet = player.takeShot()) {
-                if (moveBullet(*bullet, player.muzzlePosition())) {
+                bullet->id = nextBulletId_++;
+                const float speed = std::hypot(bullet->velocity.x, bullet->velocity.y);
+                const Vec2 muzzle{bullet->position.x + bullet->velocity.x / speed * Weapon::barrelLength,
+                                  bullet->position.y + bullet->velocity.y / speed * Weapon::barrelLength};
+                if (moveBullet(*bullet, muzzle)) {
                     bullets_.push_back(*bullet);
                 }
             }
         }
+        // Все попадания одного шага применяются вместе: взаимная смерть даёт ничью.
+        for (std::size_t i = 0; i < players_.size(); ++i) players_[i].takeDamage(pendingDamage_[i]);
     }
 }
 
@@ -86,7 +116,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     }
     if (nearest <= 1.0f) {
         if (victim) {
-            victim->takeDamage(bullet.damage);
+            pendingDamage_[static_cast<std::size_t>(victim - players_.data())] += bullet.damage;
         }
         return false;
     }

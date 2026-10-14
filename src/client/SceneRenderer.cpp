@@ -1,6 +1,7 @@
 #include "client/SceneRenderer.h"
 
 #include "game/World.h"
+#include "game/Match.h"
 
 #include <SDL3/SDL.h>
 
@@ -64,33 +65,35 @@ bool renderHealthBar(SDL_Renderer* renderer, const Player& player, float arenaTo
 
 } // namespace
 
-bool renderScene(SDL_Renderer* renderer, const World& world, bool present)
+static bool renderWorld(SDL_Renderer* renderer, const Arena& arena,
+                        const std::vector<Player>& players, const std::vector<Bullet>& bullets,
+                        PlayerId own, bool present)
 {
     if (!SDL_SetRenderDrawColor(renderer, 24, 28, 38, 255) ||
         !SDL_RenderClear(renderer) ||
         !SDL_SetRenderDrawColor(renderer, 95, 110, 125, 255)) {
         return false;
     }
-    for (const Rect& platform : world.arena().platforms) {
+    for (const Rect& platform : arena.platforms) {
         if (!fillRect(renderer, platform)) {
             return false;
         }
     }
 
-    for (const Player& player : world.players()) {
+    for (const Player& player : players) {
         if (!player.alive()) {
             continue;
         }
-        const bool local = player.id == World::localPlayerId;
+        const bool local = player.id == own;
         if (!SDL_SetRenderDrawColor(renderer, local ? 80 : 230, local ? 175 : 85,
                                     local ? 255 : 85, 255) ||
             !fillRect(renderer, player.bounds()) || !renderWeapon(renderer, player) ||
-            !renderHealthBar(renderer, player, world.arena().bounds.position.y)) {
+            !renderHealthBar(renderer, player, arena.bounds.position.y)) {
             return false;
         }
     }
 
-    for (const Bullet& bullet : world.bullets()) {
+    for (const Bullet& bullet : bullets) {
         const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
         const Vec2 direction = speed > 0.0f
             ? Vec2{bullet.velocity.x / speed, bullet.velocity.y / speed} : Vec2{1, 0};
@@ -104,6 +107,17 @@ bool renderScene(SDL_Renderer* renderer, const World& world, bool present)
         }
     }
     return !present || SDL_RenderPresent(renderer);
+}
+
+bool renderScene(SDL_Renderer* renderer, const World& world, bool present)
+{
+    return renderWorld(renderer, world.arena(), world.players(), world.bullets(), World::localPlayerId, present);
+}
+
+bool renderSnapshot(SDL_Renderer* renderer, const WorldSnapshot& snapshot, PlayerId own)
+{
+    static const auto arena = Arena::createDuel();
+    return renderWorld(renderer, arena, snapshot.players, snapshot.bullets, own, false);
 }
 
 } // namespace cubeshot::client

@@ -5,6 +5,7 @@
 namespace cubeshot {
 
 using PlayerId = std::uint32_t;
+using BulletId = std::uint64_t;
 
 struct Vec2 {
     float x = 0.0f;

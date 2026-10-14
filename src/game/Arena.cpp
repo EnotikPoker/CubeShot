@@ -4,6 +4,13 @@
 
 namespace cubeshot {
 
+Arena Arena::createDuel()
+{
+    return {{{0, 0}, {960, 540}},
+            {{{0, 440}, {960, 100}}, {{140, 350}, {200, 24}}, {{620, 350}, {200, 24}}},
+            {{80, 392}, {832, 392}}};
+}
+
 Arena Arena::createDefault()
 {
     Arena arena;

@@ -34,6 +34,7 @@ struct Player {
     std::optional<Bullet> takeShot();
     void takeDamage(int damage);
     void applyInput(const PlayerInput& input);
+    void requestAction(bool jump, bool shoot, Vec2 aim);
     void clearInput();
     void update(float deltaSeconds, const Arena& arena);
 
@@ -42,6 +43,7 @@ private:
     bool jumpRequested_ = false;
     bool shootHeld_ = false;
     bool shootRequested_ = false;
+    Vec2 shotAim_{1, 0};
 };
 
 } // namespace cubeshot

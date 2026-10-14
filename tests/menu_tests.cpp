@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 
 #include <iostream>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 
@@ -41,12 +42,13 @@ void testNavigation()
     menu.moveSelection(-1);
     menu.activate();
     expect(menu.screen() == Screen::Modes && menu.buttons().size() == 5,
-           "Mode screen includes three future modes, Test and Back");
-    for (int i = 0; i < 3; ++i) {
-        expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes &&
-                   !menu.message().empty(), "Future modes do not start gameplay");
-        menu.moveSelection(1);
-    }
+           "Mode screen includes LAN, future modes, Test and Back");
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes && !menu.message().empty(), "Internet remains placeholder");
+    menu.moveSelection(1); menu.activate();
+    expect(menu.screen() == Screen::Lan, "Local mode opens LAN menu");
+    menu.escape(); menu.moveSelection(2);
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes && !menu.message().empty(), "Bots remain placeholder");
+    menu.moveSelection(1);
     menu.moveSelection(1);
     menu.activate();
     expect(menu.screen() == Screen::Main && menu.message().empty(), "Back returns to main menu");
@@ -117,6 +119,32 @@ void testMouseClicks()
            "Test scene starts on complete click");
 }
 
+void testLanNavigation()
+{
+    Menu menu; menu.open(Screen::Lan);
+    expect(menu.activate() == MenuAction::CreateRoom && menu.screen() == Screen::Connecting, "Create starts independent server connection");
+    menu.open(Screen::Lan); menu.moveSelection(1);
+    expect(menu.activate() == MenuAction::FindRooms && menu.screen() == Screen::Browser, "Find opens room list");
+    menu.setRooms({{"192.168.1.2:27015", 1, true}, {"192.168.1.3:27015", 2, false}});
+    expect(menu.activate() == MenuAction::JoinRoom && menu.selectedAddress() == "192.168.1.2:27015", "Join selected discovered room");
+    menu.open(Screen::Browser);
+    menu.setRooms({{"1.1.1.1", 1, true}, {"2.2.2.2", 1, true}, {"3.3.3.3", 1, true}, {"4.4.4.4", 1, true}});
+    menu.moveSelection(3); menu.activate();
+    expect(menu.activate() == MenuAction::JoinRoom && menu.selectedAddress() == "4.4.4.4", "Pagination includes rooms after third");
+    menu.open(Screen::Address); menu.text("192.168.1.10:27015abc");
+    expect(menu.address() == "192.168.1.10:27015", "Address filters non-address characters");
+    menu.backspace(); menu.text("5");
+    expect(menu.activate() == MenuAction::JoinAddress, "Connect requests address validation");
+    Match m; m.connect(1); m.connect(2); menu.networkState(m.snapshot(), 2);
+    expect(menu.screen() == Screen::Lobby && menu.lan() && menu.ownId() == 2 && menu.activate() == MenuAction::ToggleReady, "Lobby readiness belongs to own slot");
+    m.setReady(1, true); m.setReady(2, true); menu.networkState(m.snapshot(), 2);
+    expect(menu.playing(), "Countdown shows arena");
+    menu.escape(); expect(menu.screen() == Screen::Paused && menu.lan(), "Network overlay remembers LAN mode");
+    menu.networkState(m.snapshot(), 2); expect(menu.screen() == Screen::Paused, "Snapshots do not close personal overlay");
+    m.disconnect(1); menu.networkState(m.snapshot(), 2);
+    expect(menu.screen() == Screen::Lobby && !menu.message().empty(), "Disconnect exits overlay to lobby");
+}
+
 void testHeldInput()
 {
     GameplayInputGate gate;
@@ -169,6 +197,20 @@ void testMenuRendering()
             menu.escape();
         }
     }
+    Match match; match.connect(1); match.connect(2);
+    menu.networkState(match.snapshot(), 1);
+    const auto capture = SDL_getenv("CUBESHOT_CAPTURE_DIR");
+    for (auto screen : {Screen::Lan, Screen::Browser, Screen::Address, Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused}) {
+        menu.open(screen);
+        if (screen == Screen::Browser) menu.setRooms({{"255.255.255.255:65535", 1, true}, {"192.168.0.111:27015", 2, false}});
+        if (screen == Screen::Address) menu.text("192.168.100.100:27015");
+        expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()), "LAN screens render with room and slot state");
+        if (capture) {
+            std::filesystem::create_directories(capture);
+            const auto path = std::filesystem::path(capture) / (std::to_string(static_cast<int>(screen)) + ".bmp");
+            expect(SDL_SaveBMP(surface.get(), path.string().c_str()), "Save interface preview");
+        }
+    }
     expect(textWidth(U"Играть", 3) == 105, "Cyrillic text measures letters, not UTF-8 bytes");
 }
 
@@ -180,6 +222,7 @@ int main()
     int result = 0;
     try {
         testNavigation();
+        testLanNavigation();
         testMouseClicks();
         testHeldInput();
         testMenuRendering();
