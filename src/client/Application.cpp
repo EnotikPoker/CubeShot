@@ -23,6 +23,7 @@ bool Application::initialize() {
     return crosshair_ && SDL_SetCursor(SDL_GetDefaultCursor());
 }
 Player Application::ownPlayer() const {
+    if (network_ && network_->predictedPlayer()) return *network_->predictedPlayer();
     if (network_ && network_->snapshot()) {
         for (const auto& p : network_->snapshot()->players) if (p.id == network_->playerId()) return p;
     }

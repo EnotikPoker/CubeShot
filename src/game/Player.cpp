@@ -43,6 +43,7 @@ std::optional<Bullet> Player::takeShot()
     bullet.velocity = {shotAim_.x * weapon.bulletSpeed, shotAim_.y * weapon.bulletSpeed};
     bullet.damage = weapon.damage;
     bullet.shooterId = id;
+    bullet.shotSequence = shotSequence_;
     return bullet;
 }
 
@@ -74,7 +75,7 @@ void Player::applyInput(const PlayerInput& input)
     if (shot) shotAim_ = aimDirection;
 }
 
-void Player::requestAction(bool jump, bool shoot, Vec2 aim)
+void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence)
 {
     if (!alive()) return;
     jumpRequested_ = jumpRequested_ || jump;
@@ -82,6 +83,7 @@ void Player::requestAction(bool jump, bool shoot, Vec2 aim)
         const float length = std::hypot(aim.x, aim.y);
         if (!std::isfinite(length) || length < 0.0001f) return;
         shootRequested_ = true;
+        shotSequence_ = sequence;
         shotAim_ = {aim.x / length, aim.y / length};
     }
 }

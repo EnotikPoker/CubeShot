@@ -42,3 +42,7 @@ if(CUBESHOT_BUILD_CLIENT)
     add_test(NAME host_process COMMAND cubeshot_host_process_tests)
     set_tests_properties(host_process PROPERTIES TIMEOUT 15)
 endif()
+
+add_executable(cubeshot_prediction_tests prediction_tests.cpp)
+target_link_libraries(cubeshot_prediction_tests PRIVATE cubeshot_game)
+add_test(NAME prediction COMMAND cubeshot_prediction_tests)

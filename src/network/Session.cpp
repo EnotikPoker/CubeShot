@@ -1,4 +1,5 @@
 #include "network/Session.h"
+#include "game/Prediction.h"
 #include <steam/steamnetworkingsockets.h>
 #include <steam/isteamnetworkingutils.h>
 #include <algorithm>
@@ -81,7 +82,10 @@ struct Server::Impl {
     struct Peer {
         PlayerId id = 0;
         Clock::time_point created = Clock::now(), packet = created, input = created;
-        std::uint64_t controlSequence = 0;
+        std::uint64_t controlSequence = 0, actionSequence = 0, receivedAction = 0;
+        std::map<std::uint64_t, PlayerInput> commands;
+        std::deque<wire::Action> actions;
+        unsigned gapTicks = 0;
         bool hello = false;
     };
     std::map<HSteamNetConnection, Peer> peers;
@@ -143,7 +147,12 @@ struct Server::Impl {
         }
     }
     void broadcast(bool reliable) {
-        auto e = envelope(); *e.mutable_snapshot() = encodeSnapshot(match.snapshot());
+        auto snapshot = match.snapshot();
+        for (const auto& entry : peers) if (entry.second.id) {
+            snapshot.inputAck[entry.second.id - 1] = entry.second.controlSequence;
+            snapshot.actionAck[entry.second.id - 1] = entry.second.actionSequence;
+        }
+        auto e = envelope(); *e.mutable_snapshot() = encodeSnapshot(snapshot);
         for (const auto& entry : peers) if (entry.second.id) send(entry.first, e, reliable);
     }
     void receive(HSteamNetConnection c, const wire::Envelope& e) {
@@ -167,16 +176,22 @@ struct Server::Impl {
             broadcast(true);
         } else if (e.has_control()) {
             const auto& control = e.control();
-            if (control.sequence() <= peer.controlSequence || control.round() != match.round()) return;
-            if (!std::isfinite(control.movement()) || std::abs(control.movement()) > 1 || !validAim(control.aim())) {
-                remove(c, "Invalid input"); return;
+            if (control.round() != match.round() || match.phase() != MatchPhase::Round) return;
+            if (control.commands_size() < 1 || control.commands_size() > 16) { remove(c, "Invalid input batch"); return; }
+            for (const auto& command : control.commands()) {
+                if (!command.sequence() || !std::isfinite(command.movement()) || std::abs(command.movement()) > 1 || !validAim(command.aim())) {
+                    remove(c, "Invalid input"); return;
+                }
+                if (command.sequence() <= peer.controlSequence || command.sequence() - peer.controlSequence > 240) continue;
+                peer.commands.emplace(command.sequence(), PlayerInput{command.movement(), false, false, {command.aim().x(), command.aim().y()}});
             }
-            peer.controlSequence = control.sequence(); peer.input = Clock::now();
-            match.setInput(peer.id, {control.movement(), false, false, {control.aim().x(), control.aim().y()}});
+            peer.input = Clock::now();
         } else if (e.has_action()) {
             const auto& a = e.action();
-            if (!validAim(a.aim()) || (!a.jump() && !a.shoot()) || (a.jump() && a.shoot())) { remove(c, "Invalid action"); return; }
-            match.action(peer.id, a.round(), a.sequence(), a.jump(), a.shoot(), {a.aim().x(), a.aim().y()});
+            if (!validAim(a.aim()) || (!a.jump() && !a.shoot()) || (a.jump() && a.shoot()) || !a.sequence()) { remove(c, "Invalid action"); return; }
+            if (a.round() != match.round() || match.phase() != MatchPhase::Round || a.sequence() <= peer.receivedAction) return;
+            if (peer.actions.size() >= 240 || a.input_sequence() > peer.controlSequence + 240) { remove(c, "Too many pending actions"); return; }
+            peer.receivedAction = a.sequence(); peer.actions.push_back(a);
         } else if (e.has_ready()) {
             match.setReady(peer.id, e.ready().ready()); broadcast(true);
         } else if (e.has_leave()) remove(c, "Peer left room");
@@ -207,6 +222,24 @@ void Server::poll() {
 }
 void Server::step(float dt) {
     const auto before = impl_->match.phase();
+    // At most one fixed command per server tick; packet rate cannot speed up physics.
+    for (auto& entry : impl_->peers) {
+        auto& peer = entry.second;
+        if (!peer.id) continue;
+        if (before != MatchPhase::Round) { peer.commands.clear(); peer.actions.clear(); continue; }
+        if (!peer.commands.empty()) {
+            auto command = peer.commands.begin();
+            if (command->first == peer.controlSequence + 1 || ++peer.gapTicks >= 2) {
+                impl_->match.setInput(peer.id, command->second);
+                peer.controlSequence = command->first; peer.commands.erase(command); peer.gapTicks = 0;
+            }
+        }
+        while (!peer.actions.empty() && peer.actions.front().input_sequence() <= peer.controlSequence) {
+            const auto action = peer.actions.front(); peer.actions.pop_front();
+            impl_->match.action(peer.id, action.round(), action.sequence(), action.jump(), action.shoot(), {action.aim().x(), action.aim().y()});
+            peer.actionSequence = action.sequence();
+        }
+    }
     impl_->match.update(dt);
     const auto s = impl_->match.snapshot();
     if (before != s.phase || s.tick % 2 == 0) impl_->broadcast(before != s.phase);
@@ -222,7 +255,10 @@ struct Client::Impl {
     bool pending = false;
     std::string error, token;
     Clock::time_point started, packet, nextControl{};
-    std::uint64_t controlSequence = 0, actionSequence = 0;
+    std::uint64_t actionSequence = 0;
+    Prediction prediction;
+    Clock::time_point lastPrediction = Clock::now();
+    double predictionTime = 0;
     std::optional<WorldSnapshot> latest;
     std::deque<std::pair<Clock::time_point, WorldSnapshot>> history;
     void close() {
@@ -230,7 +266,7 @@ struct Client::Impl {
             connections.erase(connection);
             SteamNetworkingSockets()->CloseConnection(connection, 1000, "Leaving room", false);
         }
-        connection = 0; id = 0; pending = false;
+        connection = 0; id = 0; pending = false; prediction.reset(); predictionTime = 0;
     }
     ~Impl() { close(); }
     void onChanged(SteamNetConnectionStatusChangedCallback_t* e) {
@@ -246,7 +282,7 @@ Client::Client() : impl_(std::make_unique<Impl>()) {}
 Client::~Client() = default;
 bool Client::connect(const std::string& input, const std::string& token) {
     disconnect(); impl_->error.clear(); impl_->latest.reset(); impl_->history.clear();
-    impl_->controlSequence = impl_->actionSequence = 0;
+    impl_->actionSequence = 0; impl_->lastPrediction = Clock::now();
     if (!validAddress(input)) { impl_->error = "Invalid IPv4 address or port"; return false; }
     SteamNetworkingIPAddr address; address.Clear();
     const std::string target = input.find(':') == std::string::npos ? input + ":27015" : input;
@@ -279,6 +315,7 @@ void Client::poll() {
             if (!s) invalid = true;
             else if (!impl_->latest || s->tick > impl_->latest->tick) {
                 impl_->packet = Clock::now(); impl_->latest = *s;
+                impl_->prediction.reconcile(*s, impl_->id);
                 impl_->history.emplace_back(impl_->packet, *s);
                 while (impl_->history.size() > 12) impl_->history.pop_front();
             }
@@ -292,18 +329,35 @@ void Client::poll() {
 }
 void Client::control(PlayerInput input) {
     const auto now = Clock::now();
-    if (!connected() || !impl_->latest || now < impl_->nextControl) return;
-    const auto period = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 60));
-    if (now - impl_->nextControl > period) impl_->nextControl = now;
-    impl_->nextControl += period;
-    auto e = envelope(); auto* c = e.mutable_control(); c->set_sequence(++impl_->controlSequence);
-    c->set_round(impl_->latest->round); c->set_movement(input.moveDirection);
-    c->mutable_aim()->set_x(input.aimDirection.x); c->mutable_aim()->set_y(input.aimDirection.y);
+    const double elapsed = std::min(.1, std::chrono::duration<double>(now - impl_->lastPrediction).count());
+    impl_->lastPrediction = now;
+    if (!connected() || !impl_->latest) return;
+    impl_->predictionTime += elapsed;
+    while (impl_->predictionTime >= 1.0 / 120) {
+        impl_->prediction.advance(input); impl_->predictionTime -= 1.0 / 120;
+    }
+    if (now < impl_->nextControl) return;
+    impl_->nextControl = now + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 60));
+    auto e = envelope();
+    const auto& commands = impl_->prediction.commands();
+    if (commands.empty() || impl_->latest->phase != MatchPhase::Round) e.mutable_heartbeat();
+    else {
+        auto* control = e.mutable_control(); control->set_round(impl_->latest->round);
+        // Redundancy recovers short unreliable losses without retransmission stalls.
+        const auto first = commands.size() > 8 ? commands.size() - 8 : 0;
+        for (std::size_t i = first; i < commands.size(); ++i) {
+            const auto& command = commands[i]; auto* out = control->add_commands();
+            out->set_sequence(command.sequence); out->set_movement(command.input.moveDirection);
+            out->mutable_aim()->set_x(command.input.aimDirection.x); out->mutable_aim()->set_y(command.input.aimDirection.y);
+        }
+    }
     send(impl_->connection, e, false);
 }
 void Client::action(bool jump, bool shoot, Vec2 aim) {
-    if (!connected() || !impl_->latest || impl_->latest->phase != MatchPhase::Round) return;
+    if (!connected() || !impl_->latest || impl_->latest->phase != MatchPhase::Round || !std::isfinite(aim.x) || !std::isfinite(aim.y) || std::hypot(aim.x, aim.y) < .0001f) return;
     auto e = envelope(); auto* a = e.mutable_action(); a->set_sequence(++impl_->actionSequence);
+    a->set_input_sequence(impl_->prediction.sequence() + 1);
+    impl_->prediction.action(impl_->actionSequence, jump, shoot, aim);
     a->set_round(impl_->latest->round); a->set_jump(jump); a->set_shoot(shoot);
     a->mutable_aim()->set_x(aim.x); a->mutable_aim()->set_y(aim.y); send(impl_->connection, e, true);
 }
@@ -316,6 +370,7 @@ bool Client::connecting() const { return impl_->pending; }
 PlayerId Client::playerId() const { return impl_->id; }
 const std::string& Client::error() const { return impl_->error; }
 const std::optional<WorldSnapshot>& Client::snapshot() const { return impl_->latest; }
+const std::optional<Player>& Client::predictedPlayer() const { return impl_->prediction.player(); }
 WorldSnapshot Client::interpolated() const {
     if (!impl_->latest) return {};
     auto out = *impl_->latest;
@@ -339,9 +394,19 @@ WorldSnapshot Client::interpolated() const {
         }
         break;
     }
+    if (impl_->prediction.player()) {
+        for (auto& player : out.players) if (player.id == impl_->id) {
+            player = *impl_->prediction.player();
+            const auto offset = impl_->prediction.renderOffset(); player.position.x += offset.x; player.position.y += offset.y;
+        }
+        for (const auto& bullet : impl_->prediction.bullets()) out.bullets.push_back(bullet);
+    }
     return out;
 }
-void simulateNetwork(float loss, int lag) {
+void simulateNetwork(float loss, int lag, int jitter) {
+    SteamNetworkingUtils()->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Avg, jitter / 2.f);
+    SteamNetworkingUtils()->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Max, static_cast<float>(jitter));
+    SteamNetworkingUtils()->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Pct, jitter ? 100.f : 0.f);
     SteamNetworkingUtils()->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, loss);
     SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, lag);
 }

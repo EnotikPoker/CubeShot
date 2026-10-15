@@ -36,11 +36,12 @@ public:
     const std::string& error() const;
     const std::optional<WorldSnapshot>& snapshot() const;
     WorldSnapshot interpolated() const;
+    const std::optional<Player>& predictedPlayer() const;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
 // Только для воспроизводимых тестов транспорта; 0 отключает имитацию.
-void simulateNetwork(float lossPercent, int lagMilliseconds);
+void simulateNetwork(float lossPercent, int lagMilliseconds, int jitterMilliseconds = 0);
 bool validAddress(const std::string& address);
 }

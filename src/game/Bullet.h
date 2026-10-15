@@ -14,6 +14,7 @@ struct Bullet {
     PlayerId shooterId = 0;
     float lifetime = 3.0f;
     BulletId id = 0;
+    std::uint64_t shotSequence = 0;
 
     void update(float deltaSeconds);
 };

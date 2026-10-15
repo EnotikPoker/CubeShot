@@ -16,7 +16,7 @@ public:
 
     void setPlayerInput(PlayerId id, const PlayerInput& input);
     void clearPlayerInput(PlayerId id);
-    void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim);
+    void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0);
     void resetPlayers(bool swapSpawns = false);
     void update(float deltaSeconds);
 

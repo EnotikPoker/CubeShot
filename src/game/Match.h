@@ -16,6 +16,7 @@ struct WorldSnapshot {
     AbortReason aborted = AbortReason::None;
     std::vector<Player> players;
     std::vector<Bullet> bullets;
+    std::array<std::uint64_t, 2> inputAck{}, actionAck{};
 };
 
 // Чистые правила дуэли. Сеть назначает слоты; только сервер меняет Match.

@@ -124,7 +124,7 @@ void connectionAndTimeout() {
     r.host.disconnect(); r.until([&] { return r.server.hostLeft(); }, 3, "Owner leave marks server for shutdown");
 }
 void impairedCombat() {
-    Rig r; simulateNetwork(5, 100);
+    Rig r; simulateNetwork(5, 75, 30);
     r.host.connect(r.address(), "test-owner");
     r.until([&] { return r.host.connected() && r.host.snapshot(); }, 5, "Owner connects under loss");
     r.guest.connect(r.address());

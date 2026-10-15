@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.6.1 LANGUAGES C CXX)
+project(CubeShot VERSION 0.7.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -11,7 +11,7 @@ option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
     src/game/Arena.cpp src/game/Bullet.cpp src/game/Collision.cpp
-    src/game/Player.cpp src/game/Weapon.cpp src/game/World.cpp src/game/Match.cpp)
+    src/game/Prediction.cpp src/game/Player.cpp src/game/Weapon.cpp src/game/World.cpp src/game/Match.cpp)
 target_include_directories(cubeshot_game PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(cubeshot_game PUBLIC CUBESHOT_VERSION="${PROJECT_VERSION}")
 
