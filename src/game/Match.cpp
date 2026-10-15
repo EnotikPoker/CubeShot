@@ -61,7 +61,7 @@ bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence,
         sequence == 0 || sequence <= lastAction_[id - 1] ||
         !std::isfinite(aim.x) || !std::isfinite(aim.y) || std::hypot(aim.x, aim.y) < 0.0001f) return false;
     lastAction_[id - 1] = sequence;
-    world_.requestAction(id, jump, shoot, aim);
+    world_.requestAction(id, jump, shoot, aim, sequence);
     return true;
 }
 void Match::update(float dt)

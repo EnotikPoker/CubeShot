@@ -35,10 +35,10 @@ void World::resetPlayers(bool swapSpawns)
     pendingDamage_.assign(players_.size(), 0);
 }
 
-void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim)
+void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence)
 {
     for (auto& player : players_) {
-        if (player.id == id) player.requestAction(jump, shoot, aim);
+        if (player.id == id) player.requestAction(jump, shoot, aim, sequence);
     }
 }
 
