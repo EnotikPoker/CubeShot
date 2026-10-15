@@ -43,7 +43,8 @@ void testNavigation()
     menu.activate();
     expect(menu.screen() == Screen::Modes && menu.buttons().size() == 5,
            "Mode screen includes LAN, future modes, Test and Back");
-    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes && !menu.message().empty(), "Internet remains placeholder");
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Online, "Internet opens online menu");
+    menu.escape();
     menu.moveSelection(1); menu.activate();
     expect(menu.screen() == Screen::Lan, "Local mode opens LAN menu");
     menu.escape(); menu.moveSelection(2);
@@ -145,6 +146,25 @@ void testLanNavigation()
     expect(menu.screen() == Screen::Lobby && !menu.message().empty(), "Disconnect exits overlay to lobby");
 }
 
+void testOnlineNavigation()
+{
+    Menu menu; menu.open(Screen::Online);
+    expect(menu.online() && menu.activate()==MenuAction::QuickMatch,"Online quick match is distinct from LAN hosting");
+    menu.moveSelection(1); expect(menu.activate()==MenuAction::FetchOnline && menu.screen()==Screen::OnlineBrowser,"List requests remote catalog");
+    menu.setOnlineRooms({{"duel-1","CubeShot 1",1,0,0,true},{"duel-2","CubeShot 2",2,0,2,false}});
+    expect(menu.activate()==MenuAction::JoinOnline && menu.selectedServer()=="duel-1","Join uses stable server ID rather than a local address");
+    menu.moveSelection(1); expect(menu.activate()==MenuAction::None && !menu.message().empty(),"Occupied server is disabled");
+    menu.escape(); menu.moveSelection(2); menu.activate();
+    expect(menu.screen()==Screen::Nickname,"Nickname editor opens");
+    menu.clearNickname(); menu.text("Ёжик"); menu.backspace(); expect(menu.nickname()=="Ёжи","Backspace removes a whole Cyrillic character");
+    menu.text("🙂"); expect(menu.nickname()=="Ёжи","Unsupported nickname characters rejected");
+    expect(menu.activate()==MenuAction::SaveNickname && menu.screen()==Screen::Online,"Save emits a profile action");
+    menu.open(Screen::Nickname); menu.clearNickname(); menu.activate(); expect(menu.nickname()=="Игрок","Empty name gets default");
+    Match m; m.connect(1); m.connect(2); menu.networkState(m.snapshot(),1);
+    expect(menu.online() && menu.lan(),"Online lobby keeps network overlay and internet navigation");
+    menu.open(Screen::Main); menu.open(Screen::Lan); expect(!menu.online(),"Returning to LAN clears internet navigation");
+}
+
 void testHeldInput()
 {
     GameplayInputGate gate;
@@ -200,8 +220,10 @@ void testMenuRendering()
     Match match; match.connect(1); match.connect(2);
     menu.networkState(match.snapshot(), 1);
     const auto capture = SDL_getenv("CUBESHOT_CAPTURE_DIR");
-    for (auto screen : {Screen::Lan, Screen::Browser, Screen::Address, Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused}) {
+    for (auto screen : {Screen::Online, Screen::OnlineBrowser, Screen::Nickname, Screen::Lan, Screen::Browser, Screen::Address, Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused}) {
         menu.open(screen);
+        if (screen == Screen::OnlineBrowser) menu.setOnlineRooms({{"duel-1","CubeShot 1",1,0,0,true},{"duel-2","CubeShot 2",2,0,2,false}});
+        if (screen == Screen::Nickname) menu.setNickname("Тестовый Игрок");
         if (screen == Screen::Browser) menu.setRooms({{"255.255.255.255:65535", 1, true}, {"192.168.0.111:27015", 2, false}});
         if (screen == Screen::Address) menu.text("192.168.100.100:27015");
         expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()), "LAN screens render with room and slot state");
@@ -223,6 +245,7 @@ int main()
     try {
         testNavigation();
         testLanNavigation();
+        testOnlineNavigation();
         testMouseClicks();
         testHeldInput();
         testMenuRendering();

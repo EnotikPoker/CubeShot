@@ -1,11 +1,14 @@
 #pragma once
 #include "network/Protocol.h"
 #include <memory>
+#include <functional>
 namespace cubeshot::network {
 // Все методы вызываются из одного потока. Библиотека сама обслуживает UDP.
+struct Admission { PlayerId player = 0; std::string nickname; };
+using AdmitPlayer = std::function<std::optional<Admission>(const std::string&, const std::string&)>;
 class Server {
 public:
-    Server(std::uint16_t port, std::string ownerToken = {});
+    Server(std::uint16_t port, std::string ownerToken = {}, AdmitPlayer admission = {});
     ~Server();
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
@@ -24,7 +27,8 @@ public:
     ~Client();
     Client(const Client&) = delete;
     Client& operator=(const Client&) = delete;
-    bool connect(const std::string& address, const std::string& ownerToken = {});
+    bool connect(const std::string& address, const std::string& ownerToken = {},
+                 const std::string& nickname = "Игрок", const std::string& reservationToken = {});
     void disconnect();
     void poll();
     void control(PlayerInput input);

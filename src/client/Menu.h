@@ -1,12 +1,13 @@
 #pragma once
 #include "game/Match.h"
+#include "network/Directory.h"
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 namespace cubeshot::client {
-enum class Screen { Main, Modes, Playing, Paused, Lan, Browser, Address, Connecting, Lobby, Result };
-enum class MenuAction { None, StartTest, Quit, CreateRoom, FindRooms, JoinAddress, JoinRoom, CancelConnection, ToggleReady, LeaveRoom };
+enum class Screen { Main, Modes, Playing, Paused, Lan, Browser, Address, Connecting, Lobby, Result, Online, OnlineBrowser, Nickname };
+enum class MenuAction { None, StartTest, Quit, CreateRoom, FindRooms, JoinAddress, JoinRoom, CancelConnection, ToggleReady, LeaveRoom, QuickMatch, FetchOnline, JoinOnline, SaveNickname };
 struct MenuButton { std::u32string_view label; Rect bounds; bool placeholder = false; };
 struct ListedRoom { std::string address; unsigned players; bool joinable; };
 class Menu {
@@ -14,6 +15,12 @@ public:
     Screen screen() const;
     bool playing() const;
     bool lan() const { return lan_; }
+    bool online() const { return online_; }
+    const std::string& nickname() const { return nickname_; }
+    void setNickname(std::string name) { nickname_ = std::move(name); }
+    void clearNickname() { nickname_.clear(); }
+    void setOnlineRooms(std::vector<network::DirectoryRoom> rooms);
+    const std::string& selectedServer() const { return selectedServer_; }
     int selection() const;
     std::u32string_view message() const;
     std::vector<MenuButton> buttons() const;
@@ -40,7 +47,11 @@ private:
     int selection_ = 0;
     std::optional<int> pressed_;
     std::u32string message_;
-    bool lan_ = false;
+    bool lan_ = false, online_ = false;
+    std::string nickname_ = "Игрок", selectedServer_;
+    std::vector<network::DirectoryRoom> onlineRooms_;
+    std::vector<std::u32string> onlineLabels_;
+    std::size_t onlinePage_ = 0;
     std::string address_, selectedAddress_;
     std::vector<ListedRoom> rooms_;
     std::size_t roomPage_ = 0;
