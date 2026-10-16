@@ -7,9 +7,9 @@ message Snapshot {
   uint64 tick = 1; uint32 round = 2; uint32 phase = 3; float remaining = 4;
   repeated uint32 score = 5; repeated bool connected = 6; repeated bool ready = 7;
   uint32 winner = 8; uint32 aborted = 9; repeated Player players = 10; repeated Bullet bullets = 11;
-  repeated uint64 input_ack = 12; repeated uint64 action_ack = 13;
+  repeated uint64 input_ack = 12; repeated uint64 action_ack = 13; repeated string names = 14;
 }
-message Hello { string owner_token = 1; }
+message Hello { string owner_token = 1; string nickname = 2; string reservation_token = 3; }
 message Welcome { uint32 player_id = 1; }
 message InputCommand { uint64 sequence = 1; float movement = 2; Vec aim = 3; }
 message Control { uint64 sequence = 1; uint32 round = 2; float movement = 3; Vec aim = 4; repeated InputCommand commands = 5; }

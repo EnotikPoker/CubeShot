@@ -1,6 +1,7 @@
 #pragma once
 #include "game/World.h"
 #include <array>
+#include <string>
 
 namespace cubeshot {
 enum class MatchPhase { Lobby, Countdown, Round, RoundEnd, Finished };
@@ -17,6 +18,7 @@ struct WorldSnapshot {
     std::vector<Player> players;
     std::vector<Bullet> bullets;
     std::array<std::uint64_t, 2> inputAck{}, actionAck{};
+    std::array<std::string, 2> names{"Игрок 1", "Игрок 2"};
 };
 
 // Чистые правила дуэли. Сеть назначает слоты; только сервер меняет Match.

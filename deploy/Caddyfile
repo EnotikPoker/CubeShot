@@ -1,0 +1,9 @@
+# Replace this hostname with your domain pointing at the VPS.
+play.example.org {
+    handle /v1/* {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-CubeShot-Client-IP {remote_host}
+        }
+    }
+    respond 404
+}

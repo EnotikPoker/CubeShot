@@ -6,7 +6,7 @@
 namespace cubeshot {
 void Prediction::reset() {
     player_.reset(); commands_.clear(); actions_.clear(); bullets_.clear();
-    sequence_ = actionAck_ = 0; round_ = 0; phase_ = MatchPhase::Lobby; offset_ = {};
+    sequence_ = actionAck_ = 0; round_ = 0; phase_ = MatchPhase::Lobby; offset_ = {}; waitingForSnapshot_ = false;
 }
 void Prediction::simulate(const PredictedCommand& command) {
     auto input = command.input; input.jump = input.shoot = false;
@@ -21,10 +21,11 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own) {
     const auto found = std::find_if(snapshot.players.begin(), snapshot.players.end(),
         [own](const Player& p) { return p.id == own; });
     if (found == snapshot.players.end() || own < 1 || own > 2) { reset(); return; }
-    const bool boundary = !player_ || round_ != snapshot.round || phase_ != snapshot.phase || !found->alive();
+    const bool boundary = waitingForSnapshot_ || !player_ || round_ != snapshot.round || phase_ != snapshot.phase || !found->alive();
     const auto old = player_ ? player_->position : found->position;
     const auto ack = snapshot.inputAck[own - 1];
     if (boundary) { sequence_ = ack; commands_.clear(); actions_.clear(); bullets_.clear(); offset_ = {}; }
+    waitingForSnapshot_ = false;
     round_ = snapshot.round; phase_ = snapshot.phase; player_ = *found;
     sequence_ = std::max(sequence_, ack);
     actionAck_ = snapshot.actionAck[own - 1];
@@ -40,9 +41,9 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own) {
     }
 }
 void Prediction::advance(PlayerInput input) {
-    if (!player_ || phase_ != MatchPhase::Round || !player_->alive()) return;
+    if (waitingForSnapshot_ || !player_ || phase_ != MatchPhase::Round || !player_->alive()) return;
     // Two seconds maximum; recover from the next authoritative snapshot.
-    if (commands_.size() >= 240) { commands_.clear(); actions_.clear(); bullets_.clear(); }
+    if (commands_.size() >= 240) { commands_.clear(); actions_.clear(); bullets_.clear(); waitingForSnapshot_ = true; return; }
     PredictedCommand command{++sequence_, input}; commands_.push_back(command);
     simulate(command);
     offset_.x *= .85f; offset_.y *= .85f;

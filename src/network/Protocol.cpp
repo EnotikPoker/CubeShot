@@ -1,4 +1,5 @@
 #include "network/Protocol.h"
+#include "network/Identity.h"
 #include <cmath>
 #include <set>
 namespace cubeshot::network {
@@ -19,6 +20,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
     wire::Snapshot out;
     out.set_tick(s.tick); out.set_round(s.round); out.set_phase(static_cast<unsigned>(s.phase));
     out.set_remaining(s.remaining); out.set_winner(s.winner); out.set_aborted(static_cast<unsigned>(s.aborted));
+    for (const auto& name : s.names) out.add_names(name);
     for (auto n : s.inputAck) out.add_input_ack(n);
     for (auto n : s.actionAck) out.add_action_ack(n);
     for (auto n : s.score) out.add_score(n);
@@ -39,11 +41,13 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
 {
     if (in.phase() > static_cast<unsigned>(MatchPhase::Finished) || in.aborted() > 2 || in.winner() > 2 ||
         in.score_size() != 2 || in.connected_size() != 2 || in.ready_size() != 2 || in.players_size() != 2 ||
-        in.input_ack_size() != 2 || in.action_ack_size() != 2 || in.bullets_size() > 64 || !std::isfinite(in.remaining()) || in.remaining() < 0 || in.remaining() > 3.01f) return {};
+        in.names_size() != 2 || in.input_ack_size() != 2 || in.action_ack_size() != 2 || in.bullets_size() > 64 || !std::isfinite(in.remaining()) || in.remaining() < 0 || in.remaining() > 3.01f) return {};
     WorldSnapshot s;
     s.tick = in.tick(); s.round = in.round(); s.phase = static_cast<MatchPhase>(in.phase());
     s.remaining = in.remaining(); s.winner = in.winner(); s.aborted = static_cast<AbortReason>(in.aborted());
     for (int i = 0; i < 2; ++i) {
+        if (!validNickname(in.names(i))) return {};
+        s.names[i] = in.names(i);
         if (in.score(i) > Match::winsRequired) return {};
         s.inputAck[i] = in.input_ack(i); s.actionAck[i] = in.action_ack(i);
         s.score[i] = in.score(i); s.connected[i] = in.connected(i); s.ready[i] = in.ready(i);

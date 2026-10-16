@@ -26,6 +26,8 @@ int main() {
         expect(prediction.bullets().empty(), "Acknowledgement removes preliminary bullet even for rejected or already collided shot");
         for (int i=0;i<500;++i) prediction.advance({1,false,false,{1,0}});
         expect(prediction.commands().size() <= 240, "Input history bounded to two seconds");
+        prediction.reconcile(snapshot,1); prediction.advance({1,false,false,{1,0}});
+        expect(prediction.sequence()==snapshot.inputAck[0]+1,"History overflow recovers sequence from authoritative ack");
         snapshot.round++; snapshot.phase = MatchPhase::Countdown; prediction.reconcile(snapshot,1);
         expect(prediction.commands().empty() && prediction.bullets().empty(), "Round transition clears pending effects");
         snapshot.phase=MatchPhase::Round; snapshot.players[0].health=0; prediction.reconcile(snapshot,1);

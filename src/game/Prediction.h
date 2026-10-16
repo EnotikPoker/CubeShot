@@ -32,5 +32,6 @@ private:
     std::uint32_t round_ = 0;
     MatchPhase phase_ = MatchPhase::Lobby;
     Vec2 offset_{};
+    bool waitingForSnapshot_ = false;
 };
 }

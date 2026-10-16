@@ -1,0 +1,21 @@
+[Unit]
+Description=CubeShot public duel servers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+EnvironmentFile=/etc/cubeshot/online.env
+ExecStart=/opt/cubeshot/bin/cubeshot_online_server --public-ip ${CUBESHOT_PUBLIC_IP} --api-port 8080 --first-port 27020 --arenas 2 --trust-proxy
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

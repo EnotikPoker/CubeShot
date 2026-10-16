@@ -6,6 +6,8 @@
 #include "client/HostProcess.h"
 #include "network/Session.h"
 #include "network/Discovery.h"
+#include "network/Directory.h"
+#include "client/Profile.h"
 #include <memory>
 
 struct SDL_Window;
@@ -16,7 +18,7 @@ namespace cubeshot::client {
 
 class Application {
 public:
-    Application() = default;
+    explicit Application(std::string directoryUrl = {}) : directoryOverride_(std::move(directoryUrl)) {}
     ~Application();
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
@@ -31,6 +33,7 @@ private:
     void leaveRoom();
     void screenChanged(Screen before);
     void updateNetwork();
+    void updateDirectory();
 
     bool sdlInitialized_ = false;
     SDL_Window* window_ = nullptr;
@@ -42,7 +45,11 @@ private:
     std::unique_ptr<network::Client> network_;
     std::unique_ptr<network::Discovery> discovery_;
     HostProcess host_;
-    bool hosting_ = false;
+    bool hosting_ = false, onlineSession_ = false;
+    Profile profile_;
+    network::Directory directory_;
+    std::string directoryOverride_, reservationToken_;
+    std::uint64_t nextDirectoryRefresh_ = 0;
     std::uint32_t lastRound_ = 0;
 };
 

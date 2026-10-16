@@ -1,5 +1,6 @@
 #include "network/Session.h"
 #include "game/Prediction.h"
+#include "network/Identity.h"
 #include <steam/steamnetworkingsockets.h>
 #include <steam/isteamnetworkingutils.h>
 #include <algorithm>
@@ -91,9 +92,11 @@ struct Server::Impl {
     std::map<HSteamNetConnection, Peer> peers;
     Match match;
     std::string token;
+    AdmitPlayer admission;
+    std::array<std::string, 2> names{"Игрок 1", "Игрок 2"};
     std::uint16_t port = 0;
     bool hostGone = false;
-    explicit Impl(std::uint16_t requested, std::string owner) : token(std::move(owner)) {
+    explicit Impl(std::uint16_t requested, std::string owner, AdmitPlayer admit) : token(std::move(owner)), admission(std::move(admit)) {
         // LAN v1 uses IPv4. An unspecified IPv6 address lets GNS retry IPv4
         // after a failed bind; on Windows that can hide an occupied dual-stack port.
         SteamNetworkingIPAddr address; address.SetIPv4(0, requested);
@@ -124,6 +127,7 @@ struct Server::Impl {
         const auto id = found->second.id;
         if (id) {
             match.disconnect(id, abort);
+            names[id - 1] = "Игрок " + std::to_string(id);
             if (!token.empty() && id == 1) hostGone = true;
         }
         connections.erase(c);
@@ -147,7 +151,7 @@ struct Server::Impl {
         }
     }
     void broadcast(bool reliable) {
-        auto snapshot = match.snapshot();
+        auto snapshot = match.snapshot(); snapshot.names = names;
         for (const auto& entry : peers) if (entry.second.id) {
             snapshot.inputAck[entry.second.id - 1] = entry.second.controlSequence;
             snapshot.actionAck[entry.second.id - 1] = entry.second.actionSequence;
@@ -161,17 +165,24 @@ struct Server::Impl {
         auto& peer = found->second;
         peer.packet = Clock::now();
         if (!peer.hello) {
-            if (!e.has_hello() || e.hello().owner_token().size() > 128) { remove(c, "Invalid handshake"); return; }
+            if (!e.has_hello() || e.hello().owner_token().size() > 128 || e.hello().reservation_token().size() > 64 || !validNickname(e.hello().nickname())) { remove(c, "Invalid handshake"); return; }
             PlayerId id = 0;
             const auto occupied = [&](PlayerId n) {
                 return std::any_of(peers.begin(), peers.end(), [n](const auto& p) { return p.second.id == n; });
             };
-            if (!token.empty()) {
+            std::string nickname = e.hello().nickname();
+            if (admission) {
+                if (auto accepted = admission(e.hello().reservation_token(), nickname)) {
+                    if (accepted->player >= 1 && accepted->player <= 2 && !occupied(accepted->player)) {
+                        id = accepted->player; nickname = accepted->nickname;
+                    }
+                }
+            } else if (!token.empty()) {
                 if (e.hello().owner_token() == token && !occupied(1)) id = 1;
                 else if (e.hello().owner_token().empty() && occupied(1) && !occupied(2) && match.phase() == MatchPhase::Lobby) id = 2;
             } else if (match.phase() == MatchPhase::Lobby) id = !occupied(1) ? 1 : !occupied(2) ? 2 : 0;
-            if (!id) { remove(c, "Room full or match in progress"); return; }
-            peer.id = id; peer.hello = true; match.connect(id);
+            if (!id) { remove(c, admission ? "Reservation invalid or expired" : "Room full or match in progress"); return; }
+            peer.id = id; peer.hello = true; names[id - 1] = nickname; match.connect(id);
             auto welcome = envelope(); welcome.mutable_welcome()->set_player_id(id); send(c, welcome, true);
             broadcast(true);
         } else if (e.has_control()) {
@@ -198,7 +209,7 @@ struct Server::Impl {
         else if (!e.has_heartbeat()) remove(c, "Unexpected message");
     }
 };
-Server::Server(std::uint16_t port, std::string token) : impl_(std::make_unique<Impl>(port, std::move(token))) {}
+Server::Server(std::uint16_t port, std::string token, AdmitPlayer admission) : impl_(std::make_unique<Impl>(port, std::move(token), std::move(admission))) {}
 Server::~Server() = default;
 void Server::poll() {
     SteamNetworkingSockets()->RunCallbacks();
@@ -253,7 +264,7 @@ struct Client::Impl {
     HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
     PlayerId id = 0;
     bool pending = false;
-    std::string error, token;
+    std::string error, token, nickname, reservation;
     Clock::time_point started, packet, nextControl{};
     std::uint64_t actionSequence = 0;
     Prediction prediction;
@@ -271,7 +282,8 @@ struct Client::Impl {
     ~Impl() { close(); }
     void onChanged(SteamNetConnectionStatusChangedCallback_t* e) {
         if (e->m_info.m_eState == k_ESteamNetworkingConnectionState_Connected) {
-            auto hello = envelope(); hello.mutable_hello()->set_owner_token(token); send(connection, hello, true);
+            auto hello = envelope(); hello.mutable_hello()->set_owner_token(token);
+            hello.mutable_hello()->set_nickname(nickname); hello.mutable_hello()->set_reservation_token(reservation); send(connection, hello, true);
         } else if (e->m_info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
                    e->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
             error = e->m_info.m_szEndDebug; if (error.empty()) error = "Connection lost"; close();
@@ -280,9 +292,11 @@ struct Client::Impl {
 };
 Client::Client() : impl_(std::make_unique<Impl>()) {}
 Client::~Client() = default;
-bool Client::connect(const std::string& input, const std::string& token) {
+bool Client::connect(const std::string& input, const std::string& token, const std::string& nickname, const std::string& reservation) {
     disconnect(); impl_->error.clear(); impl_->latest.reset(); impl_->history.clear();
     impl_->actionSequence = 0; impl_->lastPrediction = Clock::now();
+    if (!validNickname(nickname) || reservation.size() > 64) { impl_->error = "Invalid nickname or reservation"; return false; }
+    impl_->nickname = nickname; impl_->reservation = reservation;
     if (!validAddress(input)) { impl_->error = "Invalid IPv4 address or port"; return false; }
     SteamNetworkingIPAddr address; address.Clear();
     const std::string target = input.find(':') == std::string::npos ? input + ":27015" : input;
