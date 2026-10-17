@@ -1,15 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.8.0 LANGUAGES C CXX)
+project(CubeShot VERSION 0.8.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-if(WIN32)
-    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
-endif()
-if(MSVC)
-    add_compile_options(/utf-8)
-endif()
 option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
@@ -87,3 +81,24 @@ if(WIN32)
             VERBATIM)
     endforeach()
 endif()
+
+# Project flags must not change the build of fetched third-party libraries.
+# Valve's internal headers contain legacy-encoded comments and manage their own
+# Windows header definitions. Apply our Unicode and Windows settings only to
+# CubeShot compilation units, including the interface tests.
+get_property(cubeshot_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+if(BUILD_TESTING)
+    get_property(cubeshot_test_targets DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests" PROPERTY BUILDSYSTEM_TARGETS)
+    list(APPEND cubeshot_targets ${cubeshot_test_targets})
+endif()
+foreach(app IN LISTS cubeshot_targets)
+    get_target_property(target_type ${app} TYPE)
+    if(app MATCHES "^cubeshot_" AND (target_type STREQUAL "STATIC_LIBRARY" OR target_type STREQUAL "EXECUTABLE"))
+        if(MSVC)
+            target_compile_options(${app} PRIVATE /utf-8)
+        endif()
+        if(WIN32)
+            target_compile_definitions(${app} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+        endif()
+    endif()
+endforeach()
