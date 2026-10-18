@@ -73,13 +73,13 @@ jobs:
       - name: Upload programs and runtime libraries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: CubeShot-${{ runner.os }}-0.8.1
+          name: CubeShot-${{ runner.os }}-0.8.2
           path: build/bin/
       - name: Upload diagnostic logs on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: CI-logs-${{ runner.os }}-0.8.1
+          name: CI-logs-${{ runner.os }}-0.8.2
           if-no-files-found: warn
           path: |
             build/build.log

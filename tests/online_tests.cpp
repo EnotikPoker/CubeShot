@@ -1,7 +1,8 @@
 #include "online/Service.h"
 #include "network/Directory.h"
 #include "network/Identity.h"
-#include "network/Session.h"
+#include "network/Client.h"
+#include "network/Protocol.h"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <chrono>

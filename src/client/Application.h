@@ -1,24 +1,26 @@
 #pragma once
 
-#include "game/World.h"
+#include "client/ConnectionController.h"
 #include "client/Input.h"
 #include "client/Menu.h"
-#include "client/HostProcess.h"
-#include "network/Session.h"
-#include "network/Discovery.h"
-#include "network/Directory.h"
 #include "client/Profile.h"
-#include <memory>
+#include "game/World.h"
+#include <cstdint>
+#include <string>
+#include <utility>
 
 struct SDL_Window;
 struct SDL_Renderer;
 struct SDL_Cursor;
 
-namespace cubeshot::client {
+namespace cubeshot::client
+{
 
-class Application {
+class Application
+{
 public:
     explicit Application(std::string directoryUrl = {}) : directoryOverride_(std::move(directoryUrl)) {}
+
     ~Application();
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
@@ -30,10 +32,8 @@ private:
     Player ownPlayer() const;
     PlayerInput rawInput() const;
     bool handle(MenuAction action);
-    void leaveRoom();
     void screenChanged(Screen before);
-    void updateNetwork();
-    void updateDirectory();
+    void updateSession();
 
     bool sdlInitialized_ = false;
     SDL_Window* window_ = nullptr;
@@ -42,14 +42,9 @@ private:
     World world_;
     Menu menu_;
     GameplayInputGate inputGate_;
-    std::unique_ptr<network::Client> network_;
-    std::unique_ptr<network::Discovery> discovery_;
-    HostProcess host_;
-    bool hosting_ = false, onlineSession_ = false;
+    ConnectionController connections_;
     Profile profile_;
-    network::Directory directory_;
-    std::string directoryOverride_, reservationToken_;
-    std::uint64_t nextDirectoryRefresh_ = 0;
+    std::string directoryOverride_;
     std::uint32_t lastRound_ = 0;
 };
 

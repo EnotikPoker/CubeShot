@@ -56,3 +56,19 @@ add_executable(cubeshot_tls_tests tls_tests.cpp)
 target_link_libraries(cubeshot_tls_tests PRIVATE cubeshot_directory httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
 add_test(NAME tls COMMAND cubeshot_tls_tests)
 set_tests_properties(tls PROPERTIES TIMEOUT 15)
+
+add_executable(cubeshot_interpolation_tests interpolation_tests.cpp)
+target_link_libraries(cubeshot_interpolation_tests PRIVATE cubeshot_network)
+add_test(NAME interpolation COMMAND cubeshot_interpolation_tests)
+
+if(CUBESHOT_BUILD_CLIENT)
+    add_executable(cubeshot_connection_tests
+        connection_tests.cpp
+        ../src/client/ConnectionController.cpp
+        ../src/client/HostProcess.cpp
+        ../src/client/Menu.cpp)
+    target_link_libraries(cubeshot_connection_tests PRIVATE
+        cubeshot_online cubeshot_directory SDL3::SDL3)
+    add_test(NAME connection COMMAND cubeshot_connection_tests)
+    set_tests_properties(connection PROPERTIES TIMEOUT 35)
+endif()

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.8.1 LANGUAGES C CXX)
+project(CubeShot VERSION 0.8.2 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -34,7 +34,9 @@ FetchContent_MakeAvailable(GameNetworkingSockets)
 protobuf_generate_cpp(PROTO_SOURCES PROTO_HEADERS src/network/protocol.proto)
 add_library(cubeshot_network STATIC
     ${PROTO_SOURCES} ${PROTO_HEADERS}
-    src/network/Identity.cpp src/network/Protocol.cpp src/network/Session.cpp src/network/Discovery.cpp)
+    src/network/Identity.cpp src/network/Protocol.cpp src/network/Address.cpp
+    src/network/Client.cpp src/network/Server.cpp src/network/detail/GnsRuntime.cpp
+    src/network/SnapshotInterpolation.cpp src/network/NetworkSimulation.cpp src/network/Discovery.cpp)
 target_include_directories(cubeshot_network PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(cubeshot_network PUBLIC cubeshot_game protobuf::libprotobuf PRIVATE GameNetworkingSockets::static OpenSSL::Crypto)
 if(WIN32)
@@ -47,14 +49,15 @@ target_link_libraries(cubeshot_directory PUBLIC cubeshot_network PRIVATE httplib
 if(CUBESHOT_BUILD_CLIENT)
     find_package(SDL3 3.2 REQUIRED CONFIG)
     add_executable(cubeshot_client
-        src/client/main.cpp src/client/Profile.cpp src/client/Application.cpp src/client/Input.cpp
+        src/client/main.cpp src/client/Profile.cpp src/client/Application.cpp src/client/ConnectionController.cpp src/client/Input.cpp
         src/client/Menu.cpp src/client/MenuRenderer.cpp src/client/BitmapFont.cpp
         src/client/SceneRenderer.cpp src/client/HostProcess.cpp)
     target_link_libraries(cubeshot_client PRIVATE cubeshot_game cubeshot_network cubeshot_directory nlohmann_json::nlohmann_json SDL3::SDL3)
 endif()
 add_executable(cubeshot_server src/server/main.cpp)
 target_link_libraries(cubeshot_server PRIVATE cubeshot_network)
-add_library(cubeshot_online STATIC src/online/Service.cpp)
+add_library(cubeshot_online STATIC
+    src/online/Service.cpp src/online/ArenaPool.cpp src/online/Reservations.cpp src/online/HttpApi.cpp)
 target_link_libraries(cubeshot_online PUBLIC cubeshot_network PRIVATE httplib::httplib nlohmann_json::nlohmann_json Threads::Threads)
 add_executable(cubeshot_online_server src/online/main.cpp)
 target_link_libraries(cubeshot_online_server PRIVATE cubeshot_online)
