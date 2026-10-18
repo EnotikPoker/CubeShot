@@ -17,7 +17,7 @@ if(CUBESHOT_BUILD_CLIENT)
         ../src/client/BitmapFont.cpp
         ../src/client/Input.cpp
     )
-    target_link_libraries(cubeshot_menu_tests PRIVATE cubeshot_game SDL3::SDL3)
+    target_link_libraries(cubeshot_menu_tests PRIVATE cubeshot_game cubeshot_network SDL3::SDL3)
     add_test(NAME menu COMMAND cubeshot_menu_tests)
 endif()
 
@@ -46,3 +46,13 @@ endif()
 add_executable(cubeshot_prediction_tests prediction_tests.cpp)
 target_link_libraries(cubeshot_prediction_tests PRIVATE cubeshot_game)
 add_test(NAME prediction COMMAND cubeshot_prediction_tests)
+
+add_executable(cubeshot_online_tests online_tests.cpp)
+target_link_libraries(cubeshot_online_tests PRIVATE cubeshot_online cubeshot_directory httplib::httplib nlohmann_json::nlohmann_json)
+add_test(NAME online COMMAND cubeshot_online_tests)
+set_tests_properties(online PROPERTIES TIMEOUT 45)
+
+add_executable(cubeshot_tls_tests tls_tests.cpp)
+target_link_libraries(cubeshot_tls_tests PRIVATE cubeshot_directory httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
+add_test(NAME tls COMMAND cubeshot_tls_tests)
+set_tests_properties(tls PROPERTIES TIMEOUT 15)
