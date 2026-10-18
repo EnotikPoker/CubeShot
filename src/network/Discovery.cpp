@@ -3,9 +3,13 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <iphlpapi.h>
+// The Windows SDK requires Winsock types before the IP Helper headers.
+// Preserve this dependency order when formatting the file.
+// clang-format off
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
+// clang-format on
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>
