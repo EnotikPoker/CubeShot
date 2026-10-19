@@ -8,7 +8,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
-#include "network/Session.h"
+#include "network/Server.h"
+#include "network/Client.h"
+#include "network/NetworkSimulation.h"
+#include "network/Protocol.h"
 #include <steam/steamnetworkingsockets.h>
 #include <chrono>
 #include <cmath>

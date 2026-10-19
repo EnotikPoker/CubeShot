@@ -1,5 +1,5 @@
 #include "network/Protocol.h"
-#include "network/Session.h"
+#include "network/Address.h"
 #include <iostream>
 #include <limits>
 #include <stdexcept>

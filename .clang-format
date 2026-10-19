@@ -1,0 +1,16 @@
+BasedOnStyle: LLVM
+Standard: c++17
+IndentWidth: 4
+AccessModifierOffset: -4
+ColumnLimit: 110
+BreakBeforeBraces: Allman
+IndentCaseLabels: true
+PointerAlignment: Left
+NamespaceIndentation: None
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+SortIncludes: CaseSensitive
+SeparateDefinitionBlocks: Always

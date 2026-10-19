@@ -1,5 +1,6 @@
 #include "client/HostProcess.h"
-#include "network/Session.h"
+#include "network/Client.h"
+#include "network/Server.h"
 #include <SDL3/SDL.h>
 #include <iostream>
 #include <stdexcept>
