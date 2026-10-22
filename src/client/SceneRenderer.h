@@ -3,15 +3,20 @@
 
 struct SDL_Renderer;
 
-namespace cubeshot {
+namespace cubeshot
+{
 class World;
 struct WorldSnapshot;
-}
+} // namespace cubeshot
 
-namespace cubeshot::client {
+namespace cubeshot::client
+{
 
-bool renderSnapshot(SDL_Renderer* renderer, const WorldSnapshot& snapshot, PlayerId own);
+class Effects;
+bool renderSnapshot(SDL_Renderer* renderer, const WorldSnapshot& snapshot, PlayerId own,
+                    const Effects* effects = nullptr);
 
-bool renderScene(SDL_Renderer* renderer, const World& world, bool present = true);
+bool renderScene(SDL_Renderer* renderer, const World& world, bool present = true,
+                 const Effects* effects = nullptr);
 
 } // namespace cubeshot::client

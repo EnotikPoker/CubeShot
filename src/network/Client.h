@@ -22,6 +22,9 @@ public:
     void control(PlayerInput input);
     void action(bool jump, bool shoot, Vec2 aim);
     void ready(bool value);
+    void selectMap(MapId map);
+    void changeMap();
+    std::vector<GameEvent> takeEvents();
     bool connected() const;
     bool connecting() const;
     PlayerId playerId() const;

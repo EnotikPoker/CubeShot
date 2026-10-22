@@ -1,6 +1,7 @@
 #pragma once
 
 #include "client/ConnectionController.h"
+#include "client/Effects.h"
 #include "client/Input.h"
 #include "client/Menu.h"
 #include "client/Profile.h"
@@ -32,6 +33,7 @@ public:
 private:
     bool initialize();
     Player ownPlayer() const;
+    Rect arenaBounds() const;
     PlayerInput rawInput() const;
     bool handle(MenuAction action);
     void screenChanged(Screen before);
@@ -44,6 +46,8 @@ private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Cursor* crosshair_ = nullptr;
     World world_;
+    Effects effects_;
+    bool wasConnected_ = false;
     Menu menu_;
     GameplayInputGate inputGate_;
     InputEventState eventInput_;

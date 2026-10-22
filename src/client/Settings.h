@@ -80,6 +80,7 @@ struct DisplaySettings
 
 struct Settings
 {
+    bool blood = true, shake = true;
     DisplaySettings display;
     InputBindings bindings;
     Settings();

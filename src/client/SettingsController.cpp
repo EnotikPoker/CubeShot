@@ -33,7 +33,7 @@ void SettingsController::begin()
     draft_ = active_;
     draftNickname_ = nickname_;
     tab_ = SettingsTab::Player;
-    selection_ = 3;
+    selection_ = 4;
     editingNickname_ = preview_ = false;
     capture_.reset();
     pressed_.reset();
@@ -43,7 +43,7 @@ void SettingsController::begin()
 void SettingsController::selectTab(SettingsTab tab)
 {
     tab_ = tab;
-    selection_ = 3;
+    selection_ = 4;
     pressed_.reset();
     capture_.reset();
     message_.clear();
@@ -87,7 +87,7 @@ std::u32string SettingsController::bind(InputAction action, unsigned slot, Input
 void SettingsController::resetDraft()
 {
     draft_ = Settings{};
-    message_ = U"Экран и управление сброшены. Нажмите Применить";
+    message_ = U"Настройки сброшены. Нажмите Применить";
 }
 
 std::vector<SettingsItem> SettingsController::items() const
@@ -97,9 +97,9 @@ std::vector<SettingsItem> SettingsController::items() const
         return {{Kind::Confirm, 0, 0, {{170, 280}, {290, 52}}, U"Сохранить"},
                 {Kind::Revert, 0, 0, {{500, 280}, {290, 52}}, U"Вернуть"}};
     std::vector<SettingsItem> out;
-    const std::u32string tabs[]{U"Игрок", U"Экран", U"Управление"};
-    for (int i = 0; i < 3; ++i)
-        out.push_back({Kind::Tab, i, 0, {{70.f + 280 * i, 78}, {260, 42}}, tabs[i]});
+    const std::u32string tabs[]{U"Игрок", U"Экран", U"Управление", U"Эффекты"};
+    for (int i = 0; i < 4; ++i)
+        out.push_back({Kind::Tab, i, 0, {{40.f + 225 * i, 78}, {205, 42}}, tabs[i]});
     if (tab_ == SettingsTab::Player)
         out.push_back({Kind::Nickname,
                        0,
@@ -121,6 +121,19 @@ std::vector<SettingsItem> SettingsController::items() const
                            {{200, 145.f + 58 * i}, {560, 46}},
                            labels[i],
                            i != 1 || !d.fullscreen});
+    }
+    if (tab_ == SettingsTab::Effects)
+    {
+        out.push_back({Kind::EffectValue,
+                       0,
+                       0,
+                       {{200, 175}, {560, 46}},
+                       U"Кровь: " + std::u32string(draft_.blood ? U"Вкл" : U"Выкл")});
+        out.push_back({Kind::EffectValue,
+                       1,
+                       0,
+                       {{200, 239}, {560, 46}},
+                       U"Тряска экрана: " + std::u32string(draft_.shake ? U"Вкл" : U"Выкл")});
     }
     if (tab_ == SettingsTab::Controls)
         for (int a = 0; a < 5; ++a)
@@ -189,6 +202,12 @@ SettingsIntent SettingsController::activate(int index, int direction)
             }
             break;
         }
+        case Kind::EffectValue:
+            if (item.value == 0)
+                draft_.blood = !draft_.blood;
+            else
+                draft_.shake = !draft_.shake;
+            break;
         case Kind::Apply:
             return SettingsIntent::Apply;
         case Kind::Cancel:
@@ -265,7 +284,7 @@ SettingsIntent SettingsController::event(const SDL_Event& event, SDL_Window* win
             return preview_ ? SettingsIntent::Revert : SettingsIntent::Close;
         if (key == SDL_SCANCODE_TAB && !preview_)
             selectTab(static_cast<SettingsTab>(
-                (static_cast<int>(tab_) + ((event.key.mod & SDL_KMOD_SHIFT) ? 2 : 1)) % 3));
+                (static_cast<int>(tab_) + ((event.key.mod & SDL_KMOD_SHIFT) ? 3 : 1)) % 4));
         else if (key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN)
         {
             const int count = static_cast<int>(items().size());
@@ -371,7 +390,7 @@ void SettingsController::confirm(WindowSettings& window, const Save& save)
         return;
     }
     preview_ = false;
-    selection_ = 3;
+    selection_ = 4;
     finish(save);
 }
 
@@ -392,7 +411,7 @@ void SettingsController::cancelPreview(WindowSettings& window)
         return;
     restore(window);
     preview_ = false;
-    selection_ = 3;
+    selection_ = 4;
     pressed_.reset();
     message_ = U"Изменения экрана отменены";
 }

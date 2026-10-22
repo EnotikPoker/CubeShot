@@ -17,7 +17,8 @@ enum class SettingsTab
 {
     Player,
     Display,
-    Controls
+    Controls,
+    Effects
 };
 enum class SettingsIntent
 {
@@ -35,6 +36,7 @@ struct SettingsItem
         Tab,
         Nickname,
         DisplayValue,
+        EffectValue,
         Binding,
         ClearBinding,
         Apply,

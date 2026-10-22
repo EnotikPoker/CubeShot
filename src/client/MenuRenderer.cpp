@@ -27,6 +27,27 @@ bool centeredText(SDL_Renderer* renderer, std::u32string_view text, float y, int
     return drawText(renderer, text, {(960 - textWidth(text, scale)) / 2, y}, scale, color);
 }
 
+bool preview(SDL_Renderer* renderer, MapId id, Rect box)
+{
+    const auto arena = Arena::create(id, true);
+    const float scale = box.size.x / arena.bounds.size.x;
+    if (!rectangle(renderer, box, {14, 21, 31, 255}))
+        return false;
+    for (const auto& platform : arena.platforms)
+    {
+        Rect r{{box.position.x + platform.position.x * scale, box.position.y + platform.position.y * scale},
+               {platform.size.x * scale, platform.size.y * scale}};
+        if (!rectangle(renderer, r, {115, 139, 154, 255}))
+            return false;
+    }
+    for (const auto& spawn : arena.spawnPoints)
+        if (!rectangle(renderer,
+                       {{box.position.x + spawn.x * scale, box.position.y + spawn.y * scale},
+                        {48 * scale, 48 * scale}},
+                       {80, 175, 255, 255}))
+            return false;
+    return true;
+}
 } // namespace
 
 bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
@@ -45,8 +66,16 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
     }
     else
     {
-        if (!SDL_SetRenderDrawColor(renderer, 20, 25, 35, 255) || !SDL_RenderClear(renderer) ||
-            !rectangle(renderer, {{90, 245}, {80, 80}}, {28, 41, 57, 255}) ||
+        if (menu.screen() == Screen::Result)
+        {
+            if (!SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND) ||
+                !rectangle(renderer, {{0, 0}, {960, 540}}, {8, 12, 20, 210}) ||
+                !SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE))
+                return false;
+        }
+        else if (!SDL_SetRenderDrawColor(renderer, 20, 25, 35, 255) || !SDL_RenderClear(renderer))
+            return false;
+        if (!rectangle(renderer, {{90, 245}, {80, 80}}, {28, 41, 57, 255}) ||
             !rectangle(renderer, {{790, 245}, {80, 80}}, {28, 41, 57, 255}) ||
             !rectangle(renderer, {{0, 532}, {960, 8}}, {39, 70, 99, 255}))
             return false;
@@ -58,7 +87,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
         }
         else
         {
-            std::u32string title = U"Выбор режима", hint = U"Тест — текущая сцена";
+            std::u32string title = U"Выбор режима", hint = U"Тест — карты с неподвижными мишенями";
             switch (menu.screen())
             {
                 case Screen::Online:
@@ -86,9 +115,15 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     hint = menu.online() ? U"Бронирование и подключение к серверу"
                                          : U"Ожидание сервера, до 5 секунд";
                     break;
+                case Screen::Maps:
+                    title = U"Выбор карты";
+                    hint = U"Тест: три мишени без ИИ";
+                    break;
                 case Screen::Lobby:
                     title = menu.online() ? U"Лобби интернета" : U"Лобби LAN";
-                    hint = U"Для старта оба игрока нажимают Готов";
+                    hint = menu.networkSnapshot().voting
+                               ? U"Выберите карту, затем оба нажмите Готов"
+                               : U"Карту выбирает хозяин. Для старта оба нажимают Готов";
                     break;
                 case Screen::Result:
                     title = U"Матч завершён";
@@ -100,6 +135,12 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             }
             if (!centeredText(renderer, title, 65, 4, white) || !centeredText(renderer, hint, 117, 2, muted))
                 return false;
+            if (menu.screen() == Screen::Maps)
+            {
+                if (!centeredText(renderer, mapInfo(menu.selectedMap()).name, 145, 2, blue) ||
+                    !preview(renderer, menu.selectedMap(), {{360, 165}, {240, 135}}))
+                    return false;
+            }
             if (menu.screen() == Screen::Address)
             {
                 if (!rectangle(renderer, {{240, 165}, {480, 64}}, {34, 56, 78, 255}) ||
@@ -117,12 +158,26 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                                        (!s.connected[i] ? U" — ожидается"
                                         : s.ready[i]    ? U" — готов"
                                                         : U" — не готов");
-                    if (!centeredText(renderer, label, 180 + i * 42, 2, white))
+                    if (!centeredText(renderer, label, 160 + i * 30, 2, white))
                         return false;
                 }
                 const auto score = U"Счёт " + asciiText(std::to_string(s.score[0])) + U":" +
                                    asciiText(std::to_string(s.score[1])) + U". До 5 побед";
-                if (!centeredText(renderer, score, 276, 3, blue))
+                if (!centeredText(renderer, mapInfo(menu.selectedMap()).name, 225, 2, blue) ||
+                    !preview(renderer, menu.selectedMap(), {{35, 162}, {190, 106.875f}}))
+                    return false;
+                if (s.voting && menu.screen() == Screen::Lobby)
+                {
+                    auto vote = [&](int index)
+                    {
+                        return s.votes[index] < 0
+                                   ? std::u32string(U"не выбран")
+                                   : std::u32string(mapInfo(static_cast<MapId>(s.votes[index])).name);
+                    };
+                    if (!centeredText(renderer, U"Голоса: " + vote(0) + U" / " + vote(1), 252, 1, muted))
+                        return false;
+                }
+                if (!centeredText(renderer, score, 277, 2, blue))
                     return false;
             }
         }
@@ -139,12 +194,14 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 {{bounds.position.x + 2, bounds.position.y + 2}, {bounds.size.x - 4, bounds.size.y - 4}},
                 selected ? SDL_Color{34, 56, 78, 255} : SDL_Color{29, 36, 49, 255}) ||
             !centeredText(renderer, button.label, bounds.position.y + 16,
-                          (menu.screen() == Screen::Browser || menu.screen() == Screen::OnlineBrowser) ? 2
-                                                                                                       : 3,
+                          (menu.screen() == Screen::Browser || menu.screen() == Screen::OnlineBrowser ||
+                           menu.screen() == Screen::Maps || menu.screen() == Screen::Lobby)
+                              ? 2
+                              : 3,
                           button.placeholder ? muted : white))
             return false;
-        if (button.placeholder && menu.screen() != Screen::Browser &&
-            menu.screen() != Screen::OnlineBrowser &&
+        if (button.placeholder && menu.screen() != Screen::Lobby && menu.screen() != Screen::Result &&
+            menu.screen() != Screen::Browser && menu.screen() != Screen::OnlineBrowser &&
             !drawText(renderer, U"Скоро", {bounds.position.x + bounds.size.x - 44, bounds.position.y + 40}, 1,
                       muted))
             return false;
@@ -167,6 +224,8 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
     if (!centeredText(renderer, score, 20, 2, white) ||
         !centeredText(renderer, U"Вы — игрок " + asciiText(std::to_string(own)) + U". До 5 побед", 51, 2,
                       muted))
+        return false;
+    if (!drawText(renderer, mapInfo(s.map).name, {12, 520}, 1, muted))
         return false;
     std::u32string status;
     if (s.phase == MatchPhase::Countdown)

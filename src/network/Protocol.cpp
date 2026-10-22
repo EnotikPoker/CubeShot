@@ -46,6 +46,12 @@ bool validAim(const wire::Vec& aim)
 wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
 {
     wire::Snapshot out;
+    out.set_map(static_cast<unsigned>(s.map));
+    out.set_voting(s.voting);
+    for (auto vote : s.votes)
+        out.add_votes(vote);
+    out.set_selection_revision(s.selectionRevision);
+    out.set_state_sequence(s.stateSequence);
     out.set_tick(s.tick);
     out.set_round(s.round);
     out.set_phase(static_cast<unsigned>(s.phase));
@@ -96,7 +102,17 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         in.bullets_size() > 64 || !std::isfinite(in.remaining()) || in.remaining() < 0 ||
         in.remaining() > 3.01f)
         return {};
+    if (!validMap(static_cast<MapId>(in.map())) || in.votes_size() != 2)
+        return {};
+    for (auto vote : in.votes())
+        if (vote < -1 || vote > static_cast<int>(MapId::NatureLarge))
+            return {};
     WorldSnapshot s;
+    s.map = static_cast<MapId>(in.map());
+    s.voting = in.voting();
+    s.votes = {{in.votes(0), in.votes(1)}};
+    s.selectionRevision = in.selection_revision();
+    s.stateSequence = in.state_sequence();
     s.tick = in.tick();
     s.round = in.round();
     s.phase = static_cast<MatchPhase>(in.phase());
@@ -150,5 +166,40 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         s.bullets.push_back(b);
     }
     return s;
+}
+
+wire::Events encodeEvents(const std::vector<GameEvent>& events)
+{
+    wire::Events out;
+    for (const auto& e : events)
+    {
+        auto* v = out.add_events();
+        v->set_id(e.id);
+        v->set_tick(e.tick);
+        v->set_shot_sequence(e.shotSequence);
+        v->set_round(e.round);
+        v->set_kind(static_cast<unsigned>(e.kind));
+        v->set_actor(e.actor);
+        v->set_target(e.target);
+        vec(v->mutable_position(), e.position);
+        vec(v->mutable_direction(), e.direction);
+    }
+    return out;
+}
+
+std::optional<std::vector<GameEvent>> decodeEvents(const wire::Events& in)
+{
+    if (in.events_size() > 256)
+        return {};
+    std::vector<GameEvent> result;
+    for (const auto& e : in.events())
+    {
+        if (!e.id() || !e.round() || e.kind() > 3 || e.actor() < 1 || e.actor() > 2 || e.target() > 2 ||
+            !finite(e.position()) || !validAim(e.direction()))
+            return {};
+        result.push_back({e.id(), e.tick(), e.shot_sequence(), e.round(), static_cast<EventKind>(e.kind()),
+                          e.actor(), e.target(), vec(e.position()), vec(e.direction())});
+    }
+    return result;
 }
 } // namespace cubeshot::network

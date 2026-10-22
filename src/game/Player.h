@@ -1,22 +1,24 @@
 #pragma once
 
-#include "game/PlayerInput.h"
 #include "game/Bullet.h"
+#include "game/PlayerInput.h"
 #include "game/Types.h"
 #include "game/Weapon.h"
 
 #include <optional>
 
-namespace cubeshot {
+namespace cubeshot
+{
 
 struct Arena;
 
-struct Player {
+struct Player
+{
     static constexpr int maxHealth = 100;
     static constexpr float defaultSize = 48.0f;
     static constexpr float moveSpeed = 280.0f; // Пикселей в секунду.
     static constexpr float jumpSpeed = 620.0f; // Начальная скорость вверх, пикселей/с.
-    static constexpr float gravity = 1800.0f; // Пикселей/с².
+    static constexpr float gravity = 1800.0f;  // Пикселей/с².
 
     PlayerId id = 0;
     Vec2 position;
@@ -36,7 +38,7 @@ struct Player {
     void applyInput(const PlayerInput& input);
     void requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0);
     void clearInput();
-    void update(float deltaSeconds, const Arena& arena);
+    void update(float deltaSeconds, const Arena& arena, bool playerSupport = false);
 
 private:
     bool jumpHeld_ = false;

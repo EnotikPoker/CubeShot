@@ -6,7 +6,8 @@
 #include <algorithm>
 #include <cmath>
 
-namespace cubeshot {
+namespace cubeshot
+{
 
 Rect Player::bounds() const
 {
@@ -34,7 +35,8 @@ std::optional<Bullet> Player::takeShot()
 {
     const bool requested = shootRequested_;
     shootRequested_ = false;
-    if (!alive() || !requested || !weapon.tryFire()) {
+    if (!alive() || !requested || !weapon.tryFire())
+    {
         return std::nullopt;
     }
     // World проверит путь от руки до дула, чтобы не стрелять сквозь стену.
@@ -50,7 +52,8 @@ std::optional<Bullet> Player::takeShot()
 void Player::takeDamage(int damage)
 {
     health = std::max(0, std::clamp(health, 0, maxHealth) - std::max(0, damage));
-    if (!alive()) {
+    if (!alive())
+    {
         velocity = {};
         jumpRequested_ = false;
         shootRequested_ = false;
@@ -59,7 +62,8 @@ void Player::takeDamage(int damage)
 
 void Player::applyInput(const PlayerInput& input)
 {
-    if (!alive()) {
+    if (!alive())
+    {
         return;
     }
     velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * moveSpeed;
@@ -69,19 +73,24 @@ void Player::applyInput(const PlayerInput& input)
     shootRequested_ = shootRequested_ || shot;
     shootHeld_ = input.shoot;
     const float length = std::hypot(input.aimDirection.x, input.aimDirection.y);
-    if (std::isfinite(length) && length > 0.0001f) {
+    if (std::isfinite(length) && length > 0.0001f)
+    {
         aimDirection = {input.aimDirection.x / length, input.aimDirection.y / length};
     }
-    if (shot) shotAim_ = aimDirection;
+    if (shot)
+        shotAim_ = aimDirection;
 }
 
 void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence)
 {
-    if (!alive()) return;
+    if (!alive())
+        return;
     jumpRequested_ = jumpRequested_ || jump;
-    if (shoot && !shootRequested_) {
+    if (shoot && !shootRequested_)
+    {
         const float length = std::hypot(aim.x, aim.y);
-        if (!std::isfinite(length) || length < 0.0001f) return;
+        if (!std::isfinite(length) || length < 0.0001f)
+            return;
         shootRequested_ = true;
         shotSequence_ = sequence;
         shotAim_ = {aim.x / length, aim.y / length};
@@ -95,14 +104,16 @@ void Player::clearInput()
     shootHeld_ = shootRequested_ = false;
 }
 
-void Player::update(float deltaSeconds, const Arena& arena)
+void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
 {
-    if (!alive() || !(deltaSeconds > 0.0f)) {
+    if (!alive() || !(deltaSeconds > 0.0f))
+    {
         return;
     }
 
-    grounded = collision::isSupported(bounds(), arena.bounds, arena.platforms);
-    if (jumpRequested_ && grounded) {
+    grounded = playerSupport || collision::isSupported(bounds(), arena.bounds, arena.platforms);
+    if (jumpRequested_ && grounded)
+    {
         velocity.y = -jumpSpeed;
         grounded = false;
     }
@@ -111,17 +122,18 @@ void Player::update(float deltaSeconds, const Arena& arena)
     // Короткие шаги сохраняют дугу прыжка и столкновения при редких обновлениях.
     double remaining = deltaSeconds;
     constexpr double maxStep = 1.0 / 120.0;
-    while (remaining > 0.0) {
+    while (remaining > 0.0)
+    {
         const float step = static_cast<float>(std::min(remaining, maxStep));
         remaining -= std::min(remaining, maxStep);
-        position.x = collision::moveHorizontally(bounds(), velocity.x * step,
-                                                arena.bounds, arena.platforms);
+        position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, arena.platforms);
         velocity.y += gravity * step;
-        const auto movement = collision::moveVertically(bounds(), velocity.y * step,
-                                                        arena.bounds, arena.platforms);
+        const auto movement =
+            collision::moveVertically(bounds(), velocity.y * step, arena.bounds, arena.platforms);
         position.y = movement.y;
         grounded = movement.blocked && velocity.y > 0.0f;
-        if (movement.blocked) {
+        if (movement.blocked)
+        {
             velocity.y = 0.0f;
         }
     }

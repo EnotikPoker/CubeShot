@@ -22,7 +22,8 @@ enum class Screen
     Result,
     Online,
     OnlineBrowser,
-    Settings
+    Settings,
+    Maps
 };
 enum class MenuAction
 {
@@ -39,7 +40,9 @@ enum class MenuAction
     QuickMatch,
     FetchOnline,
     JoinOnline,
-    OpenSettings
+    OpenSettings,
+    SelectMap,
+    ChangeMap
 };
 
 struct MenuButton
@@ -59,6 +62,16 @@ struct ListedRoom
 class Menu
 {
 public:
+    MapId selectedMap() const
+    {
+        return selectedMap_;
+    }
+
+    void setSelectedMap(MapId id)
+    {
+        selectedMap_ = id;
+    }
+
     Screen screen() const;
     bool playing() const;
 
@@ -136,6 +149,7 @@ public:
 
 private:
     std::optional<int> buttonAt(Vec2 position) const;
+    MapId selectedMap_ = MapId::Test;
     Screen screen_ = Screen::Main;
     Screen settingsReturn_ = Screen::Main;
     int selection_ = 0;
