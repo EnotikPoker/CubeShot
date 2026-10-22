@@ -5,19 +5,21 @@
 
 #include <SDL3/SDL.h>
 
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 
-namespace {
+namespace
+{
 
 using namespace cubeshot;
 using namespace cubeshot::client;
 
 void expect(bool condition, const char* message)
 {
-    if (!condition) throw std::runtime_error(message);
+    if (!condition)
+        throw std::runtime_error(message);
 }
 
 void startTest(Menu& menu)
@@ -25,8 +27,7 @@ void startTest(Menu& menu)
     expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes,
            "Play opens mode selection");
     menu.moveSelection(3);
-    expect(menu.activate() == MenuAction::StartTest && menu.playing(),
-           "Test requests a fresh scene");
+    expect(menu.activate() == MenuAction::StartTest && menu.playing(), "Test requests a fresh scene");
 }
 
 void testNavigation()
@@ -37,18 +38,25 @@ void testNavigation()
     menu.escape();
     expect(menu.screen() == Screen::Main, "Escape at main menu does not quit");
     menu.moveSelection(1);
-    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Main &&
-               !menu.message().empty(), "Main settings show placeholder without launching game");
+    expect(menu.activate() == MenuAction::OpenSettings, "Main settings requests settings controller");
+    menu.openSettings();
+    expect(menu.screen() == Screen::Settings, "Main settings opens settings screen");
+    menu.closeSettings();
+    menu.moveSelection(1);
     menu.moveSelection(-1);
     menu.activate();
     expect(menu.screen() == Screen::Modes && menu.buttons().size() == 5,
            "Mode screen includes LAN, future modes, Test and Back");
-    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Online, "Internet opens online menu");
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Online,
+           "Internet opens online menu");
     menu.escape();
-    menu.moveSelection(1); menu.activate();
+    menu.moveSelection(1);
+    menu.activate();
     expect(menu.screen() == Screen::Lan, "Local mode opens LAN menu");
-    menu.escape(); menu.moveSelection(2);
-    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes && !menu.message().empty(), "Bots remain placeholder");
+    menu.escape();
+    menu.moveSelection(2);
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes && !menu.message().empty(),
+           "Bots remain placeholder");
     menu.moveSelection(1);
     menu.moveSelection(1);
     menu.activate();
@@ -61,9 +69,12 @@ void testNavigation()
     expect(menu.screen() == Screen::Paused && !menu.playing() && menu.buttons().size() == 4,
            "Escape opens pause and stops gameplay");
     menu.moveSelection(1);
-    menu.activate();
-    expect(menu.screen() == Screen::Paused && !menu.message().empty(),
-           "Pause settings leave the game paused");
+    expect(menu.activate() == MenuAction::OpenSettings, "Pause requests settings");
+    menu.openSettings();
+    expect(!menu.playing(), "Settings keep local world paused");
+    menu.closeSettings();
+    expect(menu.screen() == Screen::Paused, "Settings return to pause");
+    menu.moveSelection(1);
     menu.moveSelection(-1);
     expect(menu.activate() == MenuAction::None && menu.playing(),
            "Continue resumes existing scene without requesting reset");
@@ -122,47 +133,73 @@ void testMouseClicks()
 
 void testLanNavigation()
 {
-    Menu menu; menu.open(Screen::Lan);
-    expect(menu.activate() == MenuAction::CreateRoom && menu.screen() == Screen::Connecting, "Create starts independent server connection");
-    menu.open(Screen::Lan); menu.moveSelection(1);
-    expect(menu.activate() == MenuAction::FindRooms && menu.screen() == Screen::Browser, "Find opens room list");
+    Menu menu;
+    menu.open(Screen::Lan);
+    expect(menu.activate() == MenuAction::CreateRoom && menu.screen() == Screen::Connecting,
+           "Create starts independent server connection");
+    menu.open(Screen::Lan);
+    menu.moveSelection(1);
+    expect(menu.activate() == MenuAction::FindRooms && menu.screen() == Screen::Browser,
+           "Find opens room list");
     menu.setRooms({{"192.168.1.2:27015", 1, true}, {"192.168.1.3:27015", 2, false}});
-    expect(menu.activate() == MenuAction::JoinRoom && menu.selectedAddress() == "192.168.1.2:27015", "Join selected discovered room");
+    expect(menu.activate() == MenuAction::JoinRoom && menu.selectedAddress() == "192.168.1.2:27015",
+           "Join selected discovered room");
     menu.open(Screen::Browser);
     menu.setRooms({{"1.1.1.1", 1, true}, {"2.2.2.2", 1, true}, {"3.3.3.3", 1, true}, {"4.4.4.4", 1, true}});
-    menu.moveSelection(3); menu.activate();
-    expect(menu.activate() == MenuAction::JoinRoom && menu.selectedAddress() == "4.4.4.4", "Pagination includes rooms after third");
-    menu.open(Screen::Address); menu.text("192.168.1.10:27015abc");
+    menu.moveSelection(3);
+    menu.activate();
+    expect(menu.activate() == MenuAction::JoinRoom && menu.selectedAddress() == "4.4.4.4",
+           "Pagination includes rooms after third");
+    menu.open(Screen::Address);
+    menu.text("192.168.1.10:27015abc");
     expect(menu.address() == "192.168.1.10:27015", "Address filters non-address characters");
-    menu.backspace(); menu.text("5");
+    menu.backspace();
+    menu.text("5");
     expect(menu.activate() == MenuAction::JoinAddress, "Connect requests address validation");
-    Match m; m.connect(1); m.connect(2); menu.networkState(m.snapshot(), 2);
-    expect(menu.screen() == Screen::Lobby && menu.lan() && menu.ownId() == 2 && menu.activate() == MenuAction::ToggleReady, "Lobby readiness belongs to own slot");
-    m.setReady(1, true); m.setReady(2, true); menu.networkState(m.snapshot(), 2);
+    Match m;
+    m.connect(1);
+    m.connect(2);
+    menu.networkState(m.snapshot(), 2);
+    expect(menu.screen() == Screen::Lobby && menu.lan() && menu.ownId() == 2 &&
+               menu.activate() == MenuAction::ToggleReady,
+           "Lobby readiness belongs to own slot");
+    m.setReady(1, true);
+    m.setReady(2, true);
+    menu.networkState(m.snapshot(), 2);
     expect(menu.playing(), "Countdown shows arena");
-    menu.escape(); expect(menu.screen() == Screen::Paused && menu.lan(), "Network overlay remembers LAN mode");
-    menu.networkState(m.snapshot(), 2); expect(menu.screen() == Screen::Paused, "Snapshots do not close personal overlay");
-    m.disconnect(1); menu.networkState(m.snapshot(), 2);
+    menu.escape();
+    expect(menu.screen() == Screen::Paused && menu.lan(), "Network overlay remembers LAN mode");
+    menu.networkState(m.snapshot(), 2);
+    expect(menu.screen() == Screen::Paused, "Snapshots do not close personal overlay");
+    m.disconnect(1);
+    menu.networkState(m.snapshot(), 2);
     expect(menu.screen() == Screen::Lobby && !menu.message().empty(), "Disconnect exits overlay to lobby");
 }
 
 void testOnlineNavigation()
 {
-    Menu menu; menu.open(Screen::Online);
-    expect(menu.online() && menu.activate()==MenuAction::QuickMatch,"Online quick match is distinct from LAN hosting");
-    menu.moveSelection(1); expect(menu.activate()==MenuAction::FetchOnline && menu.screen()==Screen::OnlineBrowser,"List requests remote catalog");
-    menu.setOnlineRooms({{"duel-1","CubeShot 1",1,0,0,true},{"duel-2","CubeShot 2",2,0,2,false}});
-    expect(menu.activate()==MenuAction::JoinOnline && menu.selectedServer()=="duel-1","Join uses stable server ID rather than a local address");
-    menu.moveSelection(1); expect(menu.activate()==MenuAction::None && !menu.message().empty(),"Occupied server is disabled");
-    menu.escape(); menu.moveSelection(2); menu.activate();
-    expect(menu.screen()==Screen::Nickname,"Nickname editor opens");
-    menu.clearNickname(); menu.text("Ёжик"); menu.backspace(); expect(menu.nickname()=="Ёжи","Backspace removes a whole Cyrillic character");
-    menu.text("🙂"); expect(menu.nickname()=="Ёжи","Unsupported nickname characters rejected");
-    expect(menu.activate()==MenuAction::SaveNickname && menu.screen()==Screen::Online,"Save emits a profile action");
-    menu.open(Screen::Nickname); menu.clearNickname(); menu.activate(); expect(menu.nickname()=="Игрок","Empty name gets default");
-    Match m; m.connect(1); m.connect(2); menu.networkState(m.snapshot(),1);
-    expect(menu.online() && menu.lan(),"Online lobby keeps network overlay and internet navigation");
-    menu.open(Screen::Main); menu.open(Screen::Lan); expect(!menu.online(),"Returning to LAN clears internet navigation");
+    Menu menu;
+    menu.open(Screen::Online);
+    expect(menu.online() && menu.activate() == MenuAction::QuickMatch,
+           "Online quick match is distinct from LAN hosting");
+    menu.moveSelection(1);
+    expect(menu.activate() == MenuAction::FetchOnline && menu.screen() == Screen::OnlineBrowser,
+           "List requests remote catalog");
+    menu.setOnlineRooms({{"duel-1", "CubeShot 1", 1, 0, 0, true}, {"duel-2", "CubeShot 2", 2, 0, 2, false}});
+    expect(menu.activate() == MenuAction::JoinOnline && menu.selectedServer() == "duel-1",
+           "Join uses stable server ID rather than a local address");
+    menu.moveSelection(1);
+    expect(menu.activate() == MenuAction::None && !menu.message().empty(), "Occupied server is disabled");
+    menu.escape();
+    expect(menu.buttons().size() == 3, "Nickname editor moved out of online menu");
+    Match m;
+    m.connect(1);
+    m.connect(2);
+    menu.networkState(m.snapshot(), 1);
+    expect(menu.online() && menu.lan(), "Online lobby keeps network overlay and internet navigation");
+    menu.open(Screen::Main);
+    menu.open(Screen::Lan);
+    expect(!menu.online(), "Returning to LAN clears internet navigation");
 }
 
 void testHeldInput()
@@ -174,8 +211,8 @@ void testHeldInput()
     held.aimDirection = {-1, 0};
     gate.reset(held);
     auto filtered = gate.filter(held);
-    expect(!filtered.jump && !filtered.shoot && filtered.moveDirection == 1 &&
-               filtered.aimDirection.x == -1, "Resume blocks held actions without blocking movement or aim");
+    expect(!filtered.jump && !filtered.shoot && filtered.moveDirection == 1 && filtered.aimDirection.x == -1,
+           "Resume blocks held actions without blocking movement or aim");
     held.shoot = false;
     gate.filter(held);
     held.shoot = true;
@@ -201,7 +238,8 @@ void testMenuRendering()
         SDL_CreateSoftwareRenderer(surface.get()), destroyRenderer);
     expect(renderer != nullptr, "Create menu test renderer");
     Menu menu;
-    for (int screen = 0; screen < 3; ++screen) {
+    for (int screen = 0; screen < 3; ++screen)
+    {
         expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()),
                "Russian menus render without window or font dependencies");
         Uint8 r, g, b, a;
@@ -210,26 +248,38 @@ void testMenuRendering()
                                     static_cast<int>(button.position.y), &r, &g, &b, &a) &&
                    r == 80 && g == 175 && b == 255,
                "Selected button has visible blue border");
-        if (screen == 0) menu.activate();
-        else if (screen == 1) {
+        if (screen == 0)
+            menu.activate();
+        else if (screen == 1)
+        {
             menu.moveSelection(3);
             menu.activate();
             menu.escape();
         }
     }
-    Match match; match.connect(1); match.connect(2);
+    Match match;
+    match.connect(1);
+    match.connect(2);
     menu.networkState(match.snapshot(), 1);
     const auto capture = SDL_getenv("CUBESHOT_CAPTURE_DIR");
-    for (auto screen : {Screen::Online, Screen::OnlineBrowser, Screen::Nickname, Screen::Lan, Screen::Browser, Screen::Address, Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused}) {
+    for (auto screen : {Screen::Online, Screen::OnlineBrowser, Screen::Lan, Screen::Browser, Screen::Address,
+                        Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused})
+    {
         menu.open(screen);
-        if (screen == Screen::OnlineBrowser) menu.setOnlineRooms({{"duel-1","CubeShot 1",1,0,0,true},{"duel-2","CubeShot 2",2,0,2,false}});
-        if (screen == Screen::Nickname) menu.setNickname("Тестовый Игрок");
-        if (screen == Screen::Browser) menu.setRooms({{"255.255.255.255:65535", 1, true}, {"192.168.0.111:27015", 2, false}});
-        if (screen == Screen::Address) menu.text("192.168.100.100:27015");
-        expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()), "LAN screens render with room and slot state");
-        if (capture) {
+        if (screen == Screen::OnlineBrowser)
+            menu.setOnlineRooms(
+                {{"duel-1", "CubeShot 1", 1, 0, 0, true}, {"duel-2", "CubeShot 2", 2, 0, 2, false}});
+        if (screen == Screen::Browser)
+            menu.setRooms({{"255.255.255.255:65535", 1, true}, {"192.168.0.111:27015", 2, false}});
+        if (screen == Screen::Address)
+            menu.text("192.168.100.100:27015");
+        expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()),
+               "LAN screens render with room and slot state");
+        if (capture)
+        {
             std::filesystem::create_directories(capture);
-            const auto path = std::filesystem::path(capture) / (std::to_string(static_cast<int>(screen)) + ".bmp");
+            const auto path =
+                std::filesystem::path(capture) / (std::to_string(static_cast<int>(screen)) + ".bmp");
             expect(SDL_SaveBMP(surface.get(), path.string().c_str()), "Save interface preview");
         }
     }
@@ -240,9 +290,11 @@ void testMenuRendering()
 
 int main()
 {
-    if (!SDL_Init(0)) return 1;
+    if (!SDL_Init(0))
+        return 1;
     int result = 0;
-    try {
+    try
+    {
         testNavigation();
         testLanNavigation();
         testOnlineNavigation();
@@ -250,7 +302,9 @@ int main()
         testHeldInput();
         testMenuRendering();
         std::cout << "Menu tests passed\n";
-    } catch (const std::exception& error) {
+    }
+    catch (const std::exception& error)
+    {
         std::cerr << error.what() << '\n';
         result = 1;
     }

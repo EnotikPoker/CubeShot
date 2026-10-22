@@ -41,7 +41,7 @@ void ConnectionController::stop()
     discovery_.reset();
 }
 
-void ConnectionController::handle(MenuAction action, Menu& menu, std::string& nickname)
+void ConnectionController::handle(MenuAction action, Menu& menu, const std::string& nickname)
 {
     if (action == MenuAction::FetchOnline)
     {
@@ -57,10 +57,10 @@ void ConnectionController::handle(MenuAction action, Menu& menu, std::string& ni
         }
         stop();
         onlineSession_ = true;
-        nickname = menu.nickname();
-        if (!network::validNickname(nickname))
-            nickname = "Игрок";
-        directory_.reserve(directoryUrl_, nickname,
+        sessionNickname_ = nickname;
+        if (!network::validNickname(sessionNickname_))
+            sessionNickname_ = "Игрок";
+        directory_.reserve(directoryUrl_, sessionNickname_,
                            action == MenuAction::JoinOnline ? menu.selectedServer() : std::string{});
         menu.open(Screen::Connecting);
     }
@@ -132,7 +132,7 @@ void ConnectionController::handle(MenuAction action, Menu& menu, std::string& ni
     }
 }
 
-void ConnectionController::updateDirectory(Menu& menu, const std::string& nickname)
+void ConnectionController::updateDirectory(Menu& menu)
 {
     if (auto result = directory_.poll())
     {
@@ -165,7 +165,7 @@ void ConnectionController::updateDirectory(Menu& menu, const std::string& nickna
             {
                 reservationToken_ = result->token;
                 client_ = std::make_unique<network::Client>();
-                if (!client_->connect(result->address, "", nickname, result->token))
+                if (!client_->connect(result->address, "", sessionNickname_, result->token))
                 {
                     stop();
                     menu.open(Screen::OnlineBrowser);
@@ -184,9 +184,9 @@ void ConnectionController::updateDirectory(Menu& menu, const std::string& nickna
     }
 }
 
-void ConnectionController::update(Menu& menu, const std::string& nickname)
+void ConnectionController::update(Menu& menu)
 {
-    updateDirectory(menu, nickname);
+    updateDirectory(menu);
     if (menu.screen() == Screen::Browser)
     {
         if (!discovery_)

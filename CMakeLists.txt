@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.8.3 LANGUAGES C CXX)
+project(CubeShot VERSION 0.9.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -48,11 +48,16 @@ target_link_libraries(cubeshot_directory PUBLIC cubeshot_network PRIVATE httplib
 
 if(CUBESHOT_BUILD_CLIENT)
     find_package(SDL3 3.2 REQUIRED CONFIG)
+    add_library(cubeshot_preferences STATIC
+        src/client/Settings.cpp src/client/SettingsStore.cpp src/client/Profile.cpp
+        src/client/WindowSettings.cpp src/client/SettingsController.cpp src/client/SettingsRenderer.cpp
+        src/client/BitmapFont.cpp src/client/Input.cpp)
+    target_link_libraries(cubeshot_preferences PUBLIC cubeshot_game SDL3::SDL3 PRIVATE cubeshot_directory nlohmann_json::nlohmann_json)
     add_executable(cubeshot_client
-        src/client/main.cpp src/client/Profile.cpp src/client/Application.cpp src/client/ConnectionController.cpp src/client/Input.cpp
-        src/client/Menu.cpp src/client/MenuRenderer.cpp src/client/BitmapFont.cpp
+        src/client/main.cpp src/client/Application.cpp src/client/ConnectionController.cpp
+        src/client/Menu.cpp src/client/MenuRenderer.cpp
         src/client/SceneRenderer.cpp src/client/HostProcess.cpp)
-    target_link_libraries(cubeshot_client PRIVATE cubeshot_game cubeshot_network cubeshot_directory nlohmann_json::nlohmann_json SDL3::SDL3)
+    target_link_libraries(cubeshot_client PRIVATE cubeshot_preferences cubeshot_network cubeshot_directory)
 endif()
 add_executable(cubeshot_server src/server/main.cpp)
 target_link_libraries(cubeshot_server PRIVATE cubeshot_network)

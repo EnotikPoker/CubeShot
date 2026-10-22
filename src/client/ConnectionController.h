@@ -17,19 +17,19 @@ class ConnectionController
 public:
     ~ConnectionController();
     void setDirectoryUrl(std::string url);
-    void handle(MenuAction action, Menu& menu, std::string& nickname);
-    void update(Menu& menu, const std::string& nickname);
+    void handle(MenuAction action, Menu& menu, const std::string& nickname);
+    void update(Menu& menu);
     void stop();
     network::Client* session();
     const network::Client* session() const;
 
 private:
-    void updateDirectory(Menu& menu, const std::string& nickname);
+    void updateDirectory(Menu& menu);
     std::unique_ptr<network::Client> client_;
     std::unique_ptr<network::Discovery> discovery_;
     HostProcess host_;
     network::Directory directory_;
-    std::string directoryUrl_, reservationToken_;
+    std::string directoryUrl_, reservationToken_, sessionNickname_;
     bool hosting_ = false;
     bool onlineSession_ = false;
     std::uint64_t nextDirectoryRefresh_ = 0;

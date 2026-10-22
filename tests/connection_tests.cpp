@@ -47,7 +47,7 @@ struct Participant
 
     void update()
     {
-        connection.update(menu, nickname);
+        connection.update(menu);
         if (auto* session = connection.session())
             session->control({});
     }
@@ -139,6 +139,8 @@ void onlineConnectionLifecycle()
         "Cancelled reservation eventually frees its slot");
 
     host.handle(MenuAction::QuickMatch);
+    // Profile edits must not alter the nickname of an already submitted reservation.
+    host.nickname = "Следующий";
     guest.handle(MenuAction::QuickMatch);
     until(
         tick,
@@ -151,6 +153,9 @@ void onlineConnectionLifecycle()
                    guest.menu.screen() == Screen::Lobby;
         },
         "Both connection controllers reach the same online lobby");
+    const auto hostSlot = host.connection.session()->playerId() - 1;
+    expect(host.connection.session()->snapshot()->names[hostSlot] == "Хозяин",
+           "Reservation and handshake keep the same original nickname despite profile edits");
     expect(host.connection.session()->playerId() != guest.connection.session()->playerId(),
            "Controllers receive distinct player slots");
     host.handle(MenuAction::ToggleReady);
@@ -164,12 +169,16 @@ void onlineConnectionLifecycle()
         },
         "Ready actions begin the authoritative match");
 
+    host.menu.openSettings();
     guest.handle(MenuAction::LeaveRoom);
     expect(!guest.connection.session() && guest.menu.screen() == Screen::OnlineBrowser,
            "Leaving an online match closes the connection and opens online browser");
     until(
-        tick, [&] { return host.menu.screen() == Screen::Lobby; },
-        "Remaining participant returns to lobby after peer leaves");
+        tick, [&] { return host.connection.session()->snapshot()->phase == MatchPhase::Lobby; },
+        "Server returns to lobby while settings remain open");
+    expect(host.menu.screen() == Screen::Settings, "Peer leaving must not discard settings draft");
+    host.menu.closeSettings();
+    expect(host.menu.screen() == Screen::Lobby, "Closing settings returns to the current lobby");
     host.menu.open(Screen::Main);
     host.handle(MenuAction::LeaveRoom);
     expect(!host.connection.session() && host.menu.screen() == Screen::Main,
