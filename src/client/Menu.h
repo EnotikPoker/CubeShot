@@ -5,22 +5,90 @@
 #include <string>
 #include <string_view>
 #include <vector>
-namespace cubeshot::client {
-enum class Screen { Main, Modes, Playing, Paused, Lan, Browser, Address, Connecting, Lobby, Result, Online, OnlineBrowser, Nickname };
-enum class MenuAction { None, StartTest, Quit, CreateRoom, FindRooms, JoinAddress, JoinRoom, CancelConnection, ToggleReady, LeaveRoom, QuickMatch, FetchOnline, JoinOnline, SaveNickname };
-struct MenuButton { std::u32string_view label; Rect bounds; bool placeholder = false; };
-struct ListedRoom { std::string address; unsigned players; bool joinable; };
-class Menu {
+
+namespace cubeshot::client
+{
+enum class Screen
+{
+    Main,
+    Modes,
+    Playing,
+    Paused,
+    Lan,
+    Browser,
+    Address,
+    Connecting,
+    Lobby,
+    Result,
+    Online,
+    OnlineBrowser,
+    Settings
+};
+enum class MenuAction
+{
+    None,
+    StartTest,
+    Quit,
+    CreateRoom,
+    FindRooms,
+    JoinAddress,
+    JoinRoom,
+    CancelConnection,
+    ToggleReady,
+    LeaveRoom,
+    QuickMatch,
+    FetchOnline,
+    JoinOnline,
+    OpenSettings
+};
+
+struct MenuButton
+{
+    std::u32string_view label;
+    Rect bounds;
+    bool placeholder = false;
+};
+
+struct ListedRoom
+{
+    std::string address;
+    unsigned players;
+    bool joinable;
+};
+
+class Menu
+{
 public:
     Screen screen() const;
     bool playing() const;
-    bool lan() const { return lan_; }
-    bool online() const { return online_; }
-    const std::string& nickname() const { return nickname_; }
-    void setNickname(std::string name) { nickname_ = std::move(name); }
-    void clearNickname() { nickname_.clear(); }
+
+    bool lan() const
+    {
+        return lan_;
+    }
+
+    bool online() const
+    {
+        return online_;
+    }
+
+    const std::string& nickname() const
+    {
+        return nickname_;
+    }
+
+    void setNickname(std::string name)
+    {
+        nickname_ = std::move(name);
+    }
+
     void setOnlineRooms(std::vector<network::DirectoryRoom> rooms);
-    const std::string& selectedServer() const { return selectedServer_; }
+
+    const std::string& selectedServer() const
+    {
+        return selectedServer_;
+    }
+
     int selection() const;
     std::u32string_view message() const;
     std::vector<MenuButton> buttons() const;
@@ -30,20 +98,46 @@ public:
     MenuAction release(Vec2 position);
     MenuAction activate();
     void escape();
+    void openSettings();
+    void closeSettings();
     void cancelClick();
     void open(Screen screen);
-    void setMessage(std::u32string message) { message_ = std::move(message); }
+
+    void setMessage(std::u32string message)
+    {
+        message_ = std::move(message);
+    }
+
     void setRooms(std::vector<ListedRoom> rooms);
-    const std::string& selectedAddress() const { return selectedAddress_; }
-    const std::string& address() const { return address_; }
+
+    const std::string& selectedAddress() const
+    {
+        return selectedAddress_;
+    }
+
+    const std::string& address() const
+    {
+        return address_;
+    }
+
     void text(std::string_view value);
     void backspace();
     void networkState(const WorldSnapshot& snapshot, PlayerId own);
-    const WorldSnapshot& networkSnapshot() const { return snapshot_; }
-    PlayerId ownId() const { return own_; }
+
+    const WorldSnapshot& networkSnapshot() const
+    {
+        return snapshot_;
+    }
+
+    PlayerId ownId() const
+    {
+        return own_;
+    }
+
 private:
     std::optional<int> buttonAt(Vec2 position) const;
     Screen screen_ = Screen::Main;
+    Screen settingsReturn_ = Screen::Main;
     int selection_ = 0;
     std::optional<int> pressed_;
     std::u32string message_;
@@ -59,5 +153,6 @@ private:
     WorldSnapshot snapshot_;
     PlayerId own_ = 0;
 };
+
 std::u32string asciiText(std::string_view text);
-}
+} // namespace cubeshot::client

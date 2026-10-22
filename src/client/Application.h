@@ -4,8 +4,10 @@
 #include "client/Input.h"
 #include "client/Menu.h"
 #include "client/Profile.h"
+#include "client/SettingsController.h"
 #include "game/World.h"
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -34,6 +36,8 @@ private:
     bool handle(MenuAction action);
     void screenChanged(Screen before);
     void updateSession();
+    void settingsIntent(SettingsIntent intent);
+    bool savePreferences(const Settings& settings, const std::string& nickname, std::string& error);
 
     bool sdlInitialized_ = false;
     SDL_Window* window_ = nullptr;
@@ -42,6 +46,10 @@ private:
     World world_;
     Menu menu_;
     GameplayInputGate inputGate_;
+    InputEventState eventInput_;
+    SettingsController settings_;
+    std::unique_ptr<WindowSettings> windowSettings_;
+    FramePacer pacer_;
     ConnectionController connections_;
     Profile profile_;
     std::string directoryOverride_;

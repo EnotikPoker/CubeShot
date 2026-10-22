@@ -14,10 +14,8 @@ if(CUBESHOT_BUILD_CLIENT)
         menu_tests.cpp
         ../src/client/Menu.cpp
         ../src/client/MenuRenderer.cpp
-        ../src/client/BitmapFont.cpp
-        ../src/client/Input.cpp
     )
-    target_link_libraries(cubeshot_menu_tests PRIVATE cubeshot_game cubeshot_network SDL3::SDL3)
+    target_link_libraries(cubeshot_menu_tests PRIVATE cubeshot_preferences cubeshot_network)
     add_test(NAME menu COMMAND cubeshot_menu_tests)
 endif()
 
@@ -71,4 +69,10 @@ if(CUBESHOT_BUILD_CLIENT)
         cubeshot_online cubeshot_directory SDL3::SDL3)
     add_test(NAME connection COMMAND cubeshot_connection_tests)
     set_tests_properties(connection PROPERTIES TIMEOUT 35)
+endif()
+
+if(CUBESHOT_BUILD_CLIENT)
+    add_executable(cubeshot_settings_tests settings_tests.cpp ../src/client/Menu.cpp)
+    target_link_libraries(cubeshot_settings_tests PRIVATE cubeshot_preferences nlohmann_json::nlohmann_json)
+    add_test(NAME settings COMMAND cubeshot_settings_tests)
 endif()

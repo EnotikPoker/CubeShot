@@ -1,6 +1,8 @@
 #include "client/Application.h"
 #include "client/MenuRenderer.h"
 #include "client/SceneRenderer.h"
+#include "client/SettingsRenderer.h"
+#include "client/SettingsStore.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -40,6 +42,21 @@ bool Application::initialize()
         SDL_Log("Window/renderer creation failed: %s", SDL_GetError());
         return false;
     }
+    windowSettings_ = std::make_unique<SdlWindowSettings>(window_, renderer_);
+    auto preferences = loadSettings();
+    std::string error;
+    if (!windowSettings_->apply(preferences.display, error))
+    {
+        SDL_Log("Saved display unavailable: %s", error.c_str());
+        menu_.setMessage(U"Экран недоступен. Восстановлены стандартные настройки");
+        preferences.display = DisplaySettings{};
+        if (!windowSettings_->apply(preferences.display, error))
+        {
+            SDL_Log("Cannot apply default display: %s", error.c_str());
+        }
+    }
+    settings_.initialize(preferences, profile_.nickname);
+    eventInput_.synchronize();
     crosshair_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
     return crosshair_ && SDL_SetCursor(SDL_GetDefaultCursor());
 }
@@ -60,21 +77,20 @@ Player Application::ownPlayer() const
 
 PlayerInput Application::rawInput() const
 {
-    return readPlayerInput(window_, renderer_, ownPlayer());
+    return readPlayerInput(window_, renderer_, ownPlayer(), settings_.active().bindings);
 }
 
 void Application::screenChanged(Screen before)
 {
     if (before == menu_.screen())
         return;
-    if (before == Screen::Nickname)
-        menu_.setNickname(profile_.nickname);
     world_.clearPlayerInput(World::localPlayerId);
     inputGate_.reset(rawInput());
+    eventInput_.synchronize();
     SDL_SetCursor(menu_.playing() ? crosshair_ : SDL_GetDefaultCursor());
-    if (menu_.screen() == Screen::Address || menu_.screen() == Screen::Nickname)
+    if (menu_.screen() == Screen::Address)
         SDL_StartTextInput(window_);
-    else if (before == Screen::Address || before == Screen::Nickname)
+    else if (before == Screen::Address)
         SDL_StopTextInput(window_);
 }
 
@@ -82,10 +98,11 @@ bool Application::handle(MenuAction action)
 {
     if (action == MenuAction::Quit)
         return false;
-    if (action == MenuAction::SaveNickname)
+    if (action == MenuAction::OpenSettings)
     {
-        profile_.nickname = menu_.nickname();
-        saveProfile(profile_);
+        settings_.begin();
+        settings_.setAvailableSizes(windowSettings_->availableSizes());
+        menu_.openSettings();
     }
     connections_.handle(action, menu_, profile_.nickname);
     if (action == MenuAction::StartTest)
@@ -97,7 +114,7 @@ bool Application::handle(MenuAction action)
 
 void Application::updateSession()
 {
-    connections_.update(menu_, profile_.nickname);
+    connections_.update(menu_);
     auto* session = connections_.session();
     if (!session)
     {
@@ -115,6 +132,44 @@ void Application::updateSession()
         const auto input = menu_.playing() ? inputGate_.filter(rawInput())
                                            : PlayerInput{0, false, false, ownPlayer().aimDirection};
         session->control(input);
+    }
+}
+
+bool Application::savePreferences(const Settings& settings, const std::string& nickname, std::string& error)
+{
+    profile_.nickname = nickname;
+    menu_.setNickname(nickname);
+    std::string profileError, settingsError;
+    const bool savedProfile = saveProfile(profile_, &profileError);
+    const bool savedSettings = saveSettings(settings, settingsError);
+    error = profileError + " " + settingsError;
+    return savedProfile && savedSettings;
+}
+
+void Application::settingsIntent(SettingsIntent intent)
+{
+    settings_.tick(*windowSettings_, SDL_GetTicks());
+    const auto save = [this](const Settings& s, const std::string& n, std::string& e)
+    { return savePreferences(s, n, e); };
+    if (intent == SettingsIntent::Apply)
+    {
+        settings_.apply(*windowSettings_, save, SDL_GetTicks());
+        inputGate_.reset(rawInput());
+        eventInput_.synchronize();
+    }
+    if (intent == SettingsIntent::Confirm)
+    {
+        settings_.confirm(*windowSettings_, save);
+        inputGate_.reset(rawInput());
+        eventInput_.synchronize();
+    }
+    if (intent == SettingsIntent::Revert)
+        settings_.cancelPreview(*windowSettings_);
+    if (intent == SettingsIntent::Close)
+    {
+        settings_.cancel(*windowSettings_);
+        SDL_StopTextInput(window_);
+        menu_.closeSettings();
     }
 }
 
@@ -143,13 +198,34 @@ int Application::run()
                 world_.clearPlayerInput(World::localPlayerId);
             }
             if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
+            {
                 inputGate_.reset(rawInput());
+                eventInput_.synchronize();
+            }
+            if (event.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED && menu_.screen() == Screen::Settings)
+                settings_.setAvailableSizes(windowSettings_->availableSizes());
+            if (menu_.screen() == Screen::Settings && event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+                settings_.event(event, window_, renderer_);
             if ((SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) == 0)
                 continue;
             const Screen before = menu_.screen();
+            if (before == Screen::Settings)
+            {
+                const bool editing = settings_.editingNickname();
+                settingsIntent(settings_.event(event, window_, renderer_));
+                if (editing != settings_.editingNickname())
+                {
+                    if (settings_.editingNickname())
+                        SDL_StartTextInput(window_);
+                    else
+                        SDL_StopTextInput(window_);
+                }
+                screenChanged(before);
+                continue;
+            }
+            const auto presses = eventInput_.press(event, settings_.active().bindings);
             MenuAction action = MenuAction::None;
-            if (event.type == SDL_EVENT_TEXT_INPUT &&
-                (before == Screen::Address || before == Screen::Nickname))
+            if (event.type == SDL_EVENT_TEXT_INPUT && (before == Screen::Address))
                 menu_.text(event.text.text);
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
             {
@@ -163,19 +239,12 @@ int Application::run()
                     else
                         menu_.escape();
                 }
-                else if (menu_.playing() && key == SDL_SCANCODE_R && !session)
-                {
-                    world_ = World{};
-                    inputGate_.reset(rawInput());
-                    accumulator = 0;
-                }
                 else if (!menu_.playing())
                 {
-                    if (key == SDL_SCANCODE_BACKSPACE &&
-                        (before == Screen::Address || before == Screen::Nickname))
+                    if (key == SDL_SCANCODE_BACKSPACE && (before == Screen::Address))
                         menu_.backspace();
                     if (key == SDL_SCANCODE_V && (event.key.mod & SDL_KMOD_CTRL) &&
-                        (before == Screen::Address || before == Screen::Nickname))
+                        (before == Screen::Address))
                     {
                         char* text = SDL_GetClipboardText();
                         if (text)
@@ -184,41 +253,42 @@ int Application::run()
                             SDL_free(text);
                         }
                     }
-                    if (key == SDL_SCANCODE_A && (event.key.mod & SDL_KMOD_CTRL) &&
-                        before == Screen::Nickname)
-                        menu_.clearNickname();
-                    if (key == SDL_SCANCODE_UP ||
-                        (key == SDL_SCANCODE_W && before != Screen::Address && before != Screen::Nickname))
+                    if (key == SDL_SCANCODE_UP || (key == SDL_SCANCODE_W && before != Screen::Address))
                         menu_.moveSelection(-1);
-                    if (key == SDL_SCANCODE_DOWN ||
-                        (key == SDL_SCANCODE_S && before != Screen::Address && before != Screen::Nickname))
+                    if (key == SDL_SCANCODE_DOWN || (key == SDL_SCANCODE_S && before != Screen::Address))
                         menu_.moveSelection(1);
                     if (key == SDL_SCANCODE_RETURN || key == SDL_SCANCODE_KP_ENTER)
                         action = menu_.activate();
                 }
             }
-            // Дискретные события сохраняют даже очень короткие клики/прыжки.
-            const bool jumpEvent = (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
-                                   event.key.scancode == SDL_SCANCODE_SPACE && !event.key.repeat;
-            const bool shotEvent =
-                (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
-                event.button.button == SDL_BUTTON_LEFT;
+            // Only rising aggregate action edges produce discrete gameplay events.
+            if (menu_.playing() && presses[static_cast<std::size_t>(InputAction::Restart)] && !session)
+            {
+                world_ = World{};
+                inputGate_.reset(rawInput());
+                accumulator = 0;
+            }
+            const bool jumpEvent = presses[static_cast<std::size_t>(InputAction::Jump)];
+            const bool shotEvent = presses[static_cast<std::size_t>(InputAction::Shoot)];
             if (menu_.playing() && (jumpEvent || shotEvent))
             {
                 auto input = rawInput();
                 if (jumpEvent)
-                    input.jump = event.type == SDL_EVENT_KEY_DOWN;
+                    input.jump = true;
                 if (shotEvent)
                 {
-                    input.shoot = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-                    Vec2 logical;
-                    if (SDL_RenderCoordinatesFromWindow(renderer_, event.button.x, event.button.y, &logical.x,
-                                                        &logical.y))
+                    input.shoot = true;
+                    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
                     {
-                        const auto origin = ownPlayer().weaponOrigin();
-                        const Vec2 aim{logical.x - origin.x, logical.y - origin.y};
-                        if (std::hypot(aim.x, aim.y) > 0.0001f)
-                            input.aimDirection = aim;
+                        Vec2 logical;
+                        if (SDL_RenderCoordinatesFromWindow(renderer_, event.button.x, event.button.y,
+                                                            &logical.x, &logical.y))
+                        {
+                            const auto origin = ownPlayer().weaponOrigin();
+                            const Vec2 aim{logical.x - origin.x, logical.y - origin.y};
+                            if (std::hypot(aim.x, aim.y) > .0001f)
+                                input.aimDirection = aim;
+                        }
                     }
                 }
                 input = inputGate_.filter(input);
@@ -232,7 +302,11 @@ int Application::run()
                 else
                     world_.setPlayerInput(World::localPlayerId, input);
             }
-            else if (shotEvent && !menu_.playing())
+            // Menu clicks always use the left mouse button, independent of the fire binding.
+            const bool menuClick =
+                (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
+                event.button.button == SDL_BUTTON_LEFT;
+            if (menuClick && !menu_.playing())
             {
                 Vec2 logical;
                 if (SDL_RenderCoordinatesFromWindow(renderer_, event.button.x, event.button.y, &logical.x,
@@ -264,7 +338,13 @@ int Application::run()
         if (!running)
             break;
         const Screen before = menu_.screen();
+        settings_.tick(*windowSettings_, SDL_GetTicks());
         updateSession();
+        if (before == Screen::Settings && menu_.screen() != Screen::Settings)
+        {
+            settings_.cancel(*windowSettings_);
+            SDL_StopTextInput(window_);
+        }
         screenChanged(before);
         auto* session = connections_.session();
         const Uint64 now = SDL_GetTicksNS();
@@ -282,6 +362,17 @@ int Application::run()
         }
         else
             accumulator = 0;
+        const int fps =
+            settings_.previewing() ? settings_.draft().display.fps : settings_.active().display.fps;
+        if (!pacer_.due(now, fps))
+        {
+            const unsigned wait = pacer_.waitMilliseconds(now, fps);
+            if (wait)
+                SDL_Delay(wait);
+            else
+                SDL_DelayNS(200000);
+            continue;
+        }
         const bool sceneVisible = menu_.playing() || menu_.screen() == Screen::Paused;
         bool rendered = true;
         if (sceneVisible)
@@ -292,13 +383,19 @@ int Application::run()
             else
                 rendered = renderScene(renderer_, world_, false);
         }
-        if (!rendered || (!menu_.playing() && !renderMenu(renderer_, menu_)) || !SDL_RenderPresent(renderer_))
+        if (menu_.screen() == Screen::Settings)
+            rendered = renderSettings(renderer_, settings_, SDL_GetTicks(), menu_.lan());
+        else if (!menu_.playing())
+            rendered = rendered && renderMenu(renderer_, menu_);
+        if (!rendered || !SDL_RenderPresent(renderer_))
         {
             SDL_Log("Rendering failed: %s", SDL_GetError());
             return 1;
         }
-        SDL_Delay(8); // Чаще опрашивать ввод/сеть; серверный шаг независим от окна.
+        pacer_.presented(now, fps);
     }
+    if (settings_.previewing())
+        settings_.cancelPreview(*windowSettings_);
     return 0;
 }
 } // namespace cubeshot::client
