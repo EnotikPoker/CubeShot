@@ -8,13 +8,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-22.04
             triplet: x64-linux
           - os: windows-2022
             triplet: x64-windows
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Read project version
+        id: version
+        shell: bash
+        run: |
+          version=$(python tools/release_assets.py version)
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: python tools/release_assets.py validate-tag "$GITHUB_REF_NAME"
       - name: Linux build prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -22,7 +37,8 @@ jobs:
           sudo apt-get install -y \
             autoconf autoconf-archive automake libtool libtool-bin libltdl-dev autopoint pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
-            libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev wayland-protocols
+            libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev wayland-protocols \
+            patchelf
       - name: Bootstrap pinned vcpkg
         shell: bash
         run: |
@@ -63,6 +79,8 @@ jobs:
           cmake "${build_args[@]}" 2>&1 | tee build/build.log
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure --parallel 2
+      - name: Test packaging and release safeguards
+        run: python -m unittest discover -s tests -p packaging_tests.py -v
       - name: Build and test without SDL
         if: runner.os == 'Linux'
         shell: bash
@@ -70,16 +88,34 @@ jobs:
           cmake -S . -B build-headless -DCMAKE_BUILD_TYPE=Release -DCUBESHOT_BUILD_CLIENT=OFF -DCMAKE_TOOLCHAIN_FILE="$RUNNER_TEMP/cubeshot-vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_INSTALLED_DIR="$PWD/build/vcpkg_installed" -DVCPKG_MANIFEST_INSTALL=OFF
           cmake --build build-headless --parallel 4
           ctest --test-dir build-headless --output-on-failure --parallel 2
-      - name: Upload programs and runtime libraries
+      - name: Package player archive
+        shell: bash
+        run: python tools/package_game.py --build build --config Release
+      - name: Verify Windows player archive
+        if: runner.os == 'Windows'
+        shell: bash
+        run: python tools/check_package.py build/packages/CubeShot-windows-x64.zip --version "${{ steps.version.outputs.value }}" --require-release
+      - name: Verify Linux archive on clean Ubuntu 22.04 and 24.04
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for base in 22.04 24.04; do
+            docker run --rm \
+              -v "$PWD/build/packages:/packages:ro" \
+              -v "$PWD/tools:/checks:ro" \
+              "ubuntu:$base" bash /checks/check_linux_container.sh "${{ steps.version.outputs.value }}"
+          done
+      - name: Upload verified player archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: CubeShot-${{ runner.os }}-0.10.0
-          path: build/bin/
+          name: CubeShot-${{ runner.os }}-${{ steps.version.outputs.value }}
+          path: build/packages/*
+          if-no-files-found: error
       - name: Upload diagnostic logs on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: CI-logs-${{ runner.os }}-0.10.0
+          name: CI-logs-${{ runner.os }}-${{ steps.version.outputs.value }}
           if-no-files-found: warn
           path: |
             build/build.log
@@ -88,3 +124,37 @@ jobs:
             build/vcpkg-manifest-install.log
             build/Testing/Temporary/
             ${{ runner.temp }}/cubeshot-vcpkg/buildtrees/**/*.log
+
+  release:
+    name: Publish verified release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Validate tag and main ancestry
+        run: python tools/release_assets.py validate-tag "$GITHUB_REF_NAME"
+      - name: Download verified archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --dir build/release-downloads
+          mkdir -p build/release-assets
+          find build/release-downloads -type f \( -name 'CubeShot-windows-x64.zip' -o -name 'CubeShot-linux-x64.tar.gz' \) -exec cp {} build/release-assets/ \;
+      - name: Check versions and calculate SHA256
+        run: python tools/release_assets.py checksums build/release-assets
+      - name: Publish both platforms together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/release_assets.py publish build/release-assets "$GITHUB_REF_NAME"

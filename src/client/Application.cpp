@@ -189,6 +189,42 @@ void Application::settingsIntent(SettingsIntent intent)
     }
 }
 
+int Application::smokeTest()
+{
+    if (!initialize() || !renderMenu(renderer_, menu_) || !SDL_RenderPresent(renderer_) ||
+        !renderScene(renderer_, world_))
+        return 1;
+    HostProcess host;
+    if (!host.start())
+    {
+        SDL_Log("Packaged server could not start: %s", host.error().c_str());
+        return 1;
+    }
+    network::Client client;
+    if (!client.connect("127.0.0.1:27015", host.token()))
+        return 1;
+    const auto deadline = SDL_GetTicks() + 15000;
+    while (SDL_GetTicks() < deadline && host.running())
+    {
+        SDL_PumpEvents();
+        client.poll();
+        if (client.connected() && client.playerId() == 1 && client.snapshot())
+        {
+            const bool rendered = renderSnapshot(renderer_, *client.snapshot(), client.playerId()) &&
+                                  SDL_RenderPresent(renderer_);
+            client.disconnect();
+            host.stop();
+            SDL_Log("Portable smoke test: %s", rendered ? "passed" : "render failed");
+            return rendered ? 0 : 1;
+        }
+        if (!client.connecting() && !client.connected())
+            break;
+        SDL_Delay(1);
+    }
+    SDL_Log("Portable LAN connection failed: %s; %s", client.error().c_str(), host.error().c_str());
+    return 1;
+}
+
 int Application::run()
 {
     if (!initialize())

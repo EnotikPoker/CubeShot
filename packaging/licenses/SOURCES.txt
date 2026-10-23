@@ -1,0 +1,23 @@
+Third-party notices retained from these pinned upstream sources:
+
+SDL3: https://github.com/libsdl-org/SDL/blob/release-3.4.18/LICENSE.txt
+Protobuf: https://github.com/protocolbuffers/protobuf/blob/v33.4/LICENSE
+OpenSSL: https://github.com/openssl/openssl/blob/openssl-3.6.5/LICENSE.txt
+cpp-httplib: https://github.com/yhirose/cpp-httplib/blob/v0.59.0/LICENSE
+nlohmann-json: https://github.com/nlohmann/json/blob/v3.12.0/LICENSE.MIT
+GameNetworkingSockets (copied from build source):
+https://github.com/ValveSoftware/GameNetworkingSockets/tree/2cb93a06350bb065db53abdb0d87cf297e0bfd34
+
+Release packages additionally retain all installed vcpkg copyright files,
+including notices for statically linked dependencies. Linux system-* notices
+identify distribution libraries copied into the package. Their accompanying
+license texts, including the GCC Runtime Library Exception, are retained in
+common-licenses/ and the system copyright files.
+
+Pinned vcpkg port recipes and upstream source downloads:
+https://github.com/microsoft/vcpkg/tree/e456309491fd875487bf02b8a0dca76c1b1b00cc/ports
+Ubuntu distribution source packages:
+https://archive.ubuntu.com/ubuntu/pool/
+
+These notices apply to the respective third-party components and do not
+assign a license to CubeShot's own source code.
