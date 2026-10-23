@@ -40,9 +40,10 @@ struct Server::Impl
     std::array<std::string, 2> names{"Игрок 1", "Игрок 2"};
     std::uint16_t port = 0;
     bool hostGone = false;
+    std::uint64_t stateSequence = 0;
 
     explicit Impl(std::uint16_t requested, std::string owner, AdmitPlayer admit)
-        : token(std::move(owner)), admission(std::move(admit))
+        : match(static_cast<bool>(admit)), token(std::move(owner)), admission(std::move(admit))
     {
         // LAN v1 uses IPv4. An unspecified IPv6 address lets GNS retry IPv4
         // after a failed bind; on Windows that can hide an occupied dual-stack port.
@@ -123,6 +124,7 @@ struct Server::Impl
     void broadcast(bool reliable)
     {
         auto snapshot = match.snapshot();
+        snapshot.stateSequence = ++stateSequence;
         snapshot.names = names;
         for (const auto& entry : peers)
             if (entry.second.id)
@@ -242,7 +244,18 @@ struct Server::Impl
         }
         else if (e.has_ready())
         {
+            if (e.ready().selection_revision() != match.snapshot().selectionRevision)
+                return;
             match.setReady(peer.id, e.ready().ready());
+            broadcast(true);
+        }
+        else if (e.has_map_choice())
+        {
+            const auto& choice = e.map_choice();
+            if (choice.change())
+                match.changeMap(peer.id, choice.selection_revision());
+            else
+                match.selectMap(peer.id, static_cast<MapId>(choice.map()), choice.selection_revision());
             broadcast(true);
         }
         else if (e.has_leave())
@@ -325,6 +338,15 @@ void Server::step(float dt)
         }
     }
     impl_->match.update(dt);
+    const auto events = impl_->match.takeEvents();
+    if (!events.empty())
+    {
+        auto e = envelope();
+        *e.mutable_events() = encodeEvents(events);
+        for (const auto& entry : impl_->peers)
+            if (entry.second.id)
+                send(entry.first, e, true);
+    }
     const auto s = impl_->match.snapshot();
     if (before != s.phase || s.tick % 2 == 0)
         impl_->broadcast(before != s.phase);

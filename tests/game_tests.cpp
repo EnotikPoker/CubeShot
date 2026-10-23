@@ -7,11 +7,13 @@
 #include <limits>
 #include <stdexcept>
 
-namespace {
+namespace
+{
 
 void expect(bool condition, const char* message)
 {
-    if (!condition) {
+    if (!condition)
+    {
         throw std::runtime_error(message);
     }
 }
@@ -26,6 +28,9 @@ void testMovement()
     using namespace cubeshot;
     World world;
     expect(world.players().size() == 4 && world.bullets().empty(), "Player and three targets");
+    auto solo = world.arena();
+    solo.spawnPoints.resize(1);
+    world = World{solo};
     const Player& player = world.players().front();
     const float startX = player.position.x;
     const float startY = player.position.y;
@@ -65,10 +70,12 @@ void testTimeSteps()
     World fastFrames;
     slowFrames.setPlayerInput(World::localPlayerId, PlayerInput{-1.0f});
     fastFrames.setPlayerInput(World::localPlayerId, PlayerInput{-1.0f});
-    for (int i = 0; i < 30; ++i) {
+    for (int i = 0; i < 30; ++i)
+    {
         slowFrames.update(1.0f / 30.0f);
     }
-    for (int i = 0; i < 120; ++i) {
+    for (int i = 0; i < 120; ++i)
+    {
         fastFrames.update(1.0f / 120.0f);
     }
     expect(near(slowFrames.players().front().position.x, fastFrames.players().front().position.x),
@@ -136,14 +143,14 @@ void testJump()
 
     float highestY = player.position.y;
     bool fell = false;
-    for (int i = 0; i < 180; ++i) {
+    for (int i = 0; i < 180; ++i)
+    {
         world.setPlayerInput(World::localPlayerId, PlayerInput{0.0f, true});
         world.update(step);
         highestY = std::min(highestY, player.position.y);
         fell = fell || player.velocity.y > 0.0f;
     }
-    expect(floorY - highestY > 100.0f && floorY - highestY < 110.0f,
-           "Jump reaches the intended height");
+    expect(floorY - highestY > 100.0f && floorY - highestY < 110.0f, "Jump reaches the intended height");
     expect(fell && player.grounded && near(player.position.y, floorY) && near(player.velocity.y, 0.0f),
            "Player falls, lands and does not jump repeatedly while holding Space");
     world.setPlayerInput(World::localPlayerId, {});
@@ -157,12 +164,15 @@ void testPlatform()
 {
     using namespace cubeshot;
     constexpr float step = 1.0f / 120.0f;
-    World world;
+    auto solo = Arena::createDefault();
+    solo.spawnPoints.resize(1);
+    World world(solo);
     const Player& player = world.players().front();
     expect(world.arena().platforms.size() == 2, "Default map includes a test platform");
     const Rect platform = world.arena().platforms.back();
     world.setPlayerInput(World::localPlayerId, PlayerInput{1.0f, true});
-    for (int i = 0; i < 58; ++i) {
+    for (int i = 0; i < 58; ++i)
+    {
         world.update(step);
         expect(!collision::overlaps(player.bounds(), platform), "Jump must not penetrate platform");
     }
@@ -179,7 +189,8 @@ void testPlatform()
            "Large update preserves jump and landing");
     world.setPlayerInput(World::localPlayerId, PlayerInput{1.0f});
     bool falling = false;
-    for (int i = 0; i < 180; ++i) {
+    for (int i = 0; i < 180; ++i)
+    {
         world.update(step);
         falling = falling || (!player.grounded && player.velocity.y > 0.0f);
     }
@@ -190,7 +201,8 @@ void testPlatform()
     Player underPlatform;
     underPlatform.position = {platform.position.x + 20.0f, 392.0f};
     underPlatform.applyInput(PlayerInput{0.0f, true});
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 6; ++i)
+    {
         underPlatform.update(step, world.arena());
     }
     expect(underPlatform.position.y >= platform.position.y + platform.size.y &&
@@ -206,19 +218,16 @@ void testVerticalCollisions()
 {
     using namespace cubeshot;
     const Rect arena{{0.0f, 0.0f}, {960.0f, 540.0f}};
-    const std::vector<Rect> platforms{{{100.0f, 200.0f}, {200.0f, 8.0f}},
-                                      {{100.0f, 350.0f}, {200.0f, 8.0f}}};
-    const auto down = collision::moveVertically({{120.0f, 20.0f}, {48.0f, 48.0f}},
-                                               1000.0f, arena, platforms);
+    const std::vector<Rect> platforms{{{100.0f, 200.0f}, {200.0f, 8.0f}}, {{100.0f, 350.0f}, {200.0f, 8.0f}}};
+    const auto down = collision::moveVertically({{120.0f, 20.0f}, {48.0f, 48.0f}}, 1000.0f, arena, platforms);
     expect(down.blocked && near(down.y, 152.0f), "Fast fall lands on nearest thin platform");
-    const auto up = collision::moveVertically({{120.0f, 400.0f}, {48.0f, 48.0f}},
-                                             -1000.0f, arena, platforms);
+    const auto up = collision::moveVertically({{120.0f, 400.0f}, {48.0f, 48.0f}}, -1000.0f, arena, platforms);
     expect(up.blocked && near(up.y, 358.0f), "Fast ascent hits nearest platform underside");
-    const auto ceiling = collision::moveVertically({{500.0f, 100.0f}, {48.0f, 48.0f}},
-                                                  -1000.0f, arena, platforms);
+    const auto ceiling =
+        collision::moveVertically({{500.0f, 100.0f}, {48.0f, 48.0f}}, -1000.0f, arena, platforms);
     expect(ceiling.blocked && near(ceiling.y, 0.0f), "Arena ceiling blocks ascent");
-    const auto bottom = collision::moveVertically({{500.0f, 100.0f}, {48.0f, 48.0f}},
-                                                 1000.0f, arena, platforms);
+    const auto bottom =
+        collision::moveVertically({{500.0f, 100.0f}, {48.0f, 48.0f}}, 1000.0f, arena, platforms);
     expect(bottom.blocked && near(bottom.y, 492.0f), "Arena bottom blocks falling");
     expect(!collision::isSupported({{300.0f, 152.0f}, {48.0f, 48.0f}}, arena, platforms),
            "Touching platform side does not count as support");
@@ -227,8 +236,10 @@ void testVerticalCollisions()
     World fast;
     slow.setPlayerInput(World::localPlayerId, PlayerInput{0.0f, true});
     fast.setPlayerInput(World::localPlayerId, PlayerInput{0.0f, true});
-    for (int i = 0; i < 9; ++i) slow.update(1.0f / 30.0f);
-    for (int i = 0; i < 36; ++i) fast.update(1.0f / 120.0f);
+    for (int i = 0; i < 9; ++i)
+        slow.update(1.0f / 30.0f);
+    for (int i = 0; i < 36; ++i)
+        fast.update(1.0f / 120.0f);
     expect(near(slow.players().front().position.y, fast.players().front().position.y) &&
                near(slow.players().front().velocity.y, fast.players().front().velocity.y),
            "Jump physics agree at 30 and 120 updates per second");
@@ -251,7 +262,8 @@ void testSingleShots()
     expect(world.bullets().front().damage == 20, "Pistol bullet deals 20 damage");
     expect(near(world.bullets().front().position.y, world.players().front().muzzlePosition().y),
            "Bullet starts at muzzle");
-    for (int i = 0; i < 36; ++i) {
+    for (int i = 0; i < 36; ++i)
+    {
         world.setPlayerInput(World::localPlayerId, input);
         world.update(step);
     }
@@ -288,9 +300,9 @@ void testSimultaneousActions()
     input.aimDirection = {-3, -4};
     world.setPlayerInput(World::localPlayerId, input);
     world.update(step);
-    expect(player.position.x > start.x && player.position.y < start.y &&
-               near(player.aimDirection.x, -0.6f) && near(player.aimDirection.y, -0.8f) &&
-               world.bullets().size() == 1 && world.bullets().front().velocity.x < 0,
+    expect(player.position.x > start.x && player.position.y < start.y && near(player.aimDirection.x, -0.6f) &&
+               near(player.aimDirection.y, -0.8f) && world.bullets().size() == 1 &&
+               world.bullets().front().velocity.x < 0,
            "Walking, jumping, aiming left and shooting work in the same step");
 
     input.jump = false;
@@ -298,9 +310,8 @@ void testSimultaneousActions()
     input.aimDirection = {3, -4};
     world.setPlayerInput(World::localPlayerId, input);
     world.update(step);
-    expect(player.position.x > start.x + Player::moveSpeed * step &&
-               player.velocity.y < 0 && near(player.aimDirection.x, 0.6f) &&
-               world.bullets().size() == 1,
+    expect(player.position.x > start.x + Player::moveSpeed * step && player.velocity.y < 0 &&
+               near(player.aimDirection.x, 0.6f) && world.bullets().size() == 1,
            "Changing aim and releasing trigger do not stop movement or repeat shot");
 }
 
@@ -311,8 +322,8 @@ void testBulletPhysics()
     bullet.position = {100, 100};
     bullet.velocity = {800, 0};
     bullet.update(0.5f);
-    expect(near(bullet.position.x, 500) && near(bullet.position.y, 130) &&
-               near(bullet.velocity.y, 120), "Visible projectile has flight time and gravity");
+    expect(near(bullet.position.x, 500) && near(bullet.position.y, 130) && near(bullet.velocity.y, 120),
+           "Visible projectile has flight time and gravity");
     expect(near(bullet.lifetime, 2.5f), "Bullet lifetime decreases");
     bullet.update(0);
     bullet.update(-1);
@@ -325,8 +336,10 @@ void testBulletPhysics()
     input.aimDirection = {0, -1};
     slow.setPlayerInput(1, input);
     fast.setPlayerInput(1, input);
-    for (int i = 0; i < 6; ++i) slow.update(1.0f / 30.0f);
-    for (int i = 0; i < 24; ++i) fast.update(1.0f / 120.0f);
+    for (int i = 0; i < 6; ++i)
+        slow.update(1.0f / 30.0f);
+    for (int i = 0; i < 24; ++i)
+        fast.update(1.0f / 120.0f);
     expect(slow.bullets().size() == 1 && fast.bullets().size() == 1, "Both shots are in flight");
     expect(near(slow.bullets().front().position.y, fast.bullets().front().position.y),
            "Bullet physics agree at 30 and 120 updates per second");
@@ -356,7 +369,8 @@ void testBulletHits()
     expect(world.players()[2].health == 80 && world.players()[1].health == 100 &&
                world.players()[0].health == 100 && world.bullets().empty(),
            "Only nearest target loses 20 health; bullet is consumed");
-    for (int hits = 2; hits <= 5; ++hits) {
+    for (int hits = 2; hits <= 5; ++hits)
+    {
         world.setPlayerInput(1, {});
         world.setPlayerInput(1, input);
         world.update(0.35f);
@@ -368,7 +382,8 @@ void testBulletHits()
     world.update(0.5f);
     expect(near(world.players()[2].position.x, 250) && world.bullets().empty(),
            "Dead player cannot move, jump or fire");
-    for (int hits = 1; hits <= 5; ++hits) {
+    for (int hits = 1; hits <= 5; ++hits)
+    {
         world.setPlayerInput(1, {});
         world.setPlayerInput(1, input);
         world.update(0.4f);
@@ -428,7 +443,8 @@ void testBulletSweepsAndAim()
     World world;
     const auto initial = world.players();
     world.update(2);
-    for (std::size_t i = 1; i < initial.size(); ++i) {
+    for (std::size_t i = 1; i < initial.size(); ++i)
+    {
         expect(near(initial[i].position.x, world.players()[i].position.x) &&
                    near(initial[i].position.y, world.players()[i].position.y),
                "Targets stay stationary on floor and platform");
@@ -467,9 +483,8 @@ void testCancelInput()
     world.clearPlayerInput(1);
     world.clearPlayerInput(999);
     world.update(1.0f / 120.0f);
-    expect(world.players().front().position.x == start.x &&
-               world.players().front().position.y == start.y && world.bullets().empty() &&
-               world.players().front().aimDirection.x == -1,
+    expect(world.players().front().position.x == start.x && world.players().front().position.y == start.y &&
+               world.bullets().empty() && world.players().front().aimDirection.x == -1,
            "Opening menu cancels queued movement, jump and shot while preserving aim");
     world.setPlayerInput(1, input);
     world.update(1.0f / 120.0f);
@@ -483,7 +498,8 @@ void testCancelInput()
 
 int main()
 {
-    try {
+    try
+    {
         testMovement();
         testTimeSteps();
         testCollisions();
@@ -498,7 +514,9 @@ int main()
         testBulletSweepsAndAim();
         testHealth();
         testCancelInput();
-    } catch (const std::exception& error) {
+    }
+    catch (const std::exception& error)
+    {
         std::cerr << error.what() << '\n';
         return 1;
     }

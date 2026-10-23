@@ -158,6 +158,19 @@ void onlineConnectionLifecycle()
            "Reservation and handshake keep the same original nickname despite profile edits");
     expect(host.connection.session()->playerId() != guest.connection.session()->playerId(),
            "Controllers receive distinct player slots");
+    host.menu.setSelectedMap(MapId::Duel);
+    guest.menu.setSelectedMap(MapId::Duel);
+    host.handle(MenuAction::SelectMap);
+    guest.handle(MenuAction::SelectMap);
+    until(
+        tick,
+        [&]
+        {
+            const auto& a = *host.connection.session()->snapshot();
+            const auto& b = *guest.connection.session()->snapshot();
+            return a.votes[0] >= 0 && a.votes[1] >= 0 && b.votes[0] >= 0 && b.votes[1] >= 0;
+        },
+        "Both controllers submit map votes");
     host.handle(MenuAction::ToggleReady);
     guest.handle(MenuAction::ToggleReady);
     until(

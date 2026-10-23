@@ -19,7 +19,7 @@ bool actionHeld(InputAction action, const InputBindings& bindings, const bool* k
                 std::uint32_t mouse);
 InputBinding eventBinding(const SDL_Event& event);
 PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Player& player,
-                            const InputBindings& bindings);
+                            const InputBindings& bindings, Rect arenaBounds = {{0, 0}, {960, 540}});
 // Compatibility overload for existing callers; production uses the current settings.
 PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Player& player);
 

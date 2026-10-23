@@ -23,8 +23,9 @@ WorldSnapshot SnapshotInterpolation::sample(const WorldSnapshot& latest, Clock::
     {
         const auto& a = history_[i - 1];
         const auto& b = history_[i];
-        if (target < a.first || target > b.first || a.second.round != b.second.round ||
-            a.second.round != out.round || a.second.phase != out.phase || b.second.phase != out.phase)
+        if (target < a.first || target > b.first || a.second.map != b.second.map || a.second.map != out.map ||
+            a.second.round != b.second.round || a.second.round != out.round || a.second.phase != out.phase ||
+            b.second.phase != out.phase)
             continue;
         const float t = std::chrono::duration<float>(target - a.first).count() /
                         std::chrono::duration<float>(b.first - a.first).count();

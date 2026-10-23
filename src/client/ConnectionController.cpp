@@ -96,6 +96,10 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
             }
         }
     }
+    if (action == MenuAction::SelectMap && client_)
+        client_->selectMap(menu.selectedMap());
+    if (action == MenuAction::ChangeMap && client_)
+        client_->changeMap();
     if (action == MenuAction::ToggleReady && client_ && client_->snapshot())
     {
         client_->ready(!client_->snapshot()->ready[client_->playerId() - 1]);

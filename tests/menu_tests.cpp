@@ -27,7 +27,9 @@ void startTest(Menu& menu)
     expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes,
            "Play opens mode selection");
     menu.moveSelection(3);
-    expect(menu.activate() == MenuAction::StartTest && menu.playing(), "Test requests a fresh scene");
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Maps, "Test opens map selection");
+    menu.moveSelection(2);
+    expect(menu.activate() == MenuAction::StartTest && menu.playing(), "Selected map starts test");
 }
 
 void testNavigation()
@@ -127,7 +129,7 @@ void testMouseClicks()
     menu.hover(test);
     expect(menu.selection() == 3, "Pointer highlights hovered button");
     menu.press(test);
-    expect(menu.release(test) == MenuAction::StartTest && menu.playing(),
+    expect(menu.release(test) == MenuAction::None && menu.screen() == Screen::Maps,
            "Test scene starts on complete click");
 }
 

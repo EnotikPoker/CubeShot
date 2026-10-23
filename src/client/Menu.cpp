@@ -85,13 +85,27 @@ std::vector<MenuButton> Menu::buttons() const
         case Screen::Connecting:
             result = {{U"Отмена", {}}};
             break;
+        case Screen::Maps:
+            result = {
+                {U"Предыдущая карта", {}}, {U"Следующая карта", {}}, {U"Начать тест", {}}, {U"Назад", {}}};
+            break;
         case Screen::Lobby:
         case Screen::Result:
             result = {{own_ && snapshot_.ready[own_ - 1] ? U"Отменить готовность"
                        : screen_ == Screen::Result       ? U"Реванш"
                                                          : U"Готов",
                        {}},
+                      {U"Сменить карту", {}, !snapshot_.voting && own_ != 1},
                       {U"Выйти из комнаты", {}}};
+            if (screen_ == Screen::Lobby)
+            {
+                result[1] = {U"Предыдущая карта", {}, !snapshot_.voting && own_ != 1};
+                result.insert(result.begin() + 2, {U"Следующая карта", {}, !snapshot_.voting && own_ != 1});
+                if (snapshot_.voting && own_ && snapshot_.votes[own_ - 1] < 0)
+                    result[0].label = U"Голосовать за карту";
+                else if (snapshot_.voting && (snapshot_.votes[0] < 0 || snapshot_.votes[1] < 0))
+                    result[0].placeholder = true;
+            }
             break;
         case Screen::Playing:
         case Screen::Settings:
@@ -101,14 +115,21 @@ std::vector<MenuButton> Menu::buttons() const
                       : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser) ? 161
                       : screen_ == Screen::Paused                                        ? 214
                       : (screen_ == Screen::Address)                                     ? 276
-                      : screen_ == Screen::Lobby || screen_ == Screen::Result || screen_ == Screen::Connecting
-                          ? 330
+                      : screen_ == Screen::Lobby || screen_ == Screen::Result ||
+                              screen_ == Screen::Connecting || screen_ == Screen::Maps
+                          ? 300
                           : 200;
     for (std::size_t i = 0; i < result.size(); ++i)
         result[i].bounds = {
-            {264, top + static_cast<float>(i) *
-                            ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser) ? 55 : 66)},
-            {432, (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser) ? 46.f : 52.f}};
+            {264,
+             top + static_cast<float>(i) * ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
+                                             screen_ == Screen::Lobby || screen_ == Screen::Maps)
+                                                ? 48
+                                                : 66)},
+            {432, (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
+                   screen_ == Screen::Lobby || screen_ == Screen::Maps)
+                      ? 42.f
+                      : 52.f}};
     return result;
 }
 
@@ -207,8 +228,7 @@ MenuAction Menu::activate()
             open(Screen::Lan);
         else if (selection_ == 3)
         {
-            open(Screen::Playing);
-            return MenuAction::StartTest;
+            open(Screen::Maps);
         }
         else
             open(Screen::Main);
@@ -296,8 +316,43 @@ MenuAction Menu::activate()
     }
     else if (screen_ == Screen::Connecting)
         return MenuAction::CancelConnection;
+    else if (screen_ == Screen::Maps)
+    {
+        if (selection_ == 0 || selection_ == 1)
+        {
+            const int count = static_cast<int>(mapCatalog().size());
+            selectedMap_ = static_cast<MapId>(
+                (static_cast<int>(selectedMap_) + (selection_ == 0 ? count - 1 : 1)) % count);
+        }
+        else if (selection_ == 2)
+        {
+            open(Screen::Playing);
+            return MenuAction::StartTest;
+        }
+        else
+            open(Screen::Modes);
+    }
     else if (screen_ == Screen::Lobby || screen_ == Screen::Result)
-        return selection_ == 0 ? MenuAction::ToggleReady : MenuAction::LeaveRoom;
+    {
+        if (selection_ == 0)
+        {
+            if (screen_ == Screen::Lobby && snapshot_.voting && own_ && snapshot_.votes[own_ - 1] < 0)
+                return MenuAction::SelectMap;
+            return MenuAction::ToggleReady;
+        }
+        if (screen_ == Screen::Result)
+            return selection_ == 1 ? MenuAction::ChangeMap : MenuAction::LeaveRoom;
+        if (selection_ == 1 || selection_ == 2)
+        {
+            int current = snapshot_.voting && own_ && snapshot_.votes[own_ - 1] >= 0
+                              ? snapshot_.votes[own_ - 1]
+                              : static_cast<int>(snapshot_.map);
+            const int count = static_cast<int>(MapId::NatureLarge) + 1;
+            selectedMap_ = static_cast<MapId>((current + (selection_ == 1 ? count - 1 : 1)) % count);
+            return MenuAction::SelectMap;
+        }
+        return MenuAction::LeaveRoom;
+    }
     return MenuAction::None;
 }
 
@@ -309,6 +364,8 @@ void Menu::escape()
         open(Screen::Playing);
     else if (screen_ == Screen::Modes)
         open(Screen::Main);
+    else if (screen_ == Screen::Maps)
+        open(Screen::Modes);
     else if (screen_ == Screen::Lan || screen_ == Screen::Online)
         open(Screen::Modes);
     else if (screen_ == Screen::OnlineBrowser)
@@ -385,6 +442,11 @@ void Menu::backspace()
 
 void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
 {
+    if (screen_ != Screen::Maps)
+        selectedMap_ =
+            snapshot.phase == MatchPhase::Lobby && snapshot.voting && own && snapshot.votes[own - 1] >= 0
+                ? static_cast<MapId>(snapshot.votes[own - 1])
+                : snapshot.map;
     snapshot_ = snapshot;
     own_ = own;
     lan_ = true;

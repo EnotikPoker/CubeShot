@@ -3,6 +3,7 @@
 #include "client/SceneRenderer.h"
 #include "client/SettingsRenderer.h"
 #include "client/SettingsStore.h"
+#include "client/WorldView.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -75,9 +76,16 @@ Player Application::ownPlayer() const
     return world_.players().front();
 }
 
+Rect Application::arenaBounds() const
+{
+    auto* session = connections_.session();
+    return session && session->snapshot() ? Arena::create(session->snapshot()->map).bounds
+                                          : world_.arena().bounds;
+}
+
 PlayerInput Application::rawInput() const
 {
-    return readPlayerInput(window_, renderer_, ownPlayer(), settings_.active().bindings);
+    return readPlayerInput(window_, renderer_, ownPlayer(), settings_.active().bindings, arenaBounds());
 }
 
 void Application::screenChanged(Screen before)
@@ -106,7 +114,10 @@ bool Application::handle(MenuAction action)
     }
     connections_.handle(action, menu_, profile_.nickname);
     if (action == MenuAction::StartTest)
-        world_ = World{};
+    {
+        world_ = World{Arena::create(menu_.selectedMap(), true), 4};
+        effects_.clear();
+    }
     if (!connections_.session() || connections_.session()->connecting())
         lastRound_ = 0;
     return true;
@@ -118,15 +129,20 @@ void Application::updateSession()
     auto* session = connections_.session();
     if (!session)
     {
+        if (wasConnected_)
+            effects_.clear();
+        wasConnected_ = false;
         lastRound_ = 0;
         return;
     }
     if (session->connected() && session->snapshot())
     {
+        wasConnected_ = true;
         const auto& snapshot = *session->snapshot();
         if (lastRound_ != snapshot.round)
         {
             lastRound_ = snapshot.round;
+            effects_.clear();
             inputGate_.reset(rawInput());
         }
         const auto input = menu_.playing() ? inputGate_.filter(rawInput())
@@ -264,7 +280,10 @@ int Application::run()
             // Only rising aggregate action edges produce discrete gameplay events.
             if (menu_.playing() && presses[static_cast<std::size_t>(InputAction::Restart)] && !session)
             {
-                world_ = World{};
+                {
+                    world_ = World{Arena::create(menu_.selectedMap(), true), 4};
+                    effects_.clear();
+                }
                 inputGate_.reset(rawInput());
                 accumulator = 0;
             }
@@ -284,6 +303,7 @@ int Application::run()
                         if (SDL_RenderCoordinatesFromWindow(renderer_, event.button.x, event.button.y,
                                                             &logical.x, &logical.y))
                         {
+                            logical = WorldView(arenaBounds()).toWorld(logical);
                             const auto origin = ownPlayer().weaponOrigin();
                             const Vec2 aim{logical.x - origin.x, logical.y - origin.y};
                             if (std::hypot(aim.x, aim.y) > .0001f)
@@ -362,6 +382,23 @@ int Application::run()
         }
         else
             accumulator = 0;
+        if (session && session->snapshot())
+        {
+            auto events = session->takeEvents();
+            const auto& s = *session->snapshot();
+            events.erase(std::remove_if(events.begin(), events.end(),
+                                        [&](const auto& e) { return e.round != s.round; }),
+                         events.end());
+            const auto visual = session->interpolated();
+            effects_.update(static_cast<float>(elapsed), visual.players, Arena::create(s.map), events,
+                            session->playerId(), settings_.active().blood, settings_.active().shake);
+        }
+        else
+        {
+            effects_.update(menu_.playing() ? static_cast<float>(elapsed) : 0.f, world_.players(),
+                            world_.arena(), world_.takeEvents(), World::localPlayerId,
+                            settings_.active().blood, settings_.active().shake);
+        }
         const int fps =
             settings_.previewing() ? settings_.draft().display.fps : settings_.active().display.fps;
         if (!pacer_.due(now, fps))
@@ -373,15 +410,17 @@ int Application::run()
                 SDL_DelayNS(200000);
             continue;
         }
-        const bool sceneVisible = menu_.playing() || menu_.screen() == Screen::Paused;
+        const bool sceneVisible = menu_.playing() || menu_.screen() == Screen::Paused ||
+                                  (session && menu_.screen() == Screen::Result);
         bool rendered = true;
         if (sceneVisible)
         {
             if (session && session->snapshot())
-                rendered = renderSnapshot(renderer_, session->interpolated(), session->playerId()) &&
-                           renderMatchHud(renderer_, *session->snapshot(), session->playerId());
+                rendered =
+                    renderSnapshot(renderer_, session->interpolated(), session->playerId(), &effects_) &&
+                    renderMatchHud(renderer_, *session->snapshot(), session->playerId());
             else
-                rendered = renderScene(renderer_, world_, false);
+                rendered = renderScene(renderer_, world_, false, &effects_);
         }
         if (menu_.screen() == Screen::Settings)
             rendered = renderSettings(renderer_, settings_, SDL_GetTicks(), menu_.lan());

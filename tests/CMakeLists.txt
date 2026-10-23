@@ -6,6 +6,7 @@ if(CUBESHOT_BUILD_CLIENT)
     add_executable(cubeshot_renderer_tests
         renderer_tests.cpp
         ../src/client/SceneRenderer.cpp
+        ../src/client/Effects.cpp
     )
     target_link_libraries(cubeshot_renderer_tests PRIVATE cubeshot_game SDL3::SDL3)
     add_test(NAME renderer COMMAND cubeshot_renderer_tests)
@@ -75,4 +76,14 @@ if(CUBESHOT_BUILD_CLIENT)
     add_executable(cubeshot_settings_tests settings_tests.cpp ../src/client/Menu.cpp)
     target_link_libraries(cubeshot_settings_tests PRIVATE cubeshot_preferences nlohmann_json::nlohmann_json)
     add_test(NAME settings COMMAND cubeshot_settings_tests)
+endif()
+
+add_executable(cubeshot_combat_tests combat_tests.cpp)
+target_link_libraries(cubeshot_combat_tests PRIVATE cubeshot_network)
+add_test(NAME combat COMMAND cubeshot_combat_tests)
+if(CUBESHOT_BUILD_CLIENT)
+    add_executable(cubeshot_effects_tests effects_tests.cpp
+        ../src/client/Effects.cpp ../src/client/SceneRenderer.cpp)
+    target_link_libraries(cubeshot_effects_tests PRIVATE cubeshot_preferences)
+    add_test(NAME effects COMMAND cubeshot_effects_tests)
 endif()

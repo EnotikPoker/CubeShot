@@ -26,9 +26,11 @@ struct Client::Impl
     Clock::time_point started, packet, nextControl{};
     std::uint64_t actionSequence = 0;
     Prediction prediction;
+    std::vector<GameEvent> events;
     Clock::time_point lastPrediction = Clock::now();
     double predictionTime = 0;
     std::optional<WorldSnapshot> latest;
+    std::optional<MapId> pendingMap;
     SnapshotInterpolation interpolation;
 
     void close()
@@ -42,6 +44,8 @@ struct Client::Impl
         id = 0;
         pending = false;
         prediction.reset();
+        events.clear();
+        pendingMap.reset();
         predictionTime = 0;
     }
 
@@ -156,13 +160,37 @@ void Client::poll()
             auto s = decodeSnapshot(e.snapshot());
             if (!s)
                 invalid = true;
-            else if (!impl_->latest || s->tick > impl_->latest->tick)
+            else if (!impl_->latest || s->stateSequence > impl_->latest->stateSequence)
             {
                 impl_->packet = Clock::now();
+                if (impl_->latest && impl_->latest->map != s->map)
+                    impl_->interpolation.clear();
                 impl_->latest = *s;
+                if (impl_->pendingMap)
+                {
+                    if (s->phase != MatchPhase::Lobby ||
+                        (s->voting ? s->votes[impl_->id - 1] == static_cast<int>(*impl_->pendingMap)
+                                   : s->map == *impl_->pendingMap))
+                        impl_->pendingMap.reset();
+                    else
+                        selectMap(*impl_->pendingMap);
+                }
                 impl_->prediction.reconcile(*s, impl_->id);
                 impl_->interpolation.add(*s, impl_->packet);
             }
+        }
+        else if (e.has_events())
+        {
+            auto events = decodeEvents(e.events());
+            if (!events)
+                invalid = true;
+            else
+                for (const auto& event : *events)
+                {
+                    if (impl_->events.size() >= 256)
+                        impl_->events.erase(impl_->events.begin());
+                    impl_->events.push_back(event);
+                }
         }
         else
             invalid = true;
@@ -229,7 +257,11 @@ void Client::action(bool jump, bool shoot, Vec2 aim)
     auto* a = e.mutable_action();
     a->set_sequence(++impl_->actionSequence);
     a->set_input_sequence(impl_->prediction.sequence() + 1);
-    impl_->prediction.action(impl_->actionSequence, jump, shoot, aim);
+    if (auto event = impl_->prediction.action(impl_->actionSequence, jump, shoot, aim))
+    {
+        if (impl_->events.size() < 256)
+            impl_->events.push_back(*event);
+    }
     a->set_round(impl_->latest->round);
     a->set_jump(jump);
     a->set_shoot(shoot);
@@ -244,7 +276,39 @@ void Client::ready(bool value)
         return;
     auto e = envelope();
     e.mutable_ready()->set_ready(value);
+    if (impl_->latest)
+        e.mutable_ready()->set_selection_revision(impl_->latest->selectionRevision);
     send(impl_->connection, e, true);
+}
+
+void Client::selectMap(MapId map)
+{
+    if (!connected() || !impl_->latest || !validMap(map) || impl_->latest->phase != MatchPhase::Lobby ||
+        (!impl_->latest->voting && impl_->id != 1))
+        return;
+    impl_->pendingMap = map;
+    auto e = envelope();
+    auto* choice = e.mutable_map_choice();
+    choice->set_map(static_cast<unsigned>(map));
+    choice->set_selection_revision(impl_->latest->selectionRevision);
+    send(impl_->connection, e, true);
+}
+
+void Client::changeMap()
+{
+    if (!connected() || !impl_->latest)
+        return;
+    auto e = envelope();
+    e.mutable_map_choice()->set_change(true);
+    e.mutable_map_choice()->set_selection_revision(impl_->latest->selectionRevision);
+    send(impl_->connection, e, true);
+}
+
+std::vector<GameEvent> Client::takeEvents()
+{
+    auto out = std::move(impl_->events);
+    impl_->events.clear();
+    return out;
 }
 
 bool Client::connected() const

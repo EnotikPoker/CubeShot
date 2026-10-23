@@ -66,6 +66,14 @@ Settings loadSettings(const std::filesystem::path& file)
         const auto data = nlohmann::json::parse(input, nullptr, false);
         if (!data.is_object() || data.value("version", 0) != 1)
             return settings;
+        if (data.contains("effects") && data["effects"].is_object())
+        {
+            const auto& e = data["effects"];
+            if (e.contains("blood") && e["blood"].is_boolean())
+                settings.blood = e["blood"].get<bool>();
+            if (e.contains("shake") && e["shake"].is_boolean())
+                settings.shake = e["shake"].get<bool>();
+        }
         try
         {
             const auto& d = data.at("display");
@@ -144,7 +152,8 @@ bool saveSettings(const Settings& settings, const std::filesystem::path& file, s
                                 {"height", d.size.height},
                                 {"vsync", d.vsync},
                                 {"fps", d.fps}}},
-                              {"bindings", rows}};
+                              {"bindings", rows},
+                              {"effects", {{"blood", settings.blood}, {"shake", settings.shake}}}};
     return writePreference(file, data.dump(2), error);
 }
 

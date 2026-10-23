@@ -1,4 +1,5 @@
 #include "client/Input.h"
+#include "client/WorldView.h"
 #include "game/Player.h"
 
 #include <SDL3/SDL.h>
@@ -37,7 +38,7 @@ PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Pl
 }
 
 PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Player& player,
-                            const InputBindings& bindings)
+                            const InputBindings& bindings, Rect arenaBounds)
 {
     PlayerInput input;
     input.aimDirection = player.aimDirection;
@@ -56,7 +57,8 @@ PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Pl
     if (SDL_RenderCoordinatesFromWindow(renderer, mouseX, mouseY, &aimX, &aimY))
     {
         const Vec2 origin = player.weaponOrigin();
-        const Vec2 aim{aimX - origin.x, aimY - origin.y};
+        const Vec2 world = WorldView(arenaBounds).toWorld({aimX, aimY});
+        const Vec2 aim{world.x - origin.x, world.y - origin.y};
         if (std::hypot(aim.x, aim.y) > 0.0001f)
             input.aimDirection = aim;
     }
