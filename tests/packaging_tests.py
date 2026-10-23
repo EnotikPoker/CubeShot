@@ -82,6 +82,7 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "missing or changed"):
                 check_package.verify_files(root)
 
+    @unittest.skipUnless(sys.platform == "linux", "Checks Linux ELF paths and ldd output")
     def test_linux_audit_checks_paths_with_spaces(self):
         with tempfile.TemporaryDirectory(prefix="CubeShot проверка ") as directory:
             root = Path(directory)
@@ -96,6 +97,7 @@ class PackagingTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "loaded outside package"):
                     check_package.verify_linux(package, {})
 
+    @unittest.skipUnless(sys.platform == "linux", "Checks Linux ELF runtime lookup")
     def test_linux_cpp_runtime_can_be_system_or_fallback_but_not_override_drivers(self):
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory) / "CubeShot"
@@ -161,7 +163,7 @@ class PackagingTests(unittest.TestCase):
         run.return_value.returncode = 0
         run.return_value.stdout = '{"isDraft":false}'
         with self.assertRaisesRegex(RuntimeError, "already public"):
-            release_assets.publish(Path("unused"), "v0.11.0")
+            release_assets.publish(Path("unused"), "v" + release_assets.project_version())
         mutate.assert_not_called()
 
     @patch.object(release_assets, "validate_tag")
@@ -178,7 +180,7 @@ class PackagingTests(unittest.TestCase):
             for name in (*release_assets.ARCHIVES, "SHA256SUMS.txt"):
                 (root / name).write_bytes(b"asset")
             with self.assertRaisesRegex(RuntimeError, "stay unpublished"):
-                release_assets.publish(root, "v0.11.0")
+                release_assets.publish(root, "v" + release_assets.project_version())
         self.assertTrue(any(c.args[0][2] == "upload" for c in mutate.call_args_list))
         self.assertFalse(any(c.args[0][2] == "edit" for c in mutate.call_args_list))
 

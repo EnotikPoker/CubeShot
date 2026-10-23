@@ -2,7 +2,7 @@
 
 2D-игра на C++17 и SDL3 с отдельным авторитетным сервером.
 
-Текущая версия: **0.11.0**.
+Текущая версия: **0.11.1**.
 
 **[Скачать для Windows](https://github.com/EnotikPoker/CubeShot/releases/latest/download/CubeShot-windows-x64.zip)** ·
 **[Скачать для Linux](https://github.com/EnotikPoker/CubeShot/releases/latest/download/CubeShot-linux-x64.tar.gz)** ·
@@ -76,6 +76,18 @@ ARM64, Alpine/musl и более старые системы пока не по�
 
 При изменениях обновляются версия в CMake, текущая версия выше и история.
 Каждая новая версия разрабатывается в отдельной ветке; прежние записи сохраняются.
+
+### 0.11.1 — 2026-10-24
+
+- Linux-проверки ELF-путей выполняются на Linux: Windows-пути с обратными
+  слешами больше не ломают эти тесты в Windows CI. Общие проверки архивов,
+  выпусков и Windows-окружения сохраняются на обеих платформах.
+- Вывод Python-тестов упаковки сохраняется в диагностический артефакт,
+  включая ошибки до создания игровых архивов.
+- Сохранены исправления `SYSTEMROOT` и совместимости C++ runtime с Mesa/LLVM.
+- Linux-матрица 0.11.0 прошла сборку, тесты и проверки архивов X11/Wayland
+  в Ubuntu 22.04/24.04. Windows-проверка 0.11.1 требует нового запуска CI.
+- Игровые правила и сетевой протокол 4 сохранены.
 
 ### 0.11.0 — 2026-10-23
 
@@ -377,7 +389,7 @@ Windows/MSVC, чистые контейнеры и публикация пров
 
 ```bash
 python3 tools/package_game.py --build build --config Release
-python3 tools/check_package.py build/packages/CubeShot-linux-x64.tar.gz --version 0.11.0 --require-release
+python3 tools/check_package.py build/packages/CubeShot-linux-x64.tar.gz --version 0.11.1 --require-release
 ```
 
 На Windows во второй команде используйте `CubeShot-windows-x64.zip`.
