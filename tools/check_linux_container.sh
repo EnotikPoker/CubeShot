@@ -19,7 +19,12 @@ else
 fi
 weston "${weston_args[@]}" > /tmp/weston.log 2>&1 &
 weston_pid=$!
-trap 'kill "$weston_pid" 2>/dev/null || true' EXIT
+cleanup() {
+    result=$?
+    if [ "$result" -ne 0 ]; then cat /tmp/weston.log; fi
+    kill "$weston_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
 for attempt in {1..100}; do
     if [ -S "$XDG_RUNTIME_DIR/cubeshot-test" ]; then break; fi
     if ! kill -0 "$weston_pid" 2>/dev/null; then cat /tmp/weston.log; exit 1; fi

@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
+from linux_runtime import CXX_RUNTIMES, search_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +43,7 @@ def linux_dependencies(binary):
         raise RuntimeError(f"Unresolved dependencies of {binary}:\n{output}")
     result = []
     for line in output.splitlines():
-        match = re.match(r"\s*(\S+) => (/\S+) \(", line)
+        match = re.match(r"\s*(\S+) => (/.+?) \(", line)
         if match and not BASE_LINUX.match(match[1]):
             result.append((match[1], Path(match[2])))
     return result
@@ -68,6 +69,8 @@ def linux_libraries(metadata, package, allow_newer):
         pending.extend(linux_dependencies(Path(metadata[key])))
     libraries = package / "lib"
     libraries.mkdir()
+    fallback = libraries / "fallback"
+    fallback.mkdir()
     copied = {}
     while pending:
         name, source = pending.pop()
@@ -77,13 +80,20 @@ def linux_libraries(metadata, package, allow_newer):
             continue
         copied[name] = source
         pending.extend(linux_dependencies(source))
-        shutil.copy2(source, libraries / name, follow_symlinks=True)
-    for binary in [package / "CubeShot", package / "cubeshot_server", *libraries.iterdir()]:
+        destination = fallback if name in CXX_RUNTIMES else libraries
+        shutil.copy2(source, destination / name, follow_symlinks=True)
+    for binary in [package / "CubeShot", package / "cubeshot_server",
+                   *(p for p in libraries.rglob("*") if p.is_file())]:
         versions = glibc_versions(binary)
         if versions and max(versions) > (2, 35) and not allow_newer:
             raise RuntimeError(f"{binary.name} requires GLIBC_{'.'.join(map(str, max(versions)))}; "
                                "release packages must be built on Ubuntu 22.04")
-        rpath = "$ORIGIN" if binary.parent == libraries else "$ORIGIN/lib"
+        if binary.parent == fallback:
+            rpath = search_path("$ORIGIN/..", "$ORIGIN")
+        elif binary.parent == libraries:
+            rpath = search_path("$ORIGIN", "$ORIGIN/fallback")
+        else:
+            rpath = search_path("$ORIGIN/lib", "$ORIGIN/lib/fallback")
         subprocess.check_call(["patchelf", "--set-rpath", rpath, str(binary)])
     return list(copied.values())
 

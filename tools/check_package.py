@@ -12,6 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
+from linux_runtime import CXX_RUNTIMES, SYSTEM_LIBRARY_DIRS
 
 
 def extract(archive, destination):
@@ -63,13 +64,21 @@ def verify_linux(package, env):
     libraries = (package / "lib").resolve()
     if not libraries.is_dir():
         raise RuntimeError("Missing bundled Linux libraries")
-    for binary in [package / "CubeShot", package / "cubeshot_server", *libraries.iterdir()]:
+    system_dirs = {Path(directory).resolve() for directory in SYSTEM_LIBRARY_DIRS}
+    for binary in [package / "CubeShot", package / "cubeshot_server",
+                   *(p for p in libraries.rglob("*") if p.is_file())]:
         output = subprocess.check_output(["ldd", str(binary)], env=env, text=True)
         if "not found" in output:
             raise RuntimeError(output)
         for line in output.splitlines():
-            match = re.match(r"\s*(\S+) => (/\S+) \(", line)
-            if match and not base.match(match[1]) and Path(match[2]).resolve().parent != libraries:
+            match = re.match(r"\s*(\S+) => (/.+?) \(", line)
+            if not match or base.match(match[1]):
+                continue
+            parent = Path(match[2]).resolve().parent
+            if match[1] in CXX_RUNTIMES:
+                if parent not in system_dirs and parent != libraries / "fallback":
+                    raise RuntimeError(f"C++ runtime loaded from unexpected directory: {line.strip()}")
+            elif parent != libraries:
                 raise RuntimeError(f"{binary.name} loaded outside package: {line.strip()}")
 
 
@@ -95,6 +104,23 @@ def verify_windows(package):
                 raise ctypes.WinError(ctypes.get_last_error())
 
 
+def package_environment(profile, windows):
+    # os.environ is case-insensitive on Windows; dict(os.environ) is not.
+    # Python normalizes Windows keys to uppercase (including SYSTEMROOT).
+    env = {key.upper() if windows else key: value for key, value in os.environ.items()}
+    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "CUBESHOT_DIRECTORY_URL", "SSL_CERT_FILE"):
+        env.pop(key, None)
+    for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "APPDATA", "LOCALAPPDATA"):
+        env[key] = str(profile)
+    if windows:
+        if not env.get("SYSTEMROOT"):
+            raise RuntimeError("Windows environment is missing SYSTEMROOT")
+        env["PATH"] = str(Path(env["SYSTEMROOT"]) / "System32")
+    else:
+        env["PATH"] = "/usr/bin:/bin"
+    return env
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
@@ -114,15 +140,10 @@ def main():
         windows = os.name == "nt"
         if metadata["platform"] != ("windows-x64" if windows else "linux-x64"):
             raise RuntimeError("Wrong package platform")
-        env = dict(os.environ)
-        for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "CUBESHOT_DIRECTORY_URL", "SSL_CERT_FILE"):
-            env.pop(key, None)
         profile = root / "isolated profile"
         profile.mkdir()
-        for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "APPDATA", "LOCALAPPDATA"):
-            env[key] = str(profile)
         # Preserve the graphical session, but never search build/vcpkg directories.
-        env["PATH"] = (str(Path(env["SystemRoot"]) / "System32") if windows else "/usr/bin:/bin")
+        env = package_environment(profile, windows)
         if windows:
             verify_windows(package)
         else:

@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tarfile
@@ -12,10 +13,25 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import check_package
+import package_game
 import release_assets
 
 
 class PackagingTests(unittest.TestCase):
+    def test_windows_environment_accepts_systemroot_casing(self):
+        for name in ("SYSTEMROOT", "SystemRoot"):
+            with self.subTest(name=name), patch.dict(os.environ, {
+                    name: "D:/Windows", "PATH": "build/vcpkg", "APPDATA": "normal-profile",
+                    "CUBESHOT_DIRECTORY_URL": "https://old.example", "LD_LIBRARY_PATH": "build/lib"},
+                    clear=True):
+                profile = Path("isolated-profile")
+                env = check_package.package_environment(profile, windows=True)
+                self.assertEqual(env["PATH"], str(Path("D:/Windows") / "System32"))
+                self.assertEqual(env["APPDATA"], str(profile))
+                self.assertEqual(env["SYSTEMROOT"], "D:/Windows")
+                self.assertNotIn("LD_LIBRARY_PATH", env)
+                self.assertNotIn("CUBESHOT_DIRECTORY_URL", env)
+
     def test_reject_archive_traversal(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -65,6 +81,35 @@ class PackagingTests(unittest.TestCase):
             library.unlink()
             with self.assertRaisesRegex(RuntimeError, "missing or changed"):
                 check_package.verify_files(root)
+
+    def test_linux_audit_checks_paths_with_spaces(self):
+        with tempfile.TemporaryDirectory(prefix="CubeShot проверка ") as directory:
+            root = Path(directory)
+            package = root / "CubeShot"
+            (package / "lib").mkdir(parents=True)
+            outside = root / "outside libraries" / "libSDL3.so.0"
+            output = f"\tlibSDL3.so.0 => {outside} (0x00000001)\n"
+            with patch.object(package_game, "run", return_value=output):
+                self.assertEqual(package_game.linux_dependencies(package / "CubeShot"),
+                                 [("libSDL3.so.0", outside)])
+            with patch.object(check_package.subprocess, "check_output", return_value=output):
+                with self.assertRaisesRegex(RuntimeError, "loaded outside package"):
+                    check_package.verify_linux(package, {})
+
+    def test_linux_cpp_runtime_can_be_system_or_fallback_but_not_override_drivers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "CubeShot"
+            libraries = package / "lib"
+            (libraries / "fallback").mkdir(parents=True)
+            for path in [Path("/usr/lib/x86_64-linux-gnu/libstdc++.so.6"),
+                         libraries / "fallback" / "libstdc++.so.6"]:
+                output = f"\tlibstdc++.so.6 => {path} (0x00000001)\n"
+                with patch.object(check_package.subprocess, "check_output", return_value=output):
+                    check_package.verify_linux(package, {})
+            output = f"\tlibstdc++.so.6 => {libraries / 'libstdc++.so.6'} (0x00000001)\n"
+            with patch.object(check_package.subprocess, "check_output", return_value=output):
+                with self.assertRaisesRegex(RuntimeError, "unexpected directory"):
+                    check_package.verify_linux(package, {})
 
     def make_archives(self, root, eligible=True, version=None):
         version = version or release_assets.project_version()

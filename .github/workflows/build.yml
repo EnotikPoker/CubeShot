@@ -90,20 +90,25 @@ jobs:
           ctest --test-dir build-headless --output-on-failure --parallel 2
       - name: Package player archive
         shell: bash
-        run: python tools/package_game.py --build build --config Release
+        run: |
+          set -o pipefail
+          python tools/package_game.py --build build --config Release 2>&1 | tee build/package.log
       - name: Verify Windows player archive
         if: runner.os == 'Windows'
         shell: bash
-        run: python tools/check_package.py build/packages/CubeShot-windows-x64.zip --version "${{ steps.version.outputs.value }}" --require-release
+        run: |
+          set -o pipefail
+          python tools/check_package.py build/packages/CubeShot-windows-x64.zip --version "${{ steps.version.outputs.value }}" --require-release 2>&1 | tee build/package-check-windows.log
       - name: Verify Linux archive on clean Ubuntu 22.04 and 24.04
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          set -o pipefail
           for base in 22.04 24.04; do
             docker run --rm \
               -v "$PWD/build/packages:/packages:ro" \
               -v "$PWD/tools:/checks:ro" \
-              "ubuntu:$base" bash /checks/check_linux_container.sh "${{ steps.version.outputs.value }}"
+              "ubuntu:$base" bash /checks/check_linux_container.sh "${{ steps.version.outputs.value }}" 2>&1 | tee "build/package-check-ubuntu-$base.log"
           done
       - name: Upload verified player archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -120,6 +125,7 @@ jobs:
           path: |
             build/build.log
             build/msbuild.log
+            build/package*.log
             build/CMakeFiles/CMakeConfigureLog.yaml
             build/vcpkg-manifest-install.log
             build/Testing/Temporary/
