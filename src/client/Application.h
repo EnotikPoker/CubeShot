@@ -29,6 +29,7 @@ public:
     Application& operator=(const Application&) = delete;
 
     int run();
+    int smokeTest();
 
 private:
     bool initialize();
