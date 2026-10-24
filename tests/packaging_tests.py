@@ -8,7 +8,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -18,6 +18,46 @@ import release_assets
 
 
 class PackagingTests(unittest.TestCase):
+    def check_windows_dll_location(self, package, loaded_path):
+        kernel = Mock()
+        def module_filename(handle, buffer, size):
+            buffer.value = str(loaded_path)
+            return len(buffer.value)
+        kernel.GetModuleFileNameW.side_effect = module_filename
+        kernel.FreeLibrary.return_value = 1
+        library = Mock(_handle=123)
+        def load(name, **kwargs):
+            return kernel if name == "kernel32" else library
+        with patch.object(check_package.ctypes, "WinDLL", side_effect=load, create=True):
+            try:
+                check_package.verify_windows(package)
+            finally:
+                kernel.FreeLibrary.assert_called_once_with(123)
+
+    def test_windows_runtime_accepts_equivalent_directory_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actual = root / "CubeShot"
+            actual.mkdir()
+            (root / "alias").mkdir()
+            # Like an 8.3 path, this names the same directory with different text.
+            alias = root / "alias" / ".." / "CubeShot"
+            library = actual / "concrt140.dll"
+            library.write_bytes(b"fixture")
+            self.assertNotEqual(library.resolve().parent, alias)
+            self.check_windows_dll_location(alias, library.resolve())
+
+    def test_windows_runtime_rejects_an_actual_external_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "CubeShot"
+            package.mkdir()
+            (package / "concrt140.dll").write_bytes(b"fixture")
+            outside = root / "outside"
+            outside.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "Runtime loaded outside package"):
+                self.check_windows_dll_location(package, outside / "concrt140.dll")
+
     def test_windows_environment_accepts_systemroot_casing(self):
         for name in ("SYSTEMROOT", "SystemRoot"):
             with self.subTest(name=name), patch.dict(os.environ, {

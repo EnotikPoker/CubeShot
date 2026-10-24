@@ -95,7 +95,9 @@ def verify_windows(package):
                 path = ctypes.create_unicode_buffer(32768)
                 if not kernel.GetModuleFileNameW(loaded._handle, path, len(path)):
                     raise ctypes.WinError(ctypes.get_last_error())
-                if Path(path.value).resolve().parent != package:
+                # GetModuleFileNameW may return an 8.3 alias such as RUNNER~1.
+                # Compare directory identity, not two spellings of the same path.
+                if not Path(path.value).parent.samefile(package):
                     raise RuntimeError(f"Runtime loaded outside package: {path.value}")
         finally:
             # ctypes does not unload DLLs on GC; release our reference so Windows
