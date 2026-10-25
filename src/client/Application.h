@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/BotGameController.h"
 #include "client/ConnectionController.h"
 #include "client/Effects.h"
 #include "client/Input.h"
@@ -47,6 +48,7 @@ private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Cursor* crosshair_ = nullptr;
     World world_;
+    BotGameController bots_;
     Effects effects_;
     bool wasConnected_ = false;
     Menu menu_;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.11.2 LANGUAGES C CXX)
+project(CubeShot VERSION 0.12.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -8,6 +8,7 @@ option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
     src/game/BodyPhysics.cpp src/game/Arena.cpp src/game/Bullet.cpp src/game/Collision.cpp
+    src/game/BotNavigation.cpp src/game/BotController.cpp src/game/BotMatch.cpp
     src/game/Prediction.cpp src/game/Player.cpp src/game/Weapon.cpp src/game/World.cpp src/game/Match.cpp)
 target_include_directories(cubeshot_game PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(cubeshot_game PUBLIC CUBESHOT_VERSION="${PROJECT_VERSION}")
@@ -55,6 +56,7 @@ if(CUBESHOT_BUILD_CLIENT)
     target_link_libraries(cubeshot_preferences PUBLIC cubeshot_game SDL3::SDL3 PRIVATE cubeshot_directory nlohmann_json::nlohmann_json)
     add_executable(cubeshot_client
         src/client/main.cpp src/client/Application.cpp src/client/ConnectionController.cpp
+        src/client/BotGameController.cpp
         src/client/Menu.cpp src/client/MenuRenderer.cpp
         src/client/SceneRenderer.cpp src/client/Effects.cpp src/client/HostProcess.cpp)
     target_link_libraries(cubeshot_client PRIVATE cubeshot_preferences cubeshot_network cubeshot_directory)

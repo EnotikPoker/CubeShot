@@ -64,7 +64,7 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
                            action == MenuAction::JoinOnline ? menu.selectedServer() : std::string{});
         menu.open(Screen::Connecting);
     }
-    if (action == MenuAction::StartTest)
+    if (action == MenuAction::StartTest || action == MenuAction::StartBots)
     {
         stop();
     }

@@ -1,6 +1,6 @@
 {
   "name": "cubeshot",
-  "version-semver": "0.11.2",
+  "version-semver": "0.12.0",
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
   "dependencies": ["openssl", "protobuf", "nlohmann-json",
     {"name": "cpp-httplib", "default-features": false, "features": ["openssl"]}],

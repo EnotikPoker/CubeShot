@@ -40,7 +40,7 @@ std::vector<MenuButton> Menu::buttons() const
         case Screen::Modes:
             result = {{U"Мультиплеер", {}},
                       {U"Локальная игра", {}},
-                      {U"Игра с ботами", {}, true},
+                      {U"Игра с ботами", {}},
                       {U"Тест", {}},
                       {U"Назад", {}}};
             break;
@@ -89,6 +89,16 @@ std::vector<MenuButton> Menu::buttons() const
             result = {
                 {U"Предыдущая карта", {}}, {U"Следующая карта", {}}, {U"Начать тест", {}}, {U"Назад", {}}};
             break;
+        case Screen::BotSetup:
+            result = {{U"Предыдущая карта", {}},
+                      {U"Следующая карта", {}},
+                      {botDifficultyName(botDifficulty_), {}},
+                      {U"Начать", {}},
+                      {U"Назад", {}}};
+            break;
+        case Screen::BotResult:
+            result = {{U"Реванш", {}}, {U"Карта и сложность", {}}, {U"Выйти в главное меню", {}}};
+            break;
         case Screen::Lobby:
         case Screen::Result:
             result = {{own_ && snapshot_.ready[own_ - 1] ? U"Отменить готовность"
@@ -111,7 +121,9 @@ std::vector<MenuButton> Menu::buttons() const
         case Screen::Settings:
             break;
     }
-    const float top = screen_ == Screen::Modes                                           ? 166
+    const float top = screen_ == Screen::BotSetup                                        ? 270
+                      : screen_ == Screen::BotResult                                     ? 300
+                      : screen_ == Screen::Modes                                         ? 166
                       : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser) ? 161
                       : screen_ == Screen::Paused                                        ? 214
                       : (screen_ == Screen::Address)                                     ? 276
@@ -121,13 +133,16 @@ std::vector<MenuButton> Menu::buttons() const
                           : 200;
     for (std::size_t i = 0; i < result.size(); ++i)
         result[i].bounds = {
-            {264,
-             top + static_cast<float>(i) * ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
-                                             screen_ == Screen::Lobby || screen_ == Screen::Maps)
-                                                ? 48
-                                                : 66)},
-            {432, (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
-                   screen_ == Screen::Lobby || screen_ == Screen::Maps)
+            {264, top + static_cast<float>(i) *
+                            (screen_ == Screen::BotSetup
+                                 ? 44
+                                 : ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
+                                     screen_ == Screen::Lobby || screen_ == Screen::Maps)
+                                        ? 48
+                                        : 66))},
+            {432, screen_ == Screen::BotSetup ? 38.f
+                  : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
+                     screen_ == Screen::Lobby || screen_ == Screen::Maps)
                       ? 42.f
                       : 52.f}};
     return result;
@@ -139,7 +154,11 @@ void Menu::open(Screen screen)
     selection_ = 0;
     pressed_.reset();
     message_.clear();
-    if (screen == Screen::Main || screen == Screen::Modes || screen == Screen::Lan)
+    if (screen == Screen::BotSetup || screen == Screen::Maps || screen == Screen::Main ||
+        screen == Screen::Modes || screen == Screen::Lan || screen == Screen::Online)
+        bots_ = false;
+    if (screen == Screen::Main || screen == Screen::Modes || screen == Screen::Lan ||
+        screen == Screen::BotSetup || screen == Screen::Maps)
     {
         lan_ = false;
         online_ = false;
@@ -226,6 +245,8 @@ MenuAction Menu::activate()
             open(Screen::Online);
         else if (selection_ == 1)
             open(Screen::Lan);
+        else if (selection_ == 2)
+            open(Screen::BotSetup);
         else if (selection_ == 3)
         {
             open(Screen::Maps);
@@ -332,6 +353,34 @@ MenuAction Menu::activate()
         else
             open(Screen::Modes);
     }
+    else if (screen_ == Screen::BotSetup)
+    {
+        if (selection_ <= 1)
+        {
+            const int count = static_cast<int>(MapId::NatureLarge) + 1;
+            botMap_ =
+                static_cast<MapId>((static_cast<int>(botMap_) + (selection_ == 0 ? count - 1 : 1)) % count);
+        }
+        else if (selection_ == 2)
+            botDifficulty_ = static_cast<BotDifficulty>((static_cast<int>(botDifficulty_) + 1) % 3);
+        else if (selection_ == 3)
+        {
+            bots_ = true;
+            open(Screen::Playing);
+            return MenuAction::StartBots;
+        }
+        else
+            open(Screen::Modes);
+    }
+    else if (screen_ == Screen::BotResult)
+    {
+        if (selection_ == 0)
+        {
+            open(Screen::Playing);
+            return MenuAction::BotRematch;
+        }
+        open(selection_ == 1 ? Screen::BotSetup : Screen::Main);
+    }
     else if (screen_ == Screen::Lobby || screen_ == Screen::Result)
     {
         if (selection_ == 0)
@@ -364,8 +413,10 @@ void Menu::escape()
         open(Screen::Playing);
     else if (screen_ == Screen::Modes)
         open(Screen::Main);
-    else if (screen_ == Screen::Maps)
+    else if (screen_ == Screen::Maps || screen_ == Screen::BotSetup)
         open(Screen::Modes);
+    else if (screen_ == Screen::BotResult)
+        open(Screen::Main);
     else if (screen_ == Screen::Lan || screen_ == Screen::Online)
         open(Screen::Modes);
     else if (screen_ == Screen::OnlineBrowser)
@@ -373,6 +424,13 @@ void Menu::escape()
     else if (screen_ == Screen::Browser || screen_ == Screen::Address)
         open(Screen::Lan);
     // Connection/lobby/result require explicit Cancel/Leave action in Application.
+}
+
+void Menu::loseFocus()
+{
+    cancelClick();
+    if (bots_ && playing())
+        open(Screen::Paused);
 }
 
 void Menu::cancelClick()
@@ -440,6 +498,14 @@ void Menu::backspace()
     text.resize(i);
 }
 
+void Menu::botState(const WorldSnapshot& snapshot)
+{
+    snapshot_ = snapshot;
+    own_ = 1;
+    if (snapshot.phase == MatchPhase::Finished && screen_ == Screen::Playing)
+        open(Screen::BotResult);
+}
+
 void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
 {
     if (screen_ != Screen::Maps)
@@ -450,6 +516,7 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
     snapshot_ = snapshot;
     own_ = own;
     lan_ = true;
+    bots_ = false;
     if (screen_ == Screen::Settings)
         return;
     const auto phase = snapshot.phase;

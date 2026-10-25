@@ -1,4 +1,5 @@
 #pragma once
+#include "game/BotController.h"
 #include "game/Match.h"
 #include "network/Directory.h"
 #include <optional>
@@ -23,12 +24,16 @@ enum class Screen
     Online,
     OnlineBrowser,
     Settings,
-    Maps
+    Maps,
+    BotSetup,
+    BotResult
 };
 enum class MenuAction
 {
     None,
     StartTest,
+    StartBots,
+    BotRematch,
     Quit,
     CreateRoom,
     FindRooms,
@@ -62,6 +67,23 @@ struct ListedRoom
 class Menu
 {
 public:
+    bool bots() const
+    {
+        return bots_;
+    }
+
+    MapId botMap() const
+    {
+        return botMap_;
+    }
+
+    BotDifficulty botDifficulty() const
+    {
+        return botDifficulty_;
+    }
+
+    void botState(const WorldSnapshot& snapshot);
+
     MapId selectedMap() const
     {
         return selectedMap_;
@@ -111,6 +133,7 @@ public:
     MenuAction release(Vec2 position);
     MenuAction activate();
     void escape();
+    void loseFocus();
     void openSettings();
     void closeSettings();
     void cancelClick();
@@ -150,6 +173,9 @@ public:
 private:
     std::optional<int> buttonAt(Vec2 position) const;
     MapId selectedMap_ = MapId::Test;
+    MapId botMap_ = MapId::Duel;
+    BotDifficulty botDifficulty_ = BotDifficulty::Medium;
+    bool bots_ = false;
     Screen screen_ = Screen::Main;
     Screen settingsReturn_ = Screen::Main;
     int selection_ = 0;
