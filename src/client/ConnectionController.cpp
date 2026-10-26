@@ -96,6 +96,8 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
             }
         }
     }
+    if ((action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon) && client_)
+        client_->chooseWeapon(action == MenuAction::RollWeapon);
     if (action == MenuAction::SelectMap && client_)
         client_->selectMap(menu.selectedMap());
     if (action == MenuAction::ChangeMap && client_)

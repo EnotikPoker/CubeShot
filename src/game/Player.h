@@ -44,6 +44,7 @@ private:
     bool jumpHeld_ = false;
     bool jumpRequested_ = false;
     bool shootHeld_ = false;
+    bool triggerHeld_ = false;
     bool shootRequested_ = false;
     Vec2 shotAim_{1, 0};
     std::uint64_t shotSequence_ = 0;

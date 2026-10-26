@@ -1,5 +1,6 @@
 #include "network/SnapshotInterpolation.h"
 #include <algorithm>
+#include <cmath>
 
 namespace cubeshot::network
 {
@@ -47,6 +48,29 @@ WorldSnapshot SnapshotInterpolation::sample(const WorldSnapshot& latest, Clock::
                                    [&](const auto& v) { return v.id == bullet.id; });
             if (from != a.second.bullets.end() && to != b.second.bullets.end())
                 bullet.position = lerp(from->position, to->position);
+        }
+        auto interpolatePiece = [&](PhysicsPiece& piece, const PhysicsPiece& from, const PhysicsPiece& to)
+        {
+            piece.position = lerp(from.position, to.position);
+            piece.angle = from.angle + std::remainder(to.angle - from.angle, 6.283185307f) * t;
+        };
+        for (auto& corpse : out.corpses)
+        {
+            auto from = std::find_if(a.second.corpses.begin(), a.second.corpses.end(),
+                                     [&](const auto& v) { return v.body.id == corpse.body.id; });
+            auto to = std::find_if(b.second.corpses.begin(), b.second.corpses.end(),
+                                   [&](const auto& v) { return v.body.id == corpse.body.id; });
+            if (from != a.second.corpses.end() && to != b.second.corpses.end())
+                interpolatePiece(corpse.body, from->body, to->body);
+        }
+        for (auto& piece : out.pieces)
+        {
+            auto from = std::find_if(a.second.pieces.begin(), a.second.pieces.end(),
+                                     [&](const auto& v) { return v.id == piece.id; });
+            auto to = std::find_if(b.second.pieces.begin(), b.second.pieces.end(),
+                                   [&](const auto& v) { return v.id == piece.id; });
+            if (from != a.second.pieces.end() && to != b.second.pieces.end())
+                interpolatePiece(piece, *from, *to);
         }
         break;
     }

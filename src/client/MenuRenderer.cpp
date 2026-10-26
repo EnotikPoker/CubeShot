@@ -4,6 +4,7 @@
 #include "network/Identity.h"
 
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cmath>
 
 namespace cubeshot::client
@@ -25,6 +26,52 @@ bool rectangle(SDL_Renderer* renderer, const Rect& bounds, SDL_Color color)
 bool centeredText(SDL_Renderer* renderer, std::u32string_view text, float y, int scale, SDL_Color color)
 {
     return drawText(renderer, text, {(960 - textWidth(text, scale)) / 2, y}, scale, color);
+}
+
+bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
+{
+    if (!own)
+        return true;
+    const auto slot = own - 1;
+    constexpr float pi = 3.14159265358979323846f, sector = 2 * pi / 7;
+    const bool spinning = state.weaponChoice[slot] == WeaponChoice::Spinning;
+    const auto result = spinning ? state.rolled[slot] : state.loadout[slot];
+    const float elapsed = Match::spinSeconds - state.spinRemaining[slot];
+    const float progress = spinning ? std::clamp(elapsed / Match::wheelSeconds, 0.f, 1.f) : 1.f;
+    const float rotation =
+        -pi / 2 - (static_cast<unsigned>(result) + .5f) * sector + std::pow(1 - progress, 3.f) * 12 * pi;
+    const auto index =
+        static_cast<unsigned>(static_cast<int>(std::floor((-pi / 2 - rotation) / sector)) % 7 + 7) % 7;
+    const std::u32string_view names[]{U"Пистолет",  U"Дробовик", U"Автомат", U"SMG",
+                                      U"Револьвер", U"Винтовка", U"Снайпер"};
+    const SDL_FColor colors[]{{.22f, .43f, .62f, 1}, {.65f, .38f, .2f, 1}, {.28f, .5f, .32f, 1},
+                              {.46f, .3f, .6f, 1},   {.6f, .48f, .22f, 1}, {.25f, .5f, .53f, 1},
+                              {.59f, .25f, .34f, 1}};
+    for (unsigned item = 0; item < 7; ++item)
+    {
+        for (int slice = 0; slice < 8; ++slice)
+        {
+            const float a = rotation + item * sector + sector * slice / 8;
+            const float b = a + sector / 8;
+            SDL_Vertex vertices[]{{{480, 285}, colors[item], {0, 0}},
+                                  {{480 + std::cos(a) * 96, 285 + std::sin(a) * 96}, colors[item], {0, 0}},
+                                  {{480 + std::cos(b) * 96, 285 + std::sin(b) * 96}, colors[item], {0, 0}}};
+            if (!SDL_RenderGeometry(renderer, nullptr, vertices, 3, nullptr, 0))
+                return false;
+        }
+        const float middle = rotation + (item + .5f) * sector;
+        if (!drawText(renderer, names[item],
+                      {480 + std::cos(middle) * 65 - textWidth(names[item], 1) / 2,
+                       285 + std::sin(middle) * 65 - 4},
+                      1, white))
+            return false;
+    }
+    if (!rectangle(renderer, {{474, 181}, {12, 18}}, {255, 214, 104, 255}) ||
+        !rectangle(renderer, {{461, 270}, {38, 30}}, {20, 25, 35, 255}) ||
+        !centeredText(renderer, asciiText(std::to_string(index + 1)), 276, 3, white))
+        return false;
+    const auto shown = spinning && progress < 1 ? static_cast<WeaponKind>(index) : result;
+    return centeredText(renderer, weaponDefinition(shown).name, 163, 2, blue);
 }
 
 bool preview(SDL_Renderer* renderer, MapId id, Rect box, bool test = true)
@@ -66,7 +113,8 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
     }
     else
     {
-        if (menu.screen() == Screen::Result || menu.screen() == Screen::BotResult)
+        if (menu.screen() == Screen::Result || menu.screen() == Screen::BotResult ||
+            menu.screen() == Screen::Armory)
         {
             if (!SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND) ||
                 !rectangle(renderer, {{0, 0}, {960, 540}}, {8, 12, 20, 210}) ||
@@ -119,6 +167,10 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     title = U"Выбор карты";
                     hint = U"Тест: три мишени без ИИ";
                     break;
+                case Screen::Armory:
+                    title = U"Оружие между раундами";
+                    hint = U"Один бросок. Текущее оружие может выпасть снова";
+                    break;
                 case Screen::BotSetup:
                     title = U"Игра с ботом";
                     hint = U"Выберите карту и сложность. Дуэль до 5 побед";
@@ -143,6 +195,19 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             }
             if (!centeredText(renderer, title, 65, 4, white) || !centeredText(renderer, hint, 117, 2, muted))
                 return false;
+            if (menu.screen() == Screen::Armory)
+            {
+                if (!wheel(renderer, menu.networkSnapshot(), menu.ownId()))
+                    return false;
+                const auto other = menu.ownId() == 1 ? 1 : 0;
+                const auto choice = menu.networkSnapshot().weaponChoice[other];
+                if (!centeredText(renderer,
+                                  choice == WeaponChoice::Ready      ? U"Соперник готов"
+                                  : choice == WeaponChoice::Spinning ? U"Соперник вращает колесо"
+                                                                     : U"Соперник выбирает",
+                                  140, 1, muted))
+                    return false;
+            }
             if (menu.screen() == Screen::BotSetup)
             {
                 if (!centeredText(renderer, mapInfo(menu.botMap()).name, 140, 2, blue) ||
@@ -163,7 +228,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             if (menu.screen() == Screen::Maps)
             {
                 if (!centeredText(renderer, mapInfo(menu.selectedMap()).name, 145, 2, blue) ||
-                    !preview(renderer, menu.selectedMap(), {{360, 165}, {240, 135}}))
+                    !preview(renderer, menu.selectedMap(), {{392, 160}, {176, 99}}))
                     return false;
             }
             if (menu.screen() == Screen::Address)
@@ -221,13 +286,15 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             !centeredText(renderer, button.label, bounds.position.y + 16,
                           (menu.screen() == Screen::Browser || menu.screen() == Screen::OnlineBrowser ||
                            menu.screen() == Screen::Maps || menu.screen() == Screen::Lobby ||
-                           menu.screen() == Screen::BotSetup || menu.screen() == Screen::BotResult)
+                           menu.screen() == Screen::BotSetup || menu.screen() == Screen::BotResult ||
+                           menu.screen() == Screen::Armory)
                               ? 2
                               : 3,
                           button.placeholder ? muted : white))
             return false;
-        if (button.placeholder && menu.screen() != Screen::Lobby && menu.screen() != Screen::Result &&
-            menu.screen() != Screen::Browser && menu.screen() != Screen::OnlineBrowser &&
+        if (button.placeholder && menu.screen() != Screen::Armory && menu.screen() != Screen::Lobby &&
+            menu.screen() != Screen::Result && menu.screen() != Screen::Browser &&
+            menu.screen() != Screen::OnlineBrowser &&
             !drawText(renderer, U"Скоро", {bounds.position.x + bounds.size.x - 44, bounds.position.y + 40}, 1,
                       muted))
             return false;
@@ -251,13 +318,27 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
         !centeredText(renderer, U"Вы — игрок " + asciiText(std::to_string(own)) + U". До 5 побед", 51, 2,
                       muted))
         return false;
+    const auto player =
+        std::find_if(s.players.begin(), s.players.end(), [own](const auto& p) { return p.id == own; });
+    if (player != s.players.end())
+    {
+        const auto label = weaponDefinition(player->weapon.kind).name;
+        if (!drawText(renderer, label, {948 - textWidth(label, 2), 500}, 2, white))
+            return false;
+        if (player->weapon.kind == WeaponKind::Sniper &&
+            !drawText(renderer, U"Удерживайте огонь 0.3 с", {690, 522}, 1, muted))
+            return false;
+    }
     if (!drawText(renderer, mapInfo(s.map).name, {12, 520}, 1, muted))
         return false;
     std::u32string status;
     if (s.phase == MatchPhase::Countdown)
         status = U"Начало через " + asciiText(std::to_string(static_cast<int>(std::ceil(s.remaining))));
     if (s.phase == MatchPhase::RoundEnd)
-        status = s.winner == 0 ? U"Ничья" : s.winner == own ? U"Раунд выигран" : U"Раунд проигран";
+        status = (s.winner == 0     ? std::u32string(U"Ничья")
+                  : s.winner == own ? std::u32string(U"Раунд выигран")
+                                    : std::u32string(U"Раунд проигран")) +
+                 U" — " + asciiText(std::to_string(static_cast<int>(std::ceil(s.remaining))));
     return status.empty() || centeredText(renderer, status, 125, 4, blue);
 }
 

@@ -221,13 +221,20 @@ void Client::control(PlayerInput input)
         impl_->prediction.advance(input);
         impl_->predictionTime -= 1.0 / 120;
     }
+    for (const auto& event : impl_->prediction.takeEvents())
+    {
+        if (impl_->events.size() >= 256)
+            impl_->events.erase(impl_->events.begin());
+        impl_->events.push_back(event);
+    }
     if (now < impl_->nextControl)
         return;
     impl_->nextControl =
         now + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 60));
     auto e = envelope();
     const auto& commands = impl_->prediction.commands();
-    if (commands.empty() || impl_->latest->phase != MatchPhase::Round)
+    if (commands.empty() ||
+        (impl_->latest->phase != MatchPhase::Round && impl_->latest->phase != MatchPhase::RoundEnd))
         e.mutable_heartbeat();
     else
     {
@@ -241,6 +248,7 @@ void Client::control(PlayerInput input)
             auto* out = control->add_commands();
             out->set_sequence(command.sequence);
             out->set_movement(command.input.moveDirection);
+            out->set_fire_held(command.input.triggerHeld);
             out->mutable_aim()->set_x(command.input.aimDirection.x);
             out->mutable_aim()->set_y(command.input.aimDirection.y);
         }
@@ -250,7 +258,8 @@ void Client::control(PlayerInput input)
 
 void Client::action(bool jump, bool shoot, Vec2 aim)
 {
-    if (!connected() || !impl_->latest || impl_->latest->phase != MatchPhase::Round ||
+    if (!connected() || !impl_->latest ||
+        (impl_->latest->phase != MatchPhase::Round && impl_->latest->phase != MatchPhase::RoundEnd) ||
         !std::isfinite(aim.x) || !std::isfinite(aim.y) || std::hypot(aim.x, aim.y) < .0001f)
         return;
     auto e = envelope();
@@ -267,6 +276,18 @@ void Client::action(bool jump, bool shoot, Vec2 aim)
     a->set_shoot(shoot);
     a->mutable_aim()->set_x(aim.x);
     a->mutable_aim()->set_y(aim.y);
+    send(impl_->connection, e, true);
+}
+
+void Client::chooseWeapon(bool reroll)
+{
+    if (!connected() || !impl_->latest || impl_->latest->phase != MatchPhase::Armory)
+        return;
+    auto e = envelope();
+    auto* choice = e.mutable_weapon_choice();
+    choice->set_reroll(reroll);
+    choice->set_round(impl_->latest->round);
+    choice->set_selection_revision(impl_->latest->selectionRevision);
     send(impl_->connection, e, true);
 }
 

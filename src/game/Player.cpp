@@ -27,18 +27,43 @@ Vec2 Player::weaponOrigin() const
 Vec2 Player::muzzlePosition() const
 {
     const Vec2 origin = weaponOrigin();
-    return {origin.x + aimDirection.x * Weapon::barrelLength,
-            origin.y + aimDirection.y * Weapon::barrelLength};
+    return {origin.x + aimDirection.x * weapon.barrel(), origin.y + aimDirection.y * weapon.barrel()};
 }
 
 std::optional<Bullet> Player::takeShot()
 {
-    const bool requested = shootRequested_;
+    bool requested = shootRequested_ || (weapon.automatic() && triggerHeld_);
     shootRequested_ = false;
-    if (!alive() || !requested || !weapon.tryFire())
+    if (!alive())
+        return {};
+    const auto& definition = weaponDefinition(weapon.kind);
+    if (weapon.charging)
     {
-        return std::nullopt;
+        if (!triggerHeld_)
+        {
+            weapon.charging = false;
+            weapon.preparation = 0;
+            return {};
+        }
+        if (weapon.preparation > 0)
+            return {};
+        weapon.charging = false;
+        requested = true;
+        shotAim_ = aimDirection;
     }
+    else if (requested && definition.preparation > 0 && weapon.cooldown <= 0)
+    {
+        if (triggerHeld_)
+        {
+            weapon.charging = true;
+            weapon.preparation = definition.preparation;
+        }
+        return {};
+    }
+    if (!requested || !weapon.tryFire())
+        return {};
+    if (weapon.automatic())
+        shotAim_ = aimDirection;
     // World проверит путь от руки до дула, чтобы не стрелять сквозь стену.
     Bullet bullet;
     bullet.position = weaponOrigin();
@@ -46,6 +71,10 @@ std::optional<Bullet> Player::takeShot()
     bullet.damage = weapon.damage;
     bullet.shooterId = id;
     bullet.shotSequence = shotSequence_;
+    bullet.weapon = weapon.kind;
+    bullet.volley = weapon.shots;
+    bullet.lifetime = definition.lifetime;
+    bullet.acceleration = definition.gravity;
     return bullet;
 }
 
@@ -72,6 +101,7 @@ void Player::applyInput(const PlayerInput& input)
     const bool shot = input.shoot && !shootHeld_ && !shootRequested_;
     shootRequested_ = shootRequested_ || shot;
     shootHeld_ = input.shoot;
+    triggerHeld_ = input.triggerHeld || input.shoot;
     const float length = std::hypot(input.aimDirection.x, input.aimDirection.y);
     if (std::isfinite(length) && length > 0.0001f)
     {
@@ -101,7 +131,9 @@ void Player::clearInput()
 {
     velocity.x = 0;
     jumpHeld_ = jumpRequested_ = false;
-    shootHeld_ = shootRequested_ = false;
+    shootHeld_ = shootRequested_ = triggerHeld_ = false;
+    weapon.charging = false;
+    weapon.preparation = 0;
 }
 
 void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)

@@ -382,14 +382,23 @@ void testBulletHits()
     world.update(0.5f);
     expect(near(world.players()[2].position.x, 250) && world.bullets().empty(),
            "Dead player cannot move, jump or fire");
-    for (int hits = 1; hits <= 5; ++hits)
+    bool hitRemains = false;
+    int previousHealth = world.players()[1].health;
+    for (int shots = 0; shots < 40 && world.players()[1].alive(); ++shots)
     {
         world.setPlayerInput(1, {});
         world.setPlayerInput(1, input);
-        world.update(0.4f);
-        expect(world.players()[1].health == Player::maxHealth - hits * 20,
-               "Dead target does not shield the next target");
+        world.update(.4f);
+        const int health = world.players()[1].health;
+        expect(health <= previousHealth && previousHealth - health <= 20,
+               "A bullet hits either remains or the next target, never both");
+        previousHealth = health;
+        for (const auto& event : world.takeEvents())
+            hitRemains =
+                hitRemains || event.kind == EventKind::CorpseHit || event.kind == EventKind::CorpseBreak;
     }
+    expect(hitRemains && !world.players()[1].alive(),
+           "Physical remains absorb shots and can be broken or pushed out of the way");
     world = World(shootingArena());
     expect(world.bullets().empty() && world.players()[1].health == Player::maxHealth &&
                world.players()[2].health == Player::maxHealth,

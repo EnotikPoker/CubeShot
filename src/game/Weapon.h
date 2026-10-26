@@ -1,17 +1,44 @@
 #pragma once
+#include <cstdint>
+#include <string_view>
 
-namespace cubeshot {
-
-struct Weapon {
-    static constexpr float barrelLength = 36.0f;
-
-    int damage = 20;
-    float bulletSpeed = 800.0f;
-    float shotInterval = 0.25f; // Секунды между выстрелами.
-    float cooldown = 0.0f;     // Секунды до разрешённого выстрела.
-
-    void update(float deltaSeconds);
-    bool tryFire();
+namespace cubeshot
+{
+enum class WeaponKind : std::uint32_t
+{
+    Pistol,
+    Shotgun,
+    Automatic,
+    Smg,
+    Revolver,
+    Rifle,
+    Sniper
 };
 
+struct WeaponDefinition
+{
+    std::u32string_view name;
+    int damage, pellets;
+    float interval, speed, lifetime, spread, gravity, barrel, preparation;
+    bool automatic;
+};
+
+bool validWeapon(WeaponKind kind);
+const WeaponDefinition& weaponDefinition(WeaponKind kind);
+
+struct Weapon
+{
+    static constexpr float barrelLength = 36;
+    WeaponKind kind = WeaponKind::Pistol;
+    int damage = 20;
+    float bulletSpeed = 800, shotInterval = .25f, cooldown = 0;
+    bool charging = false;
+    float preparation = 0;
+    std::uint32_t shots = 0;
+    void equip(WeaponKind value);
+    float barrel() const;
+    bool automatic() const;
+    void update(float dt);
+    bool tryFire();
+};
 } // namespace cubeshot

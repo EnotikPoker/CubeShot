@@ -2,6 +2,7 @@
 
 #include "game/Arena.h"
 #include "game/Bullet.h"
+#include "game/Debris.h"
 #include "game/Events.h"
 #include "game/Player.h"
 
@@ -23,12 +24,14 @@ public:
     void clearPlayerInput(PlayerId id);
     void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0);
     void resetPlayers(bool swapSpawns = false);
-    void update(float deltaSeconds);
+    void equip(PlayerId id, WeaponKind kind);
+    void update(float deltaSeconds, bool damageLiving = true);
 
     std::vector<GameEvent> takeEvents();
     const Arena& arena() const;
     const std::vector<Player>& players() const;
     const std::vector<Bullet>& bullets() const;
+    const Debris& debris() const;
 
 private:
     bool moveBullet(Bullet& bullet, Vec2 destination);
@@ -36,6 +39,9 @@ private:
 
     void emit(EventKind kind, const Bullet& bullet, Vec2 position, PlayerId target = 0);
     Arena arena_;
+    Debris debris_;
+    bool damageLiving_ = true;
+    std::vector<Vec2> pendingImpact_;
     std::size_t playerCount_ = 0;
     std::uint64_t nextEvent_ = 1, tick_ = 0;
     std::vector<GameEvent> events_;

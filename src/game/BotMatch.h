@@ -12,6 +12,7 @@ public:
     void control(const PlayerInput& input);
     void action(bool jump, bool shoot, Vec2 aim);
     void clearInput();
+    bool chooseWeapon(bool reroll);
     void update(float dt);
     void rematch(const std::string& nickname = {});
     WorldSnapshot snapshot() const;
@@ -25,5 +26,6 @@ private:
     std::uint64_t humanSequence_ = 0, botSequence_ = 0;
     std::uint32_t round_ = 0;
     double accumulator_ = 0;
+    bool botHeld_ = false;
 };
 } // namespace cubeshot

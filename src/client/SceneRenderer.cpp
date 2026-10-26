@@ -24,6 +24,35 @@ struct Painter
                SDL_RenderFillRect(renderer, &box);
     }
 
+    bool ellipse(Vec2 at, float rx, float ry, SDL_Color color, float angle = 0) const
+    {
+        constexpr int sides = 14;
+        SDL_Vertex vertices[sides + 1];
+        auto vertex = [&](Vec2 point)
+        {
+            auto screen = view.toScreen(point);
+            return SDL_Vertex{{screen.x, screen.y},
+                              {color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f},
+                              {0, 0}};
+        };
+        vertices[0] = vertex(at);
+        for (int n = 0; n < sides; ++n)
+        {
+            const float t = static_cast<float>(n) * 6.283185307f / sides;
+            const Vec2 local{std::cos(t) * rx, std::sin(t) * ry};
+            vertices[n + 1] = vertex({at.x + local.x * std::cos(angle) - local.y * std::sin(angle),
+                                      at.y + local.x * std::sin(angle) + local.y * std::cos(angle)});
+        }
+        int indices[sides * 3];
+        for (int n = 0; n < sides; ++n)
+        {
+            indices[n * 3] = 0;
+            indices[n * 3 + 1] = n + 1;
+            indices[n * 3 + 2] = (n + 1) % sides + 1;
+        }
+        return SDL_RenderGeometry(renderer, nullptr, vertices, sides + 1, indices, sides * 3);
+    }
+
     bool part(Vec2 origin, Vec2 direction, float x, float y, float w, float h, SDL_FColor color,
               bool mirror = false) const
     {
@@ -48,10 +77,29 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
     origin.x -= aim.x * recoil * 6;
     origin.y -= aim.y * recoil * 6;
     const bool mirror = aim.x < 0;
+    const auto kind = player.weapon.kind;
+    const float length = player.weapon.barrel();
+    const bool longGun = kind == WeaponKind::Shotgun || kind == WeaponKind::Automatic ||
+                         kind == WeaponKind::Rifle || kind == WeaponKind::Sniper;
+    const SDL_FColor steel = kind == WeaponKind::Smg        ? SDL_FColor{.3f, .34f, .4f, 1}
+                             : kind == WeaponKind::Revolver ? SDL_FColor{.8f, .82f, .87f, 1}
+                                                            : SDL_FColor{.65f, .7f, .76f, 1};
     if (!p.part(origin, aim, 0, -3, 15, 8, {.94f, .73f, .49f, 1}, mirror) ||
-        !p.part(origin, aim, 12, 0, 8, 15, {.22f, .25f, .3f, 1}, mirror) ||
-        !p.part(origin, aim, 10, -5, Weapon::barrelLength - 10, 10, {.7f, .75f, .82f, 1}, mirror) ||
-        !p.part(origin, aim, 11, -5, Weapon::barrelLength - 12, 3, {.91f, .94f, 1, 1}, mirror))
+        !p.part(origin, aim, 12, 0, 8, 15, {.2f, .23f, .28f, 1}, mirror) ||
+        !p.part(origin, aim, 10, -5, length - 10, 10, steel, mirror) ||
+        !p.part(origin, aim, 11, -5, length - 12, 3, {.9f, .93f, 1, 1}, mirror))
+        return false;
+    if (longGun && !p.part(origin, aim, -7, -3, 19, 12, {.37f, .25f, .17f, 1}, mirror))
+        return false;
+    if (kind == WeaponKind::Automatic || kind == WeaponKind::Smg)
+        if (!p.part(origin, aim, 22, 3, 9, 15, {.25f, .29f, .32f, 1}, mirror))
+            return false;
+    if (kind == WeaponKind::Revolver && !p.part(origin, aim, 16, -7, 12, 13, {.4f, .43f, .5f, 1}, mirror))
+        return false;
+    if (kind == WeaponKind::Shotgun && !p.part(origin, aim, 25, 0, 14, 7, {.47f, .29f, .16f, 1}, mirror))
+        return false;
+    if (kind == WeaponKind::Sniper && (!p.part(origin, aim, 15, -14, 23, 6, {.17f, .2f, .24f, 1}, mirror) ||
+                                       !p.part(origin, aim, 21, -9, 5, 5, {.3f, .33f, .37f, 1}, mirror)))
         return false;
     return pose.shot < .055f ||
            p.part(player.muzzlePosition(), aim, 0, -6, 12 + recoil * 7, 12, {1, .86f, .3f, 1});
@@ -90,7 +138,8 @@ bool background(const Painter& p, const Arena& arena)
 
 static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::vector<Player>& players,
                         const std::vector<Bullet>& bullets, PlayerId own, bool present,
-                        const Effects* effects)
+                        const Effects* effects, const std::vector<Corpse>& corpses,
+                        const std::vector<PhysicsPiece>& pieces)
 {
     const auto theme = mapInfo(arena.map).theme;
     const SDL_Color bg = theme == MapTheme::Nature  ? SDL_Color{19, 32, 31, 255}
@@ -130,10 +179,39 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
     }
     if (effects)
         for (const auto& stain : effects->stains())
-            if (!p.rect({{stain.position.x - stain.width / 2, stain.position.y - stain.height / 2},
-                         {stain.width, stain.height}},
-                        {119, 27, 43, 255}))
+        {
+            if (!p.ellipse(stain.position, stain.width / 2, stain.height / 2, {108, 20, 35, 255},
+                           stain.angle) ||
+                !p.ellipse({stain.position.x + stain.width * .23f, stain.position.y - 1}, stain.width * .31f,
+                           stain.height * .4f, {142, 26, 40, 255}, -.4f))
                 return false;
+        }
+    auto remainsColor = [&](PlayerId owner)
+    { return owner == own ? SDL_FColor{.22f, .47f, .68f, 1} : SDL_FColor{.65f, .22f, .24f, 1}; };
+    const bool blood = !effects || effects->bloodVisible();
+    for (const auto& corpse : corpses)
+        for (unsigned cell = 0; cell < 16; ++cell)
+            if (corpse.cells & (1u << cell))
+            {
+                auto r = corpseCell(cell);
+                const Vec2 direction{std::cos(corpse.body.angle), std::sin(corpse.body.angle)};
+                if (!p.part(corpse.body.position, direction, r.position.x, r.position.y, r.size.x - .3f,
+                            r.size.y - .3f, remainsColor(corpse.body.owner)))
+                    return false;
+                if (blood && (cell % 3 == 0 || (corpse.integrity < 50 && cell % 2 == 0)))
+                    if (!p.part(corpse.body.position, direction, r.position.x + 2, r.position.y + 1, 6, 5,
+                                {.42f, .05f, .1f, 1}))
+                        return false;
+            }
+    for (const auto& piece : pieces)
+    {
+        const Vec2 direction{std::cos(piece.angle), std::sin(piece.angle)};
+        if (!p.part(piece.position, direction, -piece.size.x / 2, -piece.size.y / 2, piece.size.x,
+                    piece.size.y, remainsColor(piece.owner)))
+            return false;
+        if (blood && !p.part(piece.position, direction, -2, -2, 4, 4, {.62f, .07f, .13f, 1}))
+            return false;
+    }
     for (const auto& player : players)
     {
         const Pose pose = effects ? effects->pose(player.id) : Pose{};
@@ -142,19 +220,7 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                           : local      ? SDL_Color{80, 175, 255, 255}
                                        : SDL_Color{230, 85, 85, 255};
         if (!player.alive())
-        {
-            if (!effects)
-                continue;
-            const float t = std::min(1.f, pose.death / .22f);
-            const auto pos = pose.corpse;
-            const float angle = std::sin(t * 3.14159265f) * .65f;
-            const Vec2 direction{std::cos(angle), std::sin(angle)};
-            const Vec2 pivot{pos.x + 24, pos.y + 48 - std::abs(direction.y) * 24};
-            if (!p.part(pivot, direction, -24, -48 + 30 * t, 48, 48 - 30 * t,
-                        {color.r / 510.f, color.g / 510.f, color.b / 510.f, 1}))
-                return false;
             continue;
-        }
         float squash = pose.land > 0 ? std::sin(pose.land / .16f * 3.14159265f) * .14f : 0;
         float walk = player.grounded ? std::sin(pose.cycle) * .035f : 0;
         float stretch = !player.grounded ? std::clamp(-player.velocity.y / 620.f, -.08f, .08f) : 0;
@@ -163,14 +229,51 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         body.size.y *= 1 - squash - walk + stretch;
         body.position.x += (player.size.x - body.size.x) / 2;
         body.position.y += player.size.y - body.size.y;
-        if (!p.rect(body, color) || !weapon(p, player, pose))
-            return false;
+        const int damageTier = (Player::maxHealth - player.health) / 25;
+        if (!damageTier)
+        {
+            if (!p.rect(body, color))
+                return false;
+        }
+        else
+            for (int cell = 0; cell < 16; ++cell)
+            {
+                if ((damageTier >= 1 && cell == 12) || (damageTier >= 2 && cell == 15) ||
+                    (damageTier >= 3 && cell == 13))
+                    continue;
+                if (!p.rect({{body.position.x + (cell % 4) * body.size.x / 4,
+                              body.position.y + (cell / 4) * body.size.y / 4},
+                             {body.size.x / 4 + .05f, body.size.y / 4 + .05f}},
+                            color))
+                    return false;
+            }
+        if (blood)
+            for (const auto& wound : pose.wounds)
+            {
+                const Vec2 at{body.position.x + wound.local.x / 48 * body.size.x,
+                              body.position.y + wound.local.y / 48 * body.size.y};
+                if (!p.ellipse(at, wound.radius, wound.radius * .75f, {115, 17, 32, 255}, .3f) ||
+                    !p.ellipse({at.x + 1, at.y - 1}, wound.radius * .6f, wound.radius * .4f,
+                               {202, 33, 47, 255}))
+                    return false;
+            }
         // A small gaze mark gives the otherwise square body a clear facing direction.
         if (!p.rect({{body.position.x + (player.aimDirection.x < 0 ? 8.f : body.size.x - 12),
                       body.position.y + 12},
                      {4, 4}},
-                    {24, 36, 52, 255}))
+                    {24, 36, 52, 255}) ||
+            !weapon(p, player, pose))
             return false;
+        if (player.weapon.charging)
+        {
+            const float progress =
+                1 - player.weapon.preparation / weaponDefinition(player.weapon.kind).preparation;
+            if (!p.rect({{player.position.x, player.position.y - 21}, {48, 4}}, {55, 47, 25, 255}) ||
+                !p.rect(
+                    {{player.position.x, player.position.y - 21}, {48 * std::clamp(progress, 0.f, 1.f), 4}},
+                    {255, 204, 91, 255}))
+                return false;
+        }
         const Vec2 hp{player.position.x, std::max(player.position.y - 12, arena.bounds.position.y + 1)};
         const float f =
             static_cast<float>(std::clamp(player.health, 0, Player::maxHealth)) / Player::maxHealth;
@@ -192,8 +295,20 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
     if (effects)
         for (const auto& particle : effects->particles())
         {
-            if (!p.rect({particle.position, {particle.blood ? 3.f : 2.f, particle.blood ? 3.f : 2.f}},
-                        particle.blood ? SDL_Color{204, 35, 59, 255} : SDL_Color{250, 196, 95, 255}))
+            if (particle.blood)
+            {
+                if (!p.ellipse(particle.position, particle.size, particle.size * .75f, {190, 24, 43, 255},
+                               particle.angle))
+                    return false;
+            }
+            else if (particle.chip)
+            {
+                if (!p.part(particle.position, {std::cos(particle.angle), std::sin(particle.angle)},
+                            -particle.size / 2, -particle.size / 2, particle.size, particle.size,
+                            remainsColor(particle.owner)))
+                    return false;
+            }
+            else if (!p.rect({particle.position, {2, 2}}, {250, 196, 95, 255}))
                 return false;
         }
     return !present || SDL_RenderPresent(renderer);
@@ -202,13 +317,13 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
 bool renderScene(SDL_Renderer* renderer, const World& world, bool present, const Effects* effects)
 {
     return renderWorld(renderer, world.arena(), world.players(), world.bullets(), World::localPlayerId,
-                       present, effects);
+                       present, effects, world.debris().corpses(), world.debris().pieces());
 }
 
 bool renderSnapshot(SDL_Renderer* renderer, const WorldSnapshot& snapshot, PlayerId own,
                     const Effects* effects)
 {
     return renderWorld(renderer, Arena::create(snapshot.map), snapshot.players, snapshot.bullets, own, false,
-                       effects);
+                       effects, snapshot.corpses, snapshot.pieces);
 }
 } // namespace cubeshot::client

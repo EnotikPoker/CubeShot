@@ -51,6 +51,23 @@ void knowledge()
            "Movement behind cover remains observable");
 }
 
+void spawnAim()
+{
+    auto arena = Arena::createDuel();
+    World world(arena, 2);
+    BotController bot(arena, BotDifficulty::Medium, 42);
+    for (bool swapped : {false, true, false})
+    {
+        world.resetPlayers(swapped);
+        bot.reset();
+        const auto observation = observeBot(world, 2, 1);
+        const auto input = bot.update(observation, dt);
+        const float direction = observation.target->position.x - observation.self.position.x;
+        expect(input.aimDirection.x * direction > 0,
+               "Bot starts facing its opponent on either spawn and after a reset");
+    }
+}
+
 void noHopping()
 {
     for (const auto& info : mapCatalog())
@@ -210,7 +227,10 @@ int main(int argc, char** argv)
     {
         const std::string only = argc > 1 ? argv[1] : "";
         if (only.empty() || only == "knowledge")
+        {
             knowledge();
+            spawnAim();
+        }
         if (only.empty() || only == "hopping")
             noHopping();
         if (only.empty() || only == "avoidance")

@@ -21,6 +21,7 @@ World::World(Arena arena, std::size_t playerCount)
 
 void World::resetPlayers(bool swapSpawns)
 {
+    debris_.clear();
     players_.clear();
     events_.clear();
     bullets_.clear();
@@ -44,6 +45,7 @@ void World::resetPlayers(bool swapSpawns)
         players_[1].aimDirection = {-direction, 0};
     }
     pendingDamage_.assign(players_.size(), 0);
+    pendingImpact_.assign(players_.size(), {});
 }
 
 void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence)
@@ -79,12 +81,13 @@ void World::clearPlayerInput(PlayerId id)
     }
 }
 
-void World::update(float deltaSeconds)
+void World::update(float deltaSeconds, bool damageLiving)
 {
     if (!(deltaSeconds > 0.0f) || !std::isfinite(deltaSeconds))
     {
         return;
     }
+    damageLiving_ = damageLiving;
     double remaining = deltaSeconds;
     constexpr double maxStep = 1.0 / 120.0;
     while (remaining > 0.0)
@@ -94,19 +97,21 @@ void World::update(float deltaSeconds)
         std::fill(pendingDamage_.begin(), pendingDamage_.end(), 0);
         ++tick_;
         simulateBodies(players_, arena_, step);
+        debris_.update(step, arena_, players_);
         updateBullets(step);
         for (Player& player : players_)
         {
             if (auto bullet = player.takeShot())
             {
-                bullet->id = nextBulletId_++;
                 emit(EventKind::Shot, *bullet, player.muzzlePosition());
                 const float speed = std::hypot(bullet->velocity.x, bullet->velocity.y);
-                const Vec2 muzzle{bullet->position.x + bullet->velocity.x / speed * Weapon::barrelLength,
-                                  bullet->position.y + bullet->velocity.y / speed * Weapon::barrelLength};
-                if (moveBullet(*bullet, muzzle))
+                const Vec2 muzzle{bullet->position.x + bullet->velocity.x / speed * player.weapon.barrel(),
+                                  bullet->position.y + bullet->velocity.y / speed * player.weapon.barrel()};
+                for (auto projectile : scatterShot(*bullet))
                 {
-                    bullets_.push_back(*bullet);
+                    projectile.id = nextBulletId_++;
+                    if (moveBullet(projectile, muzzle) && bullets_.size() < 256)
+                        bullets_.push_back(projectile);
                 }
             }
         }
@@ -114,11 +119,15 @@ void World::update(float deltaSeconds)
         for (std::size_t i = 0; i < players_.size(); ++i)
         {
             bool wasAlive = players_[i].alive();
+            const auto velocity = players_[i].velocity;
             players_[i].takeDamage(pendingDamage_[i]);
             if (wasAlive && !players_[i].alive())
             {
+                debris_.spawn(players_[i], velocity, pendingImpact_[i]);
                 Bullet marker;
                 marker.shooterId = players_[i].id;
+                marker.velocity = pendingImpact_[i];
+                marker.damage = pendingDamage_[i];
                 emit(EventKind::Death, marker, players_[i].position, players_[i].id);
             }
         }
@@ -151,14 +160,36 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             victim = &player;
         }
     }
+    auto remains = debris_.trace(bullet.position, destination);
+    if (remains && remains->fraction < nearest)
+    {
+        nearest = remains->fraction;
+        victim = nullptr;
+    }
+    else
+        remains.reset();
     if (nearest <= 1.0f)
     {
         Vec2 at{bullet.position.x + (destination.x - bullet.position.x) * nearest,
                 bullet.position.y + (destination.y - bullet.position.y) * nearest};
-        emit(victim ? EventKind::Hit : EventKind::SurfaceImpact, bullet, at, victim ? victim->id : 0);
-        if (victim)
+        if (remains)
         {
-            pendingDamage_[static_cast<std::size_t>(victim - players_.data())] += bullet.damage;
+            const auto owner = remains->fragment ? debris_.pieces()[remains->index].owner
+                                                 : debris_.corpses()[remains->index].body.owner;
+            const bool broken = debris_.hit(*remains, bullet, at);
+            emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, bullet, at, owner);
+        }
+        else
+        {
+            emit(victim && damageLiving_ ? EventKind::Hit : EventKind::SurfaceImpact, bullet, at,
+                 victim && damageLiving_ ? victim->id : 0);
+            if (victim && damageLiving_)
+            {
+                const auto index = static_cast<std::size_t>(victim - players_.data());
+                pendingDamage_[index] += bullet.damage;
+                const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
+                pendingImpact_[index] = {bullet.velocity.x / speed, bullet.velocity.y / speed};
+            }
         }
         return false;
     }
@@ -191,7 +222,8 @@ void World::emit(EventKind kind, const Bullet& bullet, Vec2 at, PlayerId target)
         events_.erase(events_.begin());
     float len = std::hypot(bullet.velocity.x, bullet.velocity.y);
     events_.push_back({nextEvent_++, tick_, bullet.shotSequence, 0, kind, bullet.shooterId, target, at,
-                       len > 0 ? Vec2{bullet.velocity.x / len, bullet.velocity.y / len} : Vec2{1, 0}});
+                       len > 0 ? Vec2{bullet.velocity.x / len, bullet.velocity.y / len} : Vec2{1, 0},
+                       bullet.damage, bullet.weapon, bullet.volley});
 }
 
 std::vector<GameEvent> World::takeEvents()
@@ -216,4 +248,18 @@ const std::vector<Bullet>& World::bullets() const
     return bullets_;
 }
 
+void World::equip(PlayerId id, WeaponKind kind)
+{
+    for (auto& p : players_)
+        if (p.id == id)
+        {
+            p.clearInput();
+            p.weapon.equip(kind);
+        }
+}
+
+const Debris& World::debris() const
+{
+    return debris_;
+}
 } // namespace cubeshot

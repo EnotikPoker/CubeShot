@@ -1,5 +1,6 @@
 #pragma once
 #include "game/Types.h"
+#include "game/Weapon.h"
 
 namespace cubeshot
 {
@@ -8,7 +9,9 @@ enum class EventKind
     Shot,
     Hit,
     Death,
-    SurfaceImpact
+    SurfaceImpact,
+    CorpseHit,
+    CorpseBreak
 };
 
 struct GameEvent
@@ -18,5 +21,8 @@ struct GameEvent
     EventKind kind = EventKind::Shot;
     PlayerId actor = 0, target = 0;
     Vec2 position, direction;
+    int damage = 0;
+    WeaponKind weapon = WeaponKind::Pistol;
+    std::uint32_t volley = 0;
 };
 } // namespace cubeshot

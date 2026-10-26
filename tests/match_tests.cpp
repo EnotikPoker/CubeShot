@@ -18,6 +18,20 @@ void advance(Match& m, unsigned ticks)
         m.update(1.0f / 120);
 }
 
+void nextRound(Match& m)
+{
+    for (int tick = 0; tick < 600 && m.phase() == MatchPhase::RoundEnd; ++tick)
+        m.update(1.f / 120);
+    expect(m.phase() == MatchPhase::Armory, "Aftermath opens weapon choice");
+    const auto state = m.snapshot();
+    expect(m.chooseWeapon(1, false, state.round, state.selectionRevision) &&
+               m.chooseWeapon(2, false, state.round, state.selectionRevision),
+           "Both players keep their weapon");
+    m.update(1.f / 120);
+    advance(m, 360);
+    expect(m.phase() == MatchPhase::Round, "Both choices start the next countdown and round");
+}
+
 void ready(Match& m)
 {
     m.connect(1);
@@ -79,9 +93,9 @@ void rules()
     win(m, 1);
     expect(m.phase() == MatchPhase::RoundEnd && m.snapshot().score[0] == 1, "Death awards one point");
     expect(m.world().players()[1].health == 0, "Five pistol hits kill");
-    expect(!m.action(1, m.round(), 6, false, true, {1, 0}), "No shooting between rounds");
-    advance(m, 360);
-    expect(m.phase() == MatchPhase::Round && m.round() != firstRound, "Next round after three seconds");
+    expect(m.action(1, m.round(), 6, false, true, {1, 0}), "Winner can shoot remains during aftermath");
+    nextRound(m);
+    expect(m.phase() == MatchPhase::Round && m.round() != firstRound, "Next round after both weapon choices");
     expect(m.world().players()[0].position.x != firstSpawn && m.world().players()[1].health == 100 &&
                m.world().bullets().empty(),
            "Swap spawns and reset health/bullets");
@@ -90,7 +104,9 @@ void rules()
     {
         win(m, 1);
         if (i < 3)
-            advance(m, 360);
+            nextRound(m);
+        else
+            advance(m, 480);
     }
     expect(m.phase() == MatchPhase::Finished && m.snapshot().score[0] == 5 && m.snapshot().winner == 1,
            "First to five wins match");
@@ -125,7 +141,9 @@ void mapChangeAfterMatch()
         {
             win(m, 1);
             if (i < 4)
-                advance(m, 360);
+                nextRound(m);
+            else
+                advance(m, 480);
         }
         const auto map = m.snapshot().map;
         m.setReady(1, true);
@@ -136,7 +154,9 @@ void mapChangeAfterMatch()
         {
             win(m, 1);
             if (i < 4)
-                advance(m, 360);
+                nextRound(m);
+            else
+                advance(m, 480);
         }
         const auto revision = m.snapshot().selectionRevision;
         expect(!m.changeMap(1, revision - 1), "Stale change-map request cannot cancel result");

@@ -10,6 +10,8 @@ void BotGameController::handle(MenuAction action, Menu& menu, const std::string&
             std::make_unique<BotMatch>(menu.botMap(), menu.botDifficulty(), nickname, std::random_device{}());
     if (action == MenuAction::BotRematch && match_)
         match_->rematch(nickname);
+    if (match_ && (action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon))
+        match_->chooseWeapon(action == MenuAction::RollWeapon);
     synchronize(menu);
 }
 
@@ -41,7 +43,7 @@ void BotGameController::clearInput()
 
 void BotGameController::update(float dt, const Menu& menu)
 {
-    if (match_ && menu.bots() && menu.playing())
+    if (match_ && menu.bots() && (menu.playing() || menu.screen() == Screen::Armory))
         match_->update(dt);
 }
 

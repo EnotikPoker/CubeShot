@@ -199,7 +199,8 @@ struct Server::Impl
         else if (e.has_control())
         {
             const auto& control = e.control();
-            if (control.round() != match.round() || match.phase() != MatchPhase::Round)
+            if (control.round() != match.round() ||
+                (match.phase() != MatchPhase::Round && match.phase() != MatchPhase::RoundEnd))
                 return;
             if (control.commands_size() < 1 || control.commands_size() > 16)
             {
@@ -217,9 +218,11 @@ struct Server::Impl
                 if (command.sequence() <= peer.controlSequence ||
                     command.sequence() - peer.controlSequence > 240)
                     continue;
-                peer.commands.emplace(
-                    command.sequence(),
-                    PlayerInput{command.movement(), false, false, {command.aim().x(), command.aim().y()}});
+                peer.commands.emplace(command.sequence(), PlayerInput{command.movement(),
+                                                                      false,
+                                                                      false,
+                                                                      {command.aim().x(), command.aim().y()},
+                                                                      command.fire_held()});
             }
             peer.input = Clock::now();
         }
@@ -231,7 +234,8 @@ struct Server::Impl
                 remove(c, "Invalid action");
                 return;
             }
-            if (a.round() != match.round() || match.phase() != MatchPhase::Round ||
+            if (a.round() != match.round() ||
+                (match.phase() != MatchPhase::Round && match.phase() != MatchPhase::RoundEnd) ||
                 a.sequence() <= peer.receivedAction)
                 return;
             if (peer.actions.size() >= 240 || a.input_sequence() > peer.controlSequence + 240)
@@ -241,6 +245,12 @@ struct Server::Impl
             }
             peer.receivedAction = a.sequence();
             peer.actions.push_back(a);
+        }
+        else if (e.has_weapon_choice())
+        {
+            const auto& choice = e.weapon_choice();
+            match.chooseWeapon(peer.id, choice.reroll(), choice.round(), choice.selection_revision());
+            broadcast(true);
         }
         else if (e.has_ready())
         {
@@ -311,7 +321,7 @@ void Server::step(float dt)
         auto& peer = entry.second;
         if (!peer.id)
             continue;
-        if (before != MatchPhase::Round)
+        if (before != MatchPhase::Round && before != MatchPhase::RoundEnd)
         {
             peer.commands.clear();
             peer.actions.clear();
