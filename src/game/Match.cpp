@@ -133,6 +133,12 @@ void Match::setInput(PlayerId id, const PlayerInput& input)
     world_.setPlayerInput(id, continuous);
 }
 
+void Match::clearInput(PlayerId id)
+{
+    if (validId(id))
+        world_.clearPlayerInput(id);
+}
+
 bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim)
 {
     if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Round || round != round_ ||

@@ -55,6 +55,7 @@ public:
     void disconnect(PlayerId id, AbortReason reason = AbortReason::PeerLeft);
     void setReady(PlayerId id, bool ready);
     void setInput(PlayerId id, const PlayerInput& input);
+    void clearInput(PlayerId id);
     bool action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim);
     void update(float dt);
     WorldSnapshot snapshot() const;

@@ -57,8 +57,10 @@ void testNavigation()
     expect(menu.screen() == Screen::Lan, "Local mode opens LAN menu");
     menu.escape();
     menu.moveSelection(2);
-    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::Modes && !menu.message().empty(),
-           "Bots remain placeholder");
+    expect(menu.activate() == MenuAction::None && menu.screen() == Screen::BotSetup,
+           "Bots open offline preparation");
+    menu.escape();
+    menu.moveSelection(2);
     menu.moveSelection(1);
     menu.moveSelection(1);
     menu.activate();
@@ -265,7 +267,8 @@ void testMenuRendering()
     menu.networkState(match.snapshot(), 1);
     const auto capture = SDL_getenv("CUBESHOT_CAPTURE_DIR");
     for (auto screen : {Screen::Online, Screen::OnlineBrowser, Screen::Lan, Screen::Browser, Screen::Address,
-                        Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused})
+                        Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused, Screen::BotSetup,
+                        Screen::BotResult})
     {
         menu.open(screen);
         if (screen == Screen::OnlineBrowser)

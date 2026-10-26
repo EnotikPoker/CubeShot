@@ -163,7 +163,7 @@ def main():
         print(result.stderr, end="")
         if result.returncode:
             raise RuntimeError(f"Packaged game smoke test exited with {result.returncode}")
-        print(f"Verified {args.archive.name}: menu, rendering, packaged LAN server and owner connection")
+        print(f"Verified {args.archive.name}: menu, rendering, bot match, packaged LAN server and owner connection")
 
 
 if __name__ == "__main__":

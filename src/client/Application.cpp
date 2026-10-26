@@ -1,4 +1,5 @@
 #include "client/Application.h"
+#include "client/BitmapFont.h"
 #include "client/MenuRenderer.h"
 #include "client/SceneRenderer.h"
 #include "client/SettingsRenderer.h"
@@ -73,11 +74,15 @@ Player Application::ownPlayer() const
             if (p.id == session->playerId())
                 return p;
     }
+    if (bots_.match())
+        return bots_.match()->match().world().players().front();
     return world_.players().front();
 }
 
 Rect Application::arenaBounds() const
 {
+    if (bots_.match())
+        return bots_.match()->match().world().arena().bounds;
     auto* session = connections_.session();
     return session && session->snapshot() ? Arena::create(session->snapshot()->map).bounds
                                           : world_.arena().bounds;
@@ -93,6 +98,8 @@ void Application::screenChanged(Screen before)
     if (before == menu_.screen())
         return;
     world_.clearPlayerInput(World::localPlayerId);
+    bots_.synchronize(menu_);
+    bots_.clearInput();
     inputGate_.reset(rawInput());
     eventInput_.synchronize();
     SDL_SetCursor(menu_.playing() ? crosshair_ : SDL_GetDefaultCursor());
@@ -113,12 +120,19 @@ bool Application::handle(MenuAction action)
         menu_.openSettings();
     }
     connections_.handle(action, menu_, profile_.nickname);
+    bots_.handle(action, menu_, profile_.nickname);
+    if (action == MenuAction::StartBots || action == MenuAction::BotRematch)
+    {
+        effects_.clear();
+        lastRound_ = 0;
+    }
     if (action == MenuAction::StartTest)
     {
         world_ = World{Arena::create(menu_.selectedMap(), true), 4};
         effects_.clear();
     }
-    if (!connections_.session() || connections_.session()->connecting())
+    if ((!connections_.session() && !bots_.match()) ||
+        (connections_.session() && connections_.session()->connecting()))
         lastRound_ = 0;
     return true;
 }
@@ -129,6 +143,8 @@ void Application::updateSession()
     auto* session = connections_.session();
     if (!session)
     {
+        if (bots_.match())
+            return;
         if (wasConnected_)
             effects_.clear();
         wasConnected_ = false;
@@ -194,6 +210,14 @@ int Application::smokeTest()
     if (!initialize() || !renderMenu(renderer_, menu_) || !SDL_RenderPresent(renderer_) ||
         !renderScene(renderer_, world_))
         return 1;
+    BotMatch bots(MapId::Duel, BotDifficulty::Medium, "Smoke", 42);
+    for (int tick = 0; tick < 480; ++tick)
+        bots.update(1.f / 120);
+    const auto botState = bots.snapshot();
+    if (botState.phase != MatchPhase::Round || botState.players.size() != 2 ||
+        botState.players[1].position.x >= 832 || !renderSnapshot(renderer_, botState, 1) ||
+        !renderMatchHud(renderer_, botState, 1) || !SDL_RenderPresent(renderer_))
+        return 1;
     HostProcess host;
     if (!host.start())
     {
@@ -248,6 +272,10 @@ int Application::run()
             {
                 menu_.cancelClick();
                 world_.clearPlayerInput(World::localPlayerId);
+                bots_.clearInput();
+                const auto beforeFocus = menu_.screen();
+                menu_.loseFocus();
+                screenChanged(beforeFocus);
             }
             if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
             {
@@ -314,7 +342,8 @@ int Application::run()
                 }
             }
             // Only rising aggregate action edges produce discrete gameplay events.
-            if (menu_.playing() && presses[static_cast<std::size_t>(InputAction::Restart)] && !session)
+            if (menu_.playing() && presses[static_cast<std::size_t>(InputAction::Restart)] && !session &&
+                !menu_.bots())
             {
                 {
                     world_ = World{Arena::create(menu_.selectedMap(), true), 4};
@@ -354,6 +383,13 @@ int Application::run()
                         session->action(true, false, input.aimDirection);
                     if (shotEvent && input.shoot)
                         session->action(false, true, input.aimDirection);
+                }
+                else if (bots_.match())
+                {
+                    if (jumpEvent && input.jump)
+                        bots_.action(true, false, input.aimDirection);
+                    if (shotEvent && input.shoot)
+                        bots_.action(false, true, input.aimDirection);
                 }
                 else
                     world_.setPlayerInput(World::localPlayerId, input);
@@ -409,15 +445,40 @@ int Application::run()
         if (menu_.playing() && !session)
         {
             accumulator += std::min(elapsed, .1);
-            world_.setPlayerInput(World::localPlayerId, inputGate_.filter(rawInput()));
+            const auto input = inputGate_.filter(rawInput());
+            if (bots_.match())
+                bots_.control(input);
+            else
+                world_.setPlayerInput(World::localPlayerId, input);
             while (accumulator >= stepSeconds)
             {
-                world_.update(static_cast<float>(stepSeconds));
+                if (bots_.match())
+                    bots_.update(static_cast<float>(stepSeconds), menu_);
+                else
+                    world_.update(static_cast<float>(stepSeconds));
                 accumulator -= stepSeconds;
             }
         }
         else
             accumulator = 0;
+        if (bots_.match())
+        {
+            const auto s = bots_.match()->snapshot();
+            if (s.round != lastRound_)
+            {
+                lastRound_ = s.round;
+                effects_.clear();
+                inputGate_.reset(rawInput());
+                eventInput_.synchronize();
+            }
+            effects_.update(
+                menu_.playing() || menu_.screen() == Screen::BotResult ? static_cast<float>(elapsed) : 0.f,
+                s.players, Arena::create(s.map), bots_.match()->takeEvents(), 1, settings_.active().blood,
+                settings_.active().shake);
+            const auto previousScreen = menu_.screen();
+            bots_.synchronize(menu_);
+            screenChanged(previousScreen);
+        }
         if (session && session->snapshot())
         {
             auto events = session->takeEvents();
@@ -429,7 +490,7 @@ int Application::run()
             effects_.update(static_cast<float>(elapsed), visual.players, Arena::create(s.map), events,
                             session->playerId(), settings_.active().blood, settings_.active().shake);
         }
-        else
+        else if (!bots_.match())
         {
             effects_.update(menu_.playing() ? static_cast<float>(elapsed) : 0.f, world_.players(),
                             world_.arena(), world_.takeEvents(), World::localPlayerId,
@@ -447,7 +508,8 @@ int Application::run()
             continue;
         }
         const bool sceneVisible = menu_.playing() || menu_.screen() == Screen::Paused ||
-                                  (session && menu_.screen() == Screen::Result);
+                                  (session && menu_.screen() == Screen::Result) ||
+                                  (bots_.match() && menu_.screen() == Screen::BotResult);
         bool rendered = true;
         if (sceneVisible)
         {
@@ -455,6 +517,13 @@ int Application::run()
                 rendered =
                     renderSnapshot(renderer_, session->interpolated(), session->playerId(), &effects_) &&
                     renderMatchHud(renderer_, *session->snapshot(), session->playerId());
+            else if (bots_.match())
+            {
+                const auto s = bots_.match()->snapshot();
+                rendered = renderSnapshot(renderer_, s, 1, &effects_) && renderMatchHud(renderer_, s, 1) &&
+                           drawText(renderer_, botDifficultyName(menu_.botDifficulty()), {12, 500}, 1,
+                                    {137, 153, 175, 255});
+            }
             else
                 rendered = renderScene(renderer_, world_, false, &effects_);
         }

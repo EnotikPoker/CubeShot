@@ -27,9 +27,9 @@ bool centeredText(SDL_Renderer* renderer, std::u32string_view text, float y, int
     return drawText(renderer, text, {(960 - textWidth(text, scale)) / 2, y}, scale, color);
 }
 
-bool preview(SDL_Renderer* renderer, MapId id, Rect box)
+bool preview(SDL_Renderer* renderer, MapId id, Rect box, bool test = true)
 {
-    const auto arena = Arena::create(id, true);
+    const auto arena = Arena::create(id, test);
     const float scale = box.size.x / arena.bounds.size.x;
     if (!rectangle(renderer, box, {14, 21, 31, 255}))
         return false;
@@ -66,7 +66,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
     }
     else
     {
-        if (menu.screen() == Screen::Result)
+        if (menu.screen() == Screen::Result || menu.screen() == Screen::BotResult)
         {
             if (!SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND) ||
                 !rectangle(renderer, {{0, 0}, {960, 540}}, {8, 12, 20, 210}) ||
@@ -119,6 +119,14 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     title = U"Выбор карты";
                     hint = U"Тест: три мишени без ИИ";
                     break;
+                case Screen::BotSetup:
+                    title = U"Игра с ботом";
+                    hint = U"Выберите карту и сложность. Дуэль до 5 побед";
+                    break;
+                case Screen::BotResult:
+                    title = U"Матч завершён";
+                    hint = menu.networkSnapshot().winner == 1 ? U"Вы победили!" : U"Победил бот";
+                    break;
                 case Screen::Lobby:
                     title = menu.online() ? U"Лобби интернета" : U"Лобби LAN";
                     hint = menu.networkSnapshot().voting
@@ -135,6 +143,23 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             }
             if (!centeredText(renderer, title, 65, 4, white) || !centeredText(renderer, hint, 117, 2, muted))
                 return false;
+            if (menu.screen() == Screen::BotSetup)
+            {
+                if (!centeredText(renderer, mapInfo(menu.botMap()).name, 140, 2, blue) ||
+                    !preview(renderer, menu.botMap(), {{392, 160}, {176, 99}}, false))
+                    return false;
+            }
+            if (menu.screen() == Screen::BotResult)
+            {
+                const auto& s = menu.networkSnapshot();
+                if (!centeredText(renderer, network::nicknameText(s.names[0]) + U" / Бот", 170, 2, white) ||
+                    !centeredText(renderer,
+                                  U"Счёт " + asciiText(std::to_string(s.score[0])) + U":" +
+                                      asciiText(std::to_string(s.score[1])),
+                                  210, 3, blue) ||
+                    !centeredText(renderer, mapInfo(menu.botMap()).name, 250, 2, muted))
+                    return false;
+            }
             if (menu.screen() == Screen::Maps)
             {
                 if (!centeredText(renderer, mapInfo(menu.selectedMap()).name, 145, 2, blue) ||
@@ -195,7 +220,8 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 selected ? SDL_Color{34, 56, 78, 255} : SDL_Color{29, 36, 49, 255}) ||
             !centeredText(renderer, button.label, bounds.position.y + 16,
                           (menu.screen() == Screen::Browser || menu.screen() == Screen::OnlineBrowser ||
-                           menu.screen() == Screen::Maps || menu.screen() == Screen::Lobby)
+                           menu.screen() == Screen::Maps || menu.screen() == Screen::Lobby ||
+                           menu.screen() == Screen::BotSetup || menu.screen() == Screen::BotResult)
                               ? 2
                               : 3,
                           button.placeholder ? muted : white))
