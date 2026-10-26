@@ -103,3 +103,8 @@ if(CUBESHOT_BUILD_CLIENT)
     target_link_libraries(cubeshot_bot_game_tests PRIVATE cubeshot_directory)
     add_test(NAME bot_game COMMAND cubeshot_bot_game_tests)
 endif()
+
+add_executable(cubeshot_bot_behavior_tests bot_behavior_tests.cpp)
+target_link_libraries(cubeshot_bot_behavior_tests PRIVATE cubeshot_game)
+add_test(NAME bot_behavior COMMAND cubeshot_bot_behavior_tests)
+set_tests_properties(bot_behavior PROPERTIES TIMEOUT 60)

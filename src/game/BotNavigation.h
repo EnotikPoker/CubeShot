@@ -24,6 +24,7 @@ class BotNavigation
 public:
     explicit BotNavigation(const Arena& arena);
     static std::shared_ptr<const BotNavigation> forMap(MapId map);
+    static std::shared_ptr<const BotNavigation> forArena(const Arena& arena);
     const std::vector<BotWaypoint>& nodes() const;
     const std::vector<BotTraversal>& edges() const;
     std::vector<BotTraversal> route(Vec2 from, Vec2 goal, int avoidFrom = -1, int avoidTo = -1) const;

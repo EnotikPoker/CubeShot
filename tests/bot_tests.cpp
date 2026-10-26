@@ -104,40 +104,22 @@ void navigation()
 
 void perception()
 {
-    Arena arena{{{0, 0}, {960, 540}},
-                {{{0, 440}, {960, 100}}, {{450, 0}, {20, 440}}},
-                {{100, 392}, {700, 392}},
-                MapId::Duel};
+    auto arena = Arena::createDuel();
     World world(arena, 2);
-    expect(!observeBot(world, 2, 1).target, "Wall hides enemy state");
-    expect(!botLineOfSight({700, 416}, {100, 416}, arena), "Sight cannot cross wall");
-    world.requestAction(1, false, true, {1, 0});
-    world.update(dt);
-    expect(observeBot(world, 2, 1).bullets.empty(), "Wall hides incoming projectiles");
-    auto open = Arena::createDuel();
-    World visible(open, 2);
-    expect(observeBot(visible, 2, 1).target.has_value(), "Opponent visible under a platform");
-    BotController bot(open, BotDifficulty::Medium, 42);
-    auto observation = observeBot(visible, 2, 1);
+    auto observation = observeBot(world, 2, 1);
+    expect(observation.target.has_value(), "Whole arena is observable");
+    BotController bot(arena, BotDifficulty::Medium, 42);
     for (int tick = 0; tick < 30; ++tick)
-    {
-        expect(!bot.update(observation, dt).shoot, "No shot before reaction delay");
-        expect(!bot.lastSeen(), "Delayed perception has not seen enemy yet");
-    }
-    for (int tick = 0; tick < 20; ++tick)
-        bot.update(observation, dt);
-    expect(bot.lastSeen().has_value(), "Visible position enters memory after delay");
-    const auto remembered = *bot.lastSeen();
+        expect(!bot.update(observation, dt).shoot, "No shot before difficulty reaction delay");
+    bool shot = false;
+    for (int tick = 0; tick < 120; ++tick)
+        shot = bot.update(observation, dt).shoot || shot;
+    expect(shot, "Bot fires after processing the opponent observation");
     observation.target.reset();
-    for (int tick = 0; tick < 500; ++tick)
-    {
-        expect(!bot.update(observation, dt).shoot, "Bot never fires at hidden opponent");
-        if (bot.lastSeen())
-            expect(distance(*bot.lastSeen(), remembered) < .01f, "Hidden movement cannot update memory");
-    }
-    expect(!bot.lastSeen(), "Last position expires");
+    for (int tick = 0; tick < 180; ++tick)
+        expect(!bot.update(observation, dt).shoot, "No shooting at absent opponent");
     bot.reset();
-    expect(!bot.lastSeen(), "Round reset clears memory");
+    expect(!bot.update(observeBot(world, 2, 1), dt).shoot, "Reset restores reaction delay");
 }
 
 void platformEncounters()
@@ -175,30 +157,6 @@ void platformEncounters()
             }
         }
     }
-}
-
-void dodging()
-{
-    auto arena = Arena::createDuel();
-    BotController danger(arena, BotDifficulty::Medium, 123), safe(arena, BotDifficulty::Medium, 123);
-    BotObservation observation;
-    observation.self.id = 2;
-    observation.self.position = {500, 392};
-    observation.self.grounded = true;
-    Bullet bullet;
-    bullet.shooterId = 1;
-    bullet.position = {200, 420};
-    bullet.velocity = {800, 0};
-    bool dodged = false;
-    for (int tick = 0; tick < 70; ++tick)
-    {
-        auto baseline = safe.update(observation, dt);
-        auto incoming = observation;
-        incoming.bullets.push_back(bullet);
-        auto evasive = danger.update(incoming, dt);
-        dodged = dodged || (evasive.jump && !baseline.jump);
-    }
-    expect(dodged, "Delayed visible projectile causes an evasive jump");
 }
 
 void aiming()
@@ -275,7 +233,6 @@ int main()
         navigation();
         perception();
         aiming();
-        dodging();
         platformEncounters();
         std::cout << "Bot navigation, perception and combat passed\n";
     }

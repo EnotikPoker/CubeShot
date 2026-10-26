@@ -14,6 +14,30 @@ void expect(bool condition, const char* message)
         throw std::runtime_error(message);
 }
 
+void frameCadence()
+{
+    BotMatch reference(MapId::Duel, BotDifficulty::Medium, "FPS", 42);
+    for (int tick = 0; tick < 120 * 8; ++tick)
+        reference.update(dt);
+    const auto expected = reference.snapshot();
+    for (int fps : {30, 60, 240})
+    {
+        BotMatch game(MapId::Duel, BotDifficulty::Medium, "FPS", 42);
+        for (int frame = 0; frame < fps * 8; ++frame)
+            game.update(1.f / fps);
+        auto actual = game.snapshot();
+        expect(actual.tick == expected.tick && actual.phase == expected.phase &&
+                   actual.round == expected.round && actual.score == expected.score &&
+                   actual.bullets.size() == expected.bullets.size(),
+               "Bot decisions and match rules are independent of rendering cadence");
+        for (std::size_t i = 0; i < actual.players.size(); ++i)
+            expect(actual.players[i].health == expected.players[i].health &&
+                       std::abs(actual.players[i].position.x - expected.players[i].position.x) < .01f &&
+                       std::abs(actual.players[i].position.y - expected.players[i].position.y) < .01f,
+                   "Bot position and damage are identical at 30/60/120/240 FPS");
+    }
+}
+
 void matches()
 {
     for (const auto& info : mapCatalog())
@@ -115,6 +139,7 @@ int main()
     try
     {
         matches();
+        frameCadence();
         std::cout << "Autonomous bot matches passed\n";
     }
     catch (const std::exception& e)

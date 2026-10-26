@@ -102,7 +102,19 @@ BotNavigation::BotNavigation(const Arena& arena)
                         auto to = nearest(p.position);
                         if (std::abs(nodes_[to].position.y - p.position.y) < .1f &&
                             std::abs(nodes_[to].position.x - p.position.x) <= 17 && to != from)
-                            add({from, to, jump, direction, hold, tick + 1});
+                        {
+                            // A jump must solve an obstacle/height change, not exploit rounded
+                            // landing samples to appear faster than walking on the same surface.
+                            const float dx = nodes_[to].position.x - nodes_[from].position.x;
+                            const Rect body{nodes_[from].position,
+                                            {Player::defaultSize, Player::defaultSize}};
+                            const bool walkable = nodes_[from].surface == nodes_[to].surface &&
+                                                  std::abs(collision::moveHorizontally(body, dx, arena.bounds,
+                                                                                       arena.platforms) -
+                                                           nodes_[to].position.x) < .1f;
+                            if (!jump || !walkable)
+                                add({from, to, jump, direction, hold, tick + 1});
+                        }
                         break;
                     }
                 }
@@ -115,8 +127,23 @@ std::shared_ptr<const BotNavigation> BotNavigation::forMap(MapId map)
     static std::map<MapId, std::shared_ptr<const BotNavigation>> cache;
     auto& graph = cache[map];
     if (!graph)
-        graph = std::make_shared<const BotNavigation>(Arena::create(map));
+        graph = std::make_shared<const BotNavigation>(Arena::create(map, map == MapId::Test));
     return graph;
+}
+
+std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena)
+{
+    const auto original = Arena::create(arena.map, arena.map == MapId::Test);
+    auto same = [](const Rect& a, const Rect& b)
+    {
+        return a.position.x == b.position.x && a.position.y == b.position.y && a.size.x == b.size.x &&
+               a.size.y == b.size.y;
+    };
+    if (same(arena.bounds, original.bounds) && arena.platforms.size() == original.platforms.size() &&
+        std::equal(arena.platforms.begin(), arena.platforms.end(), original.platforms.begin(), same))
+        return forMap(arena.map);
+    // Custom geometry must never silently use the stock map's routes.
+    return std::make_shared<const BotNavigation>(arena);
 }
 
 const std::vector<BotWaypoint>& BotNavigation::nodes() const
@@ -169,7 +196,12 @@ std::vector<BotTraversal> BotNavigation::route(Vec2 from, Vec2 goal, int avoidFr
             const auto& edge = edges_[index];
             if (static_cast<int>(edge.from) == avoidFrom && static_cast<int>(edge.to) == avoidTo)
                 continue;
-            const float next = cost + edge.durationTicks;
+            const float correction = std::abs(nodes_[edge.to].position.x - nodes_[edge.from].position.x -
+                                              edge.direction * Player::moveSpeed * step *
+                                                  std::min(edge.holdTicks, edge.durationTicks));
+            const bool airborne = edge.jump || nodes_[edge.from].surface != nodes_[edge.to].surface;
+            const float next =
+                cost + edge.durationTicks + (airborne ? 12 + correction / Player::moveSpeed / step : 0);
             if (next < costs[edge.to])
             {
                 costs[edge.to] = next;

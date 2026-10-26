@@ -40,6 +40,61 @@ bool clearShot(const Player& self, Vec2 direction, float time, const Arena& aren
     }
     return true;
 }
+
+bool outside(Vec2 p, const Arena& arena)
+{
+    const auto& b = arena.bounds;
+    return p.x < b.position.x + Bullet::radius || p.y < b.position.y + Bullet::radius ||
+           p.x > b.position.x + b.size.x - Bullet::radius || p.y > b.position.y + b.size.y - Bullet::radius;
+}
+
+float terrainHit(Vec2 from, Vec2 to, const Arena& arena)
+{
+    float nearest = 2;
+    for (const auto& r : arena.platforms)
+        if (const auto hit = collision::segmentHit(from, to, r, Bullet::radius))
+            nearest = std::min(nearest, *hit);
+    return nearest;
+}
+
+bool advanceKnownBullet(Bullet& bullet, float age, const Arena& arena)
+{
+    for (float elapsed = 0; elapsed < age; elapsed += step)
+    {
+        const auto start = bullet.position;
+        bullet.update(std::min(step, age - elapsed));
+        if (bullet.lifetime <= 0 || terrainHit(start, bullet.position, arena) <= 1 ||
+            outside(bullet.position, arena))
+            return false;
+    }
+    return bullet.lifetime > 0;
+}
+
+bool wouldHit(Bullet bullet, Player self, const PlayerInput& input, float horizon, const Arena& arena)
+{
+    self.applyInput({input.moveDirection, false, false, input.aimDirection});
+    self.requestAction(input.jump, false, input.aimDirection);
+    const bool support = self.grounded;
+    for (float elapsed = 0; elapsed < horizon && bullet.lifetime > 0; elapsed += step)
+    {
+        const float dt = std::min(step, horizon - elapsed);
+        const auto from = bullet.position, bodyFrom = self.position;
+        self.update(dt, arena, elapsed == 0 && support);
+        bullet.update(dt);
+        if (bullet.lifetime <= 0)
+            return false;
+        const auto hit =
+            collision::segmentHit({from.x - bodyFrom.x, from.y - bodyFrom.y},
+                                  {bullet.position.x - self.position.x, bullet.position.y - self.position.y},
+                                  {{0, 0}, self.size}, Bullet::radius);
+        const float barrier = terrainHit(from, bullet.position, arena);
+        if (hit && *hit < barrier)
+            return true;
+        if (barrier <= 1 || outside(bullet.position, arena))
+            return false;
+    }
+    return false;
+}
 } // namespace
 
 std::u32string_view botDifficultyName(BotDifficulty difficulty)
@@ -60,41 +115,26 @@ BotTuning botTuning(BotDifficulty difficulty)
     switch (difficulty)
     {
         case BotDifficulty::Easy:
-            return {.5f, 8, .75f, 1.5f, 220, 420, .25f};
+            return {.5f, 8, .75f, 220, 420, .25f};
         case BotDifficulty::Hard:
-            return {.18f, 2, .3f, 4, 300, 550, .65f};
+            return {.18f, 2, .3f, 300, 550, .65f};
         default:
-            return {.3f, 4, .45f, 3, 280, 500, .45f};
+            return {.3f, 4, .45f, 280, 500, .45f};
     }
-}
-
-bool botLineOfSight(Vec2 from, Vec2 to, const Arena& arena)
-{
-    return std::none_of(arena.platforms.begin(), arena.platforms.end(),
-                        [&](const Rect& r) { return collision::segmentHit(from, to, r).has_value(); });
 }
 
 BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent)
 {
     BotObservation result;
     for (const auto& p : world.players())
+    {
         if (p.id == self)
             result.self = p;
-    const auto origin = result.self.weaponOrigin();
-    for (const auto& p : world.players())
         if (p.id == opponent && p.alive())
-        {
-            bool visible = false;
-            for (float height : {.2f, .5f, .8f})
-                visible =
-                    visible ||
-                    botLineOfSight(origin, {p.position.x + p.size.x / 2, p.position.y + p.size.y * height},
-                                   world.arena());
-            if (visible)
-                result.target = BotTarget{p.position, p.velocity, p.size, p.grounded};
-        }
+            result.target = BotTarget{p.position, p.velocity, p.size, p.grounded};
+    }
     for (const auto& b : world.bullets())
-        if (b.shooterId != self && botLineOfSight(origin, b.position, world.arena()))
+        if (b.shooterId != self)
             result.bullets.push_back(b);
     return result;
 }
@@ -128,7 +168,7 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
 
 BotController::BotController(Arena arena, BotDifficulty difficulty, std::uint32_t seed)
     : arena_(std::move(arena)), tuning_(botTuning(difficulty)), random_(seed),
-      navigation_(BotNavigation::forMap(arena_.map))
+      navigation_(BotNavigation::forArena(arena_))
 {
     reset();
 }
@@ -137,57 +177,60 @@ void BotController::reset()
 {
     history_.clear();
     perceived_ = {};
-    remembered_.reset();
-    time_ = nextShot_ = nextAim_ = replan_ = stuck_ = avoidedUntil_ = nextPatrol_ = nextGoal_ = 0;
-    seenAt_ = -100;
+    time_ = nextShot_ = nextAim_ = replan_ = stuck_ = avoidedUntil_ = nextGoal_ = 0;
     error_ = 0;
     aim_ = {-1, 0};
     path_.clear();
     pathIndex_ = 0;
     traversalTick_ = avoidFrom_ = avoidTo_ = -1;
-    progress_ = patrol_ = goal_ = {};
-}
-
-std::optional<Vec2> BotController::lastSeen() const
-{
-    if (!remembered_ || time_ - seenAt_ > tuning_.memory)
-        return {};
-    return remembered_->position;
+    progress_ = goal_ = {};
+    leftGround_ = false;
+    dodgeUntil_ = dodgeMove_ = nextDodgeJump_ = 0;
+    jumpedBullets_.clear();
 }
 
 Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget>& target)
 {
-    if (target)
+    if (!target)
+        return self.position; // Wait for reaction; do not start a random patrol before seeing the arena.
+    const float currentDistance = distance(self.weaponOrigin(), center(*target));
+    if (currentDistance >= tuning_.rangeMin && currentDistance <= tuning_.rangeMax &&
+        botAim(self, *target, arena_))
+        return self.position; // A useful firing position is a range, not a point to chase every frame.
+    float best = std::numeric_limits<float>::max();
+    Vec2 goal = self.position;
+    for (const auto& node : navigation_->nodes())
     {
-        float best = std::numeric_limits<float>::max();
-        Vec2 goal = self.position;
-        const float preferred = (tuning_.rangeMin + tuning_.rangeMax) / 2;
-        for (const auto& node : navigation_->nodes())
+        Player candidate = self;
+        candidate.position = node.position;
+        const float range = distance(candidate.weaponOrigin(), center(*target));
+        const float outside = std::max({tuning_.rangeMin - range, range - tuning_.rangeMax, 0.f});
+        float cost = outside + .2f * distance(node.position, self.position);
+        if (!botAim(candidate, *target, arena_))
+            cost += 450;
+        if (cost < best)
         {
-            const Vec2 origin{node.position.x + 24, node.position.y + 26.4f};
-            float cost = std::abs(distance(origin, center(*target)) - preferred) +
-                         .15f * distance(node.position, self.position);
-            Player candidate = self;
-            candidate.position = node.position;
-            if (!botLineOfSight(origin, center(*target), arena_) || !botAim(candidate, *target, arena_))
-                cost += 450;
-            if (cost < best)
-            {
-                best = cost;
-                goal = node.position;
-            }
+            best = cost;
+            goal = node.position;
         }
-        return goal;
     }
-    if (lastSeen())
-        return *lastSeen();
-    if (time_ >= nextPatrol_ || distance(self.position, patrol_) < 24)
+    return goal;
+}
+
+void BotController::cancelRoute(bool failed)
+{
+    if (failed && pathIndex_ < path_.size())
     {
-        const auto& nodes = navigation_->nodes();
-        patrol_ = nodes[std::uniform_int_distribution<std::size_t>(0, nodes.size() - 1)(random_)].position;
-        nextPatrol_ = time_ + 4;
+        avoidFrom_ = static_cast<int>(path_[pathIndex_].from);
+        avoidTo_ = static_cast<int>(path_[pathIndex_].to);
+        avoidedUntil_ = time_ + 2;
     }
-    return patrol_;
+    path_.clear();
+    pathIndex_ = 0;
+    traversalTick_ = -1;
+    leftGround_ = false;
+    stuck_ = 0;
+    replan_ = 0;
 }
 
 PlayerInput BotController::navigate(const Player& self, Vec2 goal, float dt)
@@ -201,21 +244,10 @@ PlayerInput BotController::navigate(const Player& self, Vec2 goal, float dt)
         progress_ = self.position;
         stuck_ = 0;
     }
-    else if (!path_.empty())
+    else if (pathIndex_ < path_.size())
         stuck_ += dt;
     if (stuck_ >= 1)
-    {
-        if (pathIndex_ < path_.size())
-        {
-            avoidFrom_ = static_cast<int>(path_[pathIndex_].from);
-            avoidTo_ = static_cast<int>(path_[pathIndex_].to);
-            avoidedUntil_ = time_ + 2;
-        }
-        path_.clear();
-        stuck_ = 0;
-        replan_ = 0;
-        traversalTick_ = -1;
-    }
+        cancelRoute(true);
     if (time_ >= replan_ && self.grounded && traversalTick_ < 0)
     {
         path_ = navigation_->route(self.position, goal, time_ < avoidedUntil_ ? avoidFrom_ : -1,
@@ -225,19 +257,31 @@ PlayerInput BotController::navigate(const Player& self, Vec2 goal, float dt)
     }
     if (pathIndex_ >= path_.size())
     {
-        if (std::abs(goal.y - self.position.y) < 20 && std::abs(goal.x - self.position.x) > 8)
-            input.moveDirection = goal.x > self.position.x ? 1.f : -1.f;
+        path_.clear();
+        pathIndex_ = 0;
+        if (self.grounded && std::abs(goal.y - self.position.y) < 2 &&
+            navigation_->nearest(self.position) == navigation_->nearest(goal))
+            input.moveDirection =
+                std::clamp((goal.x - self.position.x) / (Player::moveSpeed * step), -1.f, 1.f);
+        else if (!self.grounded)
+            input.moveDirection = self.velocity.x / Player::moveSpeed;
         return input;
     }
     const auto& edge = path_[pathIndex_];
     const Vec2 start = nodes[edge.from].position, end = nodes[edge.to].position;
     if (!edge.jump && nodes[edge.from].surface == nodes[edge.to].surface)
     {
+        if (!self.grounded || std::abs(self.position.y - end.y) > 2)
+        {
+            cancelRoute(true);
+            input.moveDirection = goal.x > self.position.x ? 1.f : -1.f;
+            return input;
+        }
         const float dx = end.x - self.position.x;
-        if (std::abs(dx) <= 5)
+        if (std::abs(dx) <= .05f)
             ++pathIndex_;
         else
-            input.moveDirection = dx > 0 ? 1.f : -1.f;
+            input.moveDirection = std::clamp(dx / (Player::moveSpeed * step), -1.f, 1.f);
         return input;
     }
     if (traversalTick_ < 0)
@@ -248,20 +292,99 @@ PlayerInput BotController::navigate(const Player& self, Vec2 goal, float dt)
             input.moveDirection = std::clamp(dx / (Player::moveSpeed * step), -1.f, 1.f);
             return input;
         }
-        traversalTick_ = 0;
+        traversalTick_ = 1;
+        leftGround_ = false;
+        input.jump = edge.jump;
+        input.moveDirection = static_cast<float>(edge.direction);
+        return input;
     }
-    input.jump = edge.jump && traversalTick_ == 0;
+    leftGround_ = leftGround_ || !self.grounded;
+    if (self.grounded && (leftGround_ || (edge.jump && traversalTick_ >= 4)))
+    {
+        if (std::abs(self.position.y - end.y) > 2 || std::abs(self.position.x - end.x) > 35)
+            cancelRoute(true);
+        else
+        {
+            traversalTick_ = -1;
+            leftGround_ = false;
+            ++pathIndex_;
+        }
+        return input;
+    }
+    if (traversalTick_ > edge.durationTicks + 45)
+    {
+        cancelRoute(true);
+        return input;
+    }
     input.moveDirection = traversalTick_ < edge.holdTicks ? static_cast<float>(edge.direction) : 0.f;
     ++traversalTick_;
-    if ((self.grounded && traversalTick_ > 3 && traversalTick_ >= edge.durationTicks) ||
-        traversalTick_ > edge.durationTicks + 45)
-    {
-        traversalTick_ = -1;
-        ++pathIndex_;
-        if (distance(self.position, end) > 35)
-            replan_ = 0;
-    }
     return input;
+}
+
+void BotController::avoidBullets(const BotObservation& observation, PlayerInput& input)
+{
+    auto exists = [&](BulletId id)
+    {
+        return std::any_of(observation.bullets.begin(), observation.bullets.end(),
+                           [&](const Bullet& b) { return b.id == id; });
+    };
+    for (auto it = jumpedBullets_.begin(); it != jumpedBullets_.end();)
+        if (!exists(*it))
+            it = jumpedBullets_.erase(it);
+        else
+            ++it;
+    if (time_ < dodgeUntil_)
+        return;
+    std::vector<Bullet> known;
+    for (auto bullet : perceived_.bullets)
+        if (bullet.shooterId != observation.self.id && exists(bullet.id) &&
+            advanceKnownBullet(bullet, std::max(0.f, time_ - perceived_.time), arena_))
+            known.push_back(bullet);
+    auto risk = [&](const PlayerInput& candidate)
+    {
+        unsigned hits = 0;
+        for (const auto& b : known)
+            hits += wouldHit(b, observation.self, candidate, tuning_.dodgeHorizon, arena_) ? 1 : 0;
+        return hits;
+    };
+    const auto initialRisk = risk(input);
+    if (!initialRisk)
+        return;
+    bool freshThreat = false;
+    for (const auto& b : known)
+        if (!jumpedBullets_.count(b.id) && wouldHit(b, observation.self, input, tuning_.dodgeHorizon, arena_))
+            freshThreat = true;
+    const bool canJump = observation.self.grounded && time_ >= nextDodgeJump_ && freshThreat;
+    PlayerInput best = input;
+    auto bestRisk = initialRisk;
+    float bestCost = std::numeric_limits<float>::max();
+    for (bool jump : {false, true})
+        for (float move : {input.moveDirection, 0.f, -1.f, 1.f})
+        {
+            if (jump && !canJump)
+                continue;
+            PlayerInput candidate{move, jump, false, input.aimDirection};
+            const auto danger = risk(candidate);
+            const float cost = std::abs(move - input.moveDirection) + (jump ? 2.f : 0.f);
+            if (danger < initialRisk && (danger < bestRisk || (danger == bestRisk && cost < bestCost)))
+            {
+                best = candidate;
+                bestRisk = danger;
+                bestCost = cost;
+            }
+        }
+    if (bestRisk >= initialRisk)
+        return; // A pointless jump is not an evasive action.
+    cancelRoute(false);
+    input = best;
+    dodgeMove_ = best.moveDirection;
+    dodgeUntil_ = time_ + (best.jump ? .35f : .18f);
+    if (best.jump)
+    {
+        nextDodgeJump_ = time_ + .9f;
+        for (const auto& b : known)
+            jumpedBullets_.insert(b.id);
+    }
 }
 
 PlayerInput BotController::update(const BotObservation& observation, float dt)
@@ -275,53 +398,19 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
         perceived_ = std::move(history_.front());
         history_.pop_front();
     }
-    if (perceived_.target)
-    {
-        remembered_ = perceived_.target;
-        seenAt_ = time_;
-    }
-    if (!lastSeen())
-        remembered_.reset();
-    if (time_ >= nextGoal_)
+    // Goals must be stable support positions. A cached mid-jump position can otherwise
+    // map to a nearby platform and cause another jump after the threat has passed.
+    if (time_ >= nextGoal_ && observation.self.grounded && time_ >= dodgeUntil_)
     {
         goal_ = chooseGoal(observation.self, perceived_.target);
         nextGoal_ = time_ + .6f;
     }
-    auto input = navigate(observation.self, goal_, dt);
-    // Delayed bullets, advanced to their estimated current position. No future human input is known.
-    for (auto bullet : perceived_.bullets)
-    {
-        const float age = std::max(0.f, time_ - perceived_.time);
-        bullet.position.x += bullet.velocity.x * age;
-        bullet.position.y += bullet.velocity.y * age + Bullet::gravity * age * age / 2;
-        bullet.velocity.y += Bullet::gravity * age;
-        bool danger = false;
-        for (float t = 0; t < tuning_.dodgeHorizon; t += step)
-        {
-            const auto start = bullet.position;
-            bullet.update(step);
-            bool blocked = false;
-            for (const auto& platform : arena_.platforms)
-                blocked = blocked ||
-                          collision::segmentHit(start, bullet.position, platform, Bullet::radius).has_value();
-            if (blocked)
-                break;
-            if (collision::segmentHit(start, bullet.position, observation.self.bounds(), Bullet::radius))
-            {
-                danger = true;
-                break;
-            }
-        }
-        if (danger)
-        {
-            input.jump = observation.self.grounded;
-            input.moveDirection = bullet.velocity.x > 0 ? 1.f : -1.f;
-            path_.clear();
-            traversalTick_ = -1;
-            replan_ = 0;
-            break;
-        }
-    }
+    PlayerInput input;
+    if (time_ < dodgeUntil_)
+        input.moveDirection = dodgeMove_;
+    else
+        input = navigate(observation.self, goal_, dt);
+    avoidBullets(observation, input);
     if (time_ >= nextAim_)
     {
         error_ = std::uniform_real_distribution<float>(-tuning_.aimErrorDegrees,
@@ -350,7 +439,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
             current += std::clamp(change, -6.f * dt, 6.f * dt);
             aim_ = {std::cos(current), std::sin(current)};
             if (observation.target && time_ >= nextShot_ && observation.self.weapon.cooldown <= 0 &&
-                std::abs(change) < .06f)
+                std::abs(change) < .06f && clearShot(observation.self, aim_, solution->flightTime, arena_))
             {
                 input.shoot = true;
                 nextShot_ = time_ + tuning_.shotInterval;
