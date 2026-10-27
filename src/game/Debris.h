@@ -39,6 +39,7 @@ class Debris
 public:
     static constexpr std::size_t maxPieces = 128;
     void clear();
+    void blast(Vec2 at, float radius);
     void spawn(const Player& player, Vec2 velocity, Vec2 impact);
     void update(float dt, const Arena& arena, const std::vector<Player>& players);
     std::optional<DebrisHit> trace(Vec2 from, Vec2 to) const;

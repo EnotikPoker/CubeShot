@@ -47,6 +47,7 @@ struct WorldSnapshot
     bool voting = false;
     std::array<int, 2> votes{{-1, -1}};
     std::uint64_t selectionRevision = 0, stateSequence = 0;
+    std::vector<FirePatch> fires;
     std::vector<Corpse> corpses;
     std::vector<PhysicsPiece> pieces;
     std::array<WeaponChoice, 2> weaponChoice{};

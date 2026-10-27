@@ -27,6 +27,9 @@ struct Player
     int health = maxHealth;
     Weapon weapon;
     bool grounded = false;
+    float burning = 0, burnTick = 0;
+    PlayerId burnOwner = 0;
+    std::uint32_t damagedCells = 0;
     Vec2 aimDirection{1.0f, 0.0f};
 
     Rect bounds() const;

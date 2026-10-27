@@ -259,6 +259,13 @@ int Application::run()
     constexpr double stepSeconds = 1.0 / 120;
     double accumulator = 0;
     Uint64 previousTime = SDL_GetTicksNS();
+    Arena effectArena = Arena::create(MapId::Duel);
+    auto arenaForEffects = [&](MapId map) -> const Arena&
+    {
+        if (effectArena.map != map)
+            effectArena = Arena::create(map);
+        return effectArena;
+    };
     bool running = true;
     while (running)
     {
@@ -479,7 +486,7 @@ int Application::run()
                                     menu_.screen() == Screen::Armory
                                 ? static_cast<float>(elapsed)
                                 : 0.f,
-                            s.players, Arena::create(s.map), bots_.match()->takeEvents(), 1,
+                            s.players, arenaForEffects(s.map), bots_.match()->takeEvents(), 1,
                             settings_.active().blood, settings_.active().shake);
             const auto previousScreen = menu_.screen();
             bots_.synchronize(menu_);
@@ -493,7 +500,7 @@ int Application::run()
                                         [&](const auto& e) { return e.round != s.round; }),
                          events.end());
             const auto visual = session->interpolated();
-            effects_.update(static_cast<float>(elapsed), visual.players, Arena::create(s.map), events,
+            effects_.update(static_cast<float>(elapsed), visual.players, arenaForEffects(s.map), events,
                             session->playerId(), settings_.active().blood, settings_.active().shake);
         }
         else if (!bots_.match())

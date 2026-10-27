@@ -1,6 +1,7 @@
 #include "game/BotController.h"
 #include "game/Collision.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -74,31 +75,78 @@ bool advanceKnownBullet(Bullet& bullet, float age, const Arena& arena)
     return bullet.lifetime > 0;
 }
 
-bool wouldHit(Bullet bullet, Player self, const PlayerInput& input, float horizon, const Arena& arena)
+constexpr std::size_t dodgeSteps = 80;
+
+struct FlightStep
 {
+    Vec2 from, to;
+    float barrier;
+};
+
+struct Threat
+{
+    BulletId id;
+    std::array<FlightStep, dodgeSteps> path;
+    std::size_t count = 0;
+};
+
+struct BodyPath
+{
+    std::array<Vec2, dodgeSteps + 1> points;
+    std::size_t count = 0;
+    Vec2 size;
+};
+
+Threat predictThreat(Bullet bullet, float horizon, const Arena& arena)
+{
+    Threat out;
+    out.id = bullet.id;
+    for (float elapsed = 0; elapsed < horizon && out.count < dodgeSteps; elapsed += step)
+    {
+        const auto from = bullet.position;
+        bullet.update(std::min(step, horizon - elapsed));
+        if (bullet.lifetime <= 0)
+            break;
+        const float barrier = terrainHit(from, bullet.position, arena);
+        out.path[out.count++] = {from, bullet.position, barrier};
+        if (barrier <= 1 || outside(bullet.position, arena))
+            break;
+    }
+    return out;
+}
+
+BodyPath predictBody(Player self, const PlayerInput& input, float horizon, const Arena& arena)
+{
+    BodyPath out;
+    out.points[0] = self.position;
+    out.size = self.size;
     self.applyInput({input.moveDirection, false, false, input.aimDirection});
     self.requestAction(input.jump, false, input.aimDirection);
     const bool support = self.grounded;
-    for (float elapsed = 0; elapsed < horizon && bullet.lifetime > 0; elapsed += step)
+    for (float elapsed = 0; elapsed < horizon && out.count < dodgeSteps; elapsed += step)
     {
-        const float dt = std::min(step, horizon - elapsed);
-        const auto from = bullet.position, bodyFrom = self.position;
-        self.update(dt, arena, elapsed == 0 && support);
-        bullet.update(dt);
-        if (bullet.lifetime <= 0)
-            return false;
+        self.update(std::min(step, horizon - elapsed), arena, elapsed == 0 && support);
+        out.points[++out.count] = self.position;
+    }
+    return out;
+}
+
+bool wouldHit(const Threat& threat, const BodyPath& body)
+{
+    const auto count = std::min(threat.count, body.count);
+    for (std::size_t n = 0; n < count; ++n)
+    {
+        const auto& flight = threat.path[n];
         const auto hit =
-            collision::segmentHit({from.x - bodyFrom.x, from.y - bodyFrom.y},
-                                  {bullet.position.x - self.position.x, bullet.position.y - self.position.y},
-                                  {{0, 0}, self.size}, Bullet::radius);
-        const float barrier = terrainHit(from, bullet.position, arena);
-        if (hit && *hit < barrier)
+            collision::segmentHit({flight.from.x - body.points[n].x, flight.from.y - body.points[n].y},
+                                  {flight.to.x - body.points[n + 1].x, flight.to.y - body.points[n + 1].y},
+                                  {{0, 0}, body.size}, Bullet::radius);
+        if (hit && *hit < flight.barrier)
             return true;
-        if (barrier <= 1 || outside(bullet.position, arena))
-            return false;
     }
     return false;
 }
+
 } // namespace
 
 std::u32string_view botDifficultyName(BotDifficulty difficulty)
@@ -146,6 +194,20 @@ BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent)
 std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const Arena& arena, float error)
 {
     const auto origin = self.weaponOrigin();
+    if (meleeWeapon(self.weapon.kind))
+    {
+        const Vec2 delta{center(target).x - origin.x, center(target).y - origin.y};
+        const float range = std::hypot(delta.x, delta.y);
+        if (range > self.weapon.barrel() + 20)
+            return {};
+        const float angle = std::atan2(delta.y, delta.x) + error;
+        const Vec2 direction{std::cos(angle), std::sin(angle)};
+        if (!clearShot(self, direction, 0, arena))
+            return {};
+        return BotAim{direction, 0};
+    }
+    if (self.weapon.kind == WeaponKind::Rpg && distance(origin, center(target)) < explosionRadius + 30)
+        return {};
     float flight =
         std::max(.001f, (distance(origin, center(target)) - self.weapon.barrel()) / self.weapon.bulletSpeed);
     Vec2 delta;
@@ -198,25 +260,62 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
 {
     if (!target)
         return self.position; // Wait for reaction; do not start a random patrol before seeing the arena.
+    float rangeMax = tuning_.rangeMax, rangeMin = tuning_.rangeMin;
+    if (meleeWeapon(self.weapon.kind))
+    {
+        rangeMin = 40;
+        rangeMax = self.weapon.barrel() + 15;
+    }
+    else if (self.weapon.kind == WeaponKind::Flamethrower)
+    {
+        rangeMin = 100;
+        rangeMax = 200;
+    }
+    else if (self.weapon.kind == WeaponKind::FireBoomerang)
+    {
+        rangeMin = 180;
+        rangeMax = 310;
+    }
+    else if (self.weapon.kind == WeaponKind::Rpg)
+        rangeMin = explosionRadius + 50;
     const float currentDistance = distance(self.weaponOrigin(), center(*target));
-    if (currentDistance >= tuning_.rangeMin && currentDistance <= tuning_.rangeMax &&
-        botAim(self, *target, arena_))
+    if (currentDistance >= rangeMin && currentDistance <= rangeMax && botAim(self, *target, arena_))
         return self.position; // A useful firing position is a range, not a point to chase every frame.
     float best = std::numeric_limits<float>::max();
     Vec2 goal = self.position;
-    for (const auto& node : navigation_->nodes())
+
+    struct Candidate
+    {
+        float cost;
+        std::size_t index;
+    };
+
+    std::vector<Candidate> candidates;
+    const auto& nodes = navigation_->nodes();
+    candidates.reserve(nodes.size());
+    for (std::size_t index = 0; index < nodes.size(); ++index)
     {
         Player candidate = self;
-        candidate.position = node.position;
+        candidate.position = nodes[index].position;
         const float range = distance(candidate.weaponOrigin(), center(*target));
-        const float outside = std::max({tuning_.rangeMin - range, range - tuning_.rangeMax, 0.f});
-        float cost = outside + .2f * distance(node.position, self.position);
-        if (!botAim(candidate, *target, arena_))
-            cost += 450;
-        if (cost < best)
+        const float outside = std::max({rangeMin - range, range - rangeMax, 0.f});
+        candidates.push_back({outside + .2f * distance(candidate.position, self.position), index});
+    }
+    std::stable_sort(candidates.begin(), candidates.end(), [](auto a, auto b) { return a.cost < b.cost; });
+    std::size_t bestIndex = nodes.size();
+    for (const auto& item : candidates)
+    {
+        // The visibility penalty is non-negative: later base costs cannot improve this result.
+        if (item.cost > best)
+            break;
+        Player candidate = self;
+        candidate.position = nodes[item.index].position;
+        const float cost = item.cost + (botAim(candidate, *target, arena_) ? 0.f : 450.f);
+        if (cost < best || (cost == best && item.index < bestIndex))
         {
             best = cost;
-            goal = node.position;
+            bestIndex = item.index;
+            goal = candidate.position;
         }
     }
     return goal;
@@ -340,25 +439,33 @@ void BotController::avoidBullets(const BotObservation& observation, PlayerInput&
             ++it;
     if (time_ < dodgeUntil_)
         return;
-    std::vector<Bullet> known;
+    std::vector<Threat> known;
+    known.reserve(perceived_.bullets.size());
     for (auto bullet : perceived_.bullets)
         if (bullet.shooterId != observation.self.id && exists(bullet.id) &&
             advanceKnownBullet(bullet, std::max(0.f, time_ - perceived_.time), arena_))
-            known.push_back(bullet);
+            known.push_back(predictThreat(bullet, tuning_.dodgeHorizon, arena_));
     auto risk = [&](const PlayerInput& candidate)
     {
         unsigned hits = 0;
+        const auto body = predictBody(observation.self, candidate, tuning_.dodgeHorizon, arena_);
         for (const auto& b : known)
-            hits += wouldHit(b, observation.self, candidate, tuning_.dodgeHorizon, arena_) ? 1 : 0;
+            hits += wouldHit(b, body) ? 1 : 0;
         return hits;
     };
-    const auto initialRisk = risk(input);
-    if (!initialRisk)
+    if (known.empty())
         return;
+    const auto initialBody = predictBody(observation.self, input, tuning_.dodgeHorizon, arena_);
+    unsigned initialRisk = 0;
     bool freshThreat = false;
     for (const auto& b : known)
-        if (!jumpedBullets_.count(b.id) && wouldHit(b, observation.self, input, tuning_.dodgeHorizon, arena_))
-            freshThreat = true;
+        if (wouldHit(b, initialBody))
+        {
+            ++initialRisk;
+            freshThreat = freshThreat || !jumpedBullets_.count(b.id);
+        }
+    if (!initialRisk)
+        return;
     const bool canJump = observation.self.grounded && time_ >= nextDodgeJump_ && freshThreat;
     PlayerInput best = input;
     auto bestRisk = initialRisk;

@@ -114,7 +114,7 @@ void armory()
         sample.chooseWeapon(1, true, s.round, s.selectionRevision);
         outcomes.insert(sample.snapshot().rolled[0]);
     }
-    expect(outcomes.size() == 7 && outcomes.count(WeaponKind::Pistol),
+    expect(outcomes.size() == weaponCount && outcomes.count(WeaponKind::Pistol),
            "All seven weapons, including current pistol, can occur");
 }
 } // namespace

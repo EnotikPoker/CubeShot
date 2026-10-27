@@ -12,7 +12,14 @@ enum class WeaponKind : std::uint32_t
     Smg,
     Revolver,
     Rifle,
-    Sniper
+    Sniper,
+    Minigun,
+    Rpg,
+    Flamethrower,
+    Bat,
+    Katana,
+    Knife,
+    FireBoomerang
 };
 
 struct WeaponDefinition
@@ -23,6 +30,9 @@ struct WeaponDefinition
     bool automatic;
 };
 
+inline constexpr unsigned weaponCount = 14;
+bool meleeWeapon(WeaponKind kind);
+bool incendiaryWeapon(WeaponKind kind);
 bool validWeapon(WeaponKind kind);
 const WeaponDefinition& weaponDefinition(WeaponKind kind);
 
@@ -33,6 +43,8 @@ struct Weapon
     int damage = 20;
     float bulletSpeed = 800, shotInterval = .25f, cooldown = 0;
     bool charging = false;
+    bool driven = false, overheated = false;
+    float spin = 0, heat = 0;
     float preparation = 0;
     std::uint32_t shots = 0;
     void equip(WeaponKind value);

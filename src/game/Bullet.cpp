@@ -14,6 +14,7 @@ void Bullet::update(float deltaSeconds)
     position.y += velocity.y * deltaSeconds + 0.5f * acceleration * deltaSeconds * deltaSeconds;
     velocity.y += acceleration * deltaSeconds;
     lifetime -= deltaSeconds;
+    age += deltaSeconds;
 }
 
 std::vector<Bullet> scatterShot(const Bullet& prototype)

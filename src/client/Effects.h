@@ -34,6 +34,12 @@ struct Particle
     float size = 3, angle = 0, spin = 0;
 };
 
+struct Blast
+{
+    Vec2 position;
+    float life = .45f;
+};
+
 struct Stain
 {
     Vec2 position;
@@ -62,6 +68,11 @@ public:
 
     Vec2 shakeOffset() const;
 
+    const std::vector<Blast>& blasts() const
+    {
+        return blasts_;
+    }
+
     bool bloodVisible() const
     {
         return bloodVisible_;
@@ -75,6 +86,8 @@ private:
     bool bloodVisible_ = true;
     std::map<PlayerId, Pose> poses_;
     std::vector<Particle> particles_;
+    std::vector<Blast> blasts_;
+    unsigned burstBudget_ = 180;
     std::deque<Stain> stains_;
     std::set<std::pair<std::uint32_t, std::uint64_t>> seen_;
     std::set<std::tuple<std::uint32_t, PlayerId, std::uint64_t>> predicted_;

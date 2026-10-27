@@ -367,7 +367,7 @@ MenuAction Menu::activate()
         }
         else if (selection_ == 4)
         {
-            testWeapon_ = static_cast<WeaponKind>((static_cast<unsigned>(testWeapon_) + 1) % 7);
+            testWeapon_ = static_cast<WeaponKind>((static_cast<unsigned>(testWeapon_) + 1) % weaponCount);
             testWeaponLabel_ = U"Оружие: " + std::u32string(weaponDefinition(testWeapon_).name);
         }
         else
