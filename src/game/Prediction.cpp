@@ -61,7 +61,8 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
     }
     const bool boundary = arena_.map != snapshot.map || waitingForSnapshot_ || !player_ ||
                           round_ != snapshot.round || phase_ != snapshot.phase || !found->alive();
-    arena_ = Arena::create(snapshot.map);
+    if (arena_.map != snapshot.map || !player_)
+        arena_ = Arena::create(snapshot.map);
     others_.clear();
     for (const auto& p : snapshot.players)
         if (p.id != own)
@@ -132,6 +133,20 @@ void Prediction::advance(PlayerInput input)
                                   [&](Bullet& b)
                                   {
                                       const auto from = b.position;
+                                      if (b.weapon == WeaponKind::FireBoomerang)
+                                      {
+                                          if (b.age >= .55f)
+                                              b.returning = true;
+                                          if (b.returning)
+                                          {
+                                              const auto at = player_->weaponOrigin();
+                                              const float distance = std::hypot(at.x - from.x, at.y - from.y);
+                                              if (distance < 24)
+                                                  return true;
+                                              b.velocity = {(at.x - from.x) / distance * 700,
+                                                            (at.y - from.y) / distance * 700};
+                                          }
+                                      }
                                       b.update(step);
                                       if (b.lifetime <= 0 || b.position.x < arena_.bounds.position.x ||
                                           b.position.x > arena_.bounds.size.x ||
@@ -180,7 +195,7 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
     for (const auto& rect : arena_.platforms)
         if (collision::segmentHit(prototype.position, muzzle, rect, Bullet::radius))
             blocked = true;
-    if (!blocked)
+    if (!blocked && !meleeWeapon(prototype.weapon))
     {
         unsigned pellet = 0;
         for (auto bullet : scatterShot(prototype))

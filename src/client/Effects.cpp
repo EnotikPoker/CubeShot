@@ -25,6 +25,8 @@ const Pose& Effects::pose(PlayerId id) const
 
 void Effects::burst(Vec2 at, Vec2 direction, int count, bool blood, PlayerId owner, bool chip)
 {
+    count = std::min(count, static_cast<int>(burstBudget_));
+    burstBudget_ -= count;
     for (int i = 0; i < count && particles_.size() < maxParticles; ++i)
         particles_.push_back({at,
                               {direction.x * random(60, 180) + random(-100, 100),
@@ -49,6 +51,11 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
                      const std::vector<GameEvent>& events, PlayerId own, bool blood, bool shake)
 {
     bloodVisible_ = blood;
+    burstBudget_ = 180;
+    for (auto& blast : blasts_)
+        blast.life -= dt;
+    blasts_.erase(std::remove_if(blasts_.begin(), blasts_.end(), [](const auto& b) { return b.life <= 0; }),
+                  blasts_.end());
     dt = std::clamp(dt, 0.f, .1f);
     time_ += dt;
     shake_ = shake ? std::max(0.f, shake_ - dt * 35) : 0;
@@ -117,9 +124,9 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         else if (e.kind == EventKind::Hit)
         {
             poses_[e.target].hit = .14f;
-            if (blood)
+            if (blood && !incendiaryWeapon(e.weapon))
             {
-                burst(e.position, e.direction, 35 + std::min(35, e.damage), true);
+                burst(e.position, e.direction, std::clamp(8 + e.damage * 2, 12, 70), true);
                 const auto player = std::find_if(players.begin(), players.end(),
                                                  [&](const auto& p) { return p.id == e.target; });
                 if (player != players.end())
@@ -138,11 +145,20 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         }
         else if (e.kind == EventKind::SurfaceImpact)
             burst(e.position, {-e.direction.x, -e.direction.y}, 5, false);
+        else if (e.kind == EventKind::Explosion)
+        {
+            if (blasts_.size() < 16)
+                blasts_.push_back({e.position, .45f});
+            if (shake)
+                shake_ = std::max(shake_, 8.f);
+        }
         else if (e.kind == EventKind::Death && blood)
             burst({e.position.x + 24, e.position.y + 24}, e.direction, 100, true);
         else if ((e.kind == EventKind::CorpseHit || e.kind == EventKind::CorpseBreak) && blood)
             burst(e.position, e.direction, e.kind == EventKind::CorpseBreak ? 100 : 36, true);
     }
+    if (dt <= 0)
+        return;
     for (auto& p : particles_)
     {
         p.life -= dt;
@@ -151,8 +167,12 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         const Vec2 to{p.position.x + p.velocity.x * dt, p.position.y + p.velocity.y * dt};
         float nearest = 2;
         for (const auto& platform : arena.platforms)
-            if (auto hit = collision::segmentHit(p.position, to, platform, 1))
-                nearest = std::min(nearest, *hit);
+            if (std::max(p.position.x, to.x) + 1 >= platform.position.x &&
+                std::min(p.position.x, to.x) - 1 <= platform.position.x + platform.size.x &&
+                std::max(p.position.y, to.y) + 1 >= platform.position.y &&
+                std::min(p.position.y, to.y) - 1 <= platform.position.y + platform.size.y)
+                if (auto hit = collision::segmentHit(p.position, to, platform, 1))
+                    nearest = std::min(nearest, *hit);
         if (nearest <= 1)
         {
             if (p.blood)

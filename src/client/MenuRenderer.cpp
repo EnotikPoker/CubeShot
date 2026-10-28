@@ -33,45 +33,63 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     if (!own)
         return true;
     const auto slot = own - 1;
-    constexpr float pi = 3.14159265358979323846f, sector = 2 * pi / 7;
     const bool spinning = state.weaponChoice[slot] == WeaponChoice::Spinning;
     const auto result = spinning ? state.rolled[slot] : state.loadout[slot];
     const float elapsed = Match::spinSeconds - state.spinRemaining[slot];
     const float progress = spinning ? std::clamp(elapsed / Match::wheelSeconds, 0.f, 1.f) : 1.f;
-    const float rotation =
-        -pi / 2 - (static_cast<unsigned>(result) + .5f) * sector + std::pow(1 - progress, 3.f) * 12 * pi;
-    const auto index =
-        static_cast<unsigned>(static_cast<int>(std::floor((-pi / 2 - rotation) / sector)) % 7 + 7) % 7;
-    const std::u32string_view names[]{U"Пистолет",  U"Дробовик", U"Автомат", U"SMG",
-                                      U"Револьвер", U"Винтовка", U"Снайпер"};
-    const SDL_FColor colors[]{{.22f, .43f, .62f, 1}, {.65f, .38f, .2f, 1}, {.28f, .5f, .32f, 1},
-                              {.46f, .3f, .6f, 1},   {.6f, .48f, .22f, 1}, {.25f, .5f, .53f, 1},
-                              {.59f, .25f, .34f, 1}};
-    for (unsigned item = 0; item < 7; ++item)
-    {
-        for (int slice = 0; slice < 8; ++slice)
-        {
-            const float a = rotation + item * sector + sector * slice / 8;
-            const float b = a + sector / 8;
-            SDL_Vertex vertices[]{{{480, 285}, colors[item], {0, 0}},
-                                  {{480 + std::cos(a) * 96, 285 + std::sin(a) * 96}, colors[item], {0, 0}},
-                                  {{480 + std::cos(b) * 96, 285 + std::sin(b) * 96}, colors[item], {0, 0}}};
-            if (!SDL_RenderGeometry(renderer, nullptr, vertices, 3, nullptr, 0))
-                return false;
-        }
-        const float middle = rotation + (item + .5f) * sector;
-        if (!drawText(renderer, names[item],
-                      {480 + std::cos(middle) * 65 - textWidth(names[item], 1) / 2,
-                       285 + std::sin(middle) * 65 - 4},
-                      1, white))
-            return false;
-    }
-    if (!rectangle(renderer, {{474, 181}, {12, 18}}, {255, 214, 104, 255}) ||
-        !rectangle(renderer, {{461, 270}, {38, 30}}, {20, 25, 35, 255}) ||
-        !centeredText(renderer, asciiText(std::to_string(index + 1)), 276, 3, white))
+    const float destination = weaponCount * 4.f + static_cast<unsigned>(result);
+    const float position = destination - std::pow(1 - progress, 3.f) * weaponCount * 4;
+    constexpr float width = 154;
+    const SDL_Color colors[]{{75, 130, 175, 255}, {170, 100, 50, 255}, {75, 150, 95, 255},
+                             {140, 85, 175, 255}, {180, 150, 60, 255}, {65, 150, 160, 255},
+                             {185, 70, 95, 255}};
+    if (!rectangle(renderer, {{166, 197}, {628, 152}}, {12, 18, 29, 255}))
         return false;
-    const auto shown = spinning && progress < 1 ? static_cast<WeaponKind>(index) : result;
-    return centeredText(renderer, weaponDefinition(shown).name, 163, 2, blue);
+    const SDL_Rect clip{174, 205, 612, 136};
+    SDL_SetRenderClipRect(renderer, &clip);
+    bool ok = true;
+    const int middle = static_cast<int>(std::floor(position));
+    for (int i = middle - 3; i <= middle + 3; ++i)
+    {
+        const unsigned index =
+            static_cast<unsigned>((i % static_cast<int>(weaponCount) + weaponCount) % weaponCount);
+        const auto kind = static_cast<WeaponKind>(index);
+        const float x = 480 + (i - position) * width;
+        const bool selected = std::abs(x - 480) < width / 2;
+        const auto color = colors[index % 7];
+        ok =
+            ok &&
+            rectangle(renderer, {{x - 70, 211}, {140, 124}}, selected ? color : SDL_Color{40, 50, 66, 255}) &&
+            rectangle(renderer, {{x - 67, 214}, {134, 118}}, {23, 31, 45, 255}) &&
+            rectangle(renderer, {{x - 67, 323}, {134, 9}}, color);
+        // Large silhouettes identify the cards while their names pass below the pointer.
+        const float barrel = std::min(78.f, weaponDefinition(kind).barrel);
+        if (meleeWeapon(kind))
+            ok = ok &&
+                 rectangle(renderer, {{x - 38, 256}, {74, kind == WeaponKind::Bat ? 12.f : 5.f}},
+                           {215, 215, 205, 255}) &&
+                 rectangle(renderer, {{x - 42, 252}, {20, 14}}, {150, 95, 45, 255});
+        else if (kind == WeaponKind::FireBoomerang)
+            ok = ok && rectangle(renderer, {{x - 33, 255}, {66, 10}}, {255, 155, 45, 255}) &&
+                 rectangle(renderer, {{x + 23, 233}, {10, 32}}, {255, 210, 85, 255});
+        else
+            ok = ok &&
+                 rectangle(renderer, {{x - 36, 249}, {barrel, kind == WeaponKind::Rpg ? 20.f : 12.f}},
+                           color) &&
+                 rectangle(renderer, {{x - 21, 258}, {13, 23}}, {165, 175, 185, 255});
+        const auto name = weaponDefinition(kind).name;
+        ok = ok && drawText(renderer, name, {x - textWidth(name, 1) / 2, 299}, 1, white);
+    }
+    SDL_SetRenderClipRect(renderer, nullptr);
+    const auto shown =
+        spinning && progress < 1
+            ? static_cast<WeaponKind>((static_cast<unsigned>(std::lround(position))) % weaponCount)
+            : result;
+    const auto name = weaponDefinition(shown).name;
+    const int scale = textWidth(name, 2) > 620 ? 1 : 2;
+    return ok && rectangle(renderer, {{477, 189}, {6, 17}}, {255, 209, 90, 255}) &&
+           rectangle(renderer, {{466, 185}, {28, 8}}, {255, 226, 140, 255}) &&
+           centeredText(renderer, name, 363, scale, progress >= 1 ? SDL_Color{255, 220, 125, 255} : white);
 }
 
 bool preview(SDL_Renderer* renderer, MapId id, Rect box, bool test = true)
@@ -168,8 +186,8 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     hint = U"Тест: три мишени без ИИ";
                     break;
                 case Screen::Armory:
-                    title = U"Оружие между раундами";
-                    hint = U"Один бросок. Текущее оружие может выпасть снова";
+                    title.clear();
+                    hint.clear();
                     break;
                 case Screen::BotSetup:
                     title = U"Игра с ботом";
@@ -203,7 +221,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 const auto choice = menu.networkSnapshot().weaponChoice[other];
                 if (!centeredText(renderer,
                                   choice == WeaponChoice::Ready      ? U"Соперник готов"
-                                  : choice == WeaponChoice::Spinning ? U"Соперник вращает колесо"
+                                  : choice == WeaponChoice::Spinning ? U"Соперник меняет оружие"
                                                                      : U"Соперник выбирает",
                                   140, 1, muted))
                     return false;

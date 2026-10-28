@@ -291,6 +291,36 @@ void testMenuRendering()
     expect(textWidth(U"Играть", 3) == 105, "Cyrillic text measures letters, not UTF-8 bytes");
 }
 
+void testArsenalSelection()
+{
+    Menu menu;
+    menu.open(Screen::Maps);
+    menu.moveSelection(4);
+    for (unsigned i = 0; i < weaponCount; ++i)
+    {
+        expect(static_cast<unsigned>(menu.testWeapon()) == i, "Test picker visits every weapon");
+        menu.activate();
+    }
+    expect(menu.testWeapon() == WeaponKind::Pistol, "Test picker wraps after fourteen weapons");
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface(
+        SDL_CreateSurface(960, 540, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
+    std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer(
+        SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
+    Match match;
+    auto state = match.snapshot();
+    state.phase = MatchPhase::Armory;
+    for (unsigned i = 0; i < weaponCount; ++i)
+    {
+        state.rolled[0] = static_cast<WeaponKind>(i);
+        state.weaponChoice[0] = WeaponChoice::Spinning;
+        state.spinRemaining[0] = .7f;
+        menu.networkState(state, 1);
+        expect(menu.screen() == Screen::Armory && renderMenu(renderer.get(), menu) &&
+                   SDL_RenderPresent(renderer.get()),
+               "Every roulette result fits the clipped card strip");
+    }
+}
+
 } // namespace
 
 int main()
@@ -306,6 +336,7 @@ int main()
         testMouseClicks();
         testHeldInput();
         testMenuRendering();
+        testArsenalSelection();
         std::cout << "Menu tests passed\n";
     }
     catch (const std::exception& error)

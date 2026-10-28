@@ -173,7 +173,8 @@ bool Match::chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uin
     const auto slot = id - 1;
     if (reroll)
     {
-        rolled_[slot] = static_cast<WeaponKind>(std::uniform_int_distribution<unsigned>(0, 6)(random_));
+        rolled_[slot] =
+            static_cast<WeaponKind>(std::uniform_int_distribution<unsigned>(0, weaponCount - 1)(random_));
         spinRemaining_[slot] = spinSeconds;
         weaponChoice_[slot] = WeaponChoice::Spinning;
     }
@@ -269,6 +270,7 @@ WorldSnapshot Match::snapshot() const
 {
     WorldSnapshot s{tick_,  round_,  phase_,   remaining_,       score_,          connected_,
                     ready_, winner_, aborted_, world_.players(), world_.bullets()};
+    s.fires = world_.fires();
     s.corpses = world_.debris().corpses();
     s.pieces = world_.debris().pieces();
     s.weaponChoice = weaponChoice_;

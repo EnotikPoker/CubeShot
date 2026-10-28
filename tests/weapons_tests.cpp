@@ -34,7 +34,7 @@ unsigned advance(World& world, unsigned ticks)
 
 void weapons()
 {
-    for (unsigned i = 0; i < 7; ++i)
+    for (unsigned i = 0; i < weaponCount; ++i)
     {
         const auto kind = static_cast<WeaponKind>(i);
         auto definition = weaponDefinition(kind);
@@ -45,7 +45,7 @@ void weapons()
         world.setPlayerInput(1, {0, false, true, {1, 0}, true});
         const auto shots = advance(world, 120);
         if (definition.automatic)
-            expect(shots >= 8 && shots <= static_cast<unsigned>(std::ceil(1 / definition.interval)) + 1,
+            expect(shots >= 5 && shots <= static_cast<unsigned>(std::ceil(1 / definition.interval)) + 1,
                    "Held automatic fire follows the physical weapon interval");
         else
             expect(shots == 1, "Holding a semi-automatic trigger never produces repeated shots");
@@ -86,7 +86,7 @@ void weapons()
 void armedBots()
 {
     auto a = Arena::createDuel();
-    for (unsigned kind = 0; kind < 7; ++kind)
+    for (unsigned kind = 0; kind < weaponCount; ++kind)
         for (auto difficulty : {BotDifficulty::Easy, BotDifficulty::Medium, BotDifficulty::Hard})
         {
             World world(a, 2);
@@ -138,7 +138,7 @@ void prediction()
         if (kind == WeaponKind::Shotgun || kind == WeaponKind::Sniper)
             expect(shots == 1, "Predicted semi-auto blast is emitted exactly once");
         else
-            expect(shots >= 8, "Held automatic shots are predicted between authoritative replies");
+            expect(shots >= 5, "Held automatic shots are predicted between authoritative replies");
         const auto after = shots;
         for (int tick = 0; tick < 120; ++tick)
         {

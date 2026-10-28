@@ -1,9 +1,10 @@
 syntax = "proto3";
 package cubeshot.wire;
 message Vec { float x = 1; float y = 2; }
-message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; }
-message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; uint32 weapon = 7; uint32 damage = 8; float gravity = 9; uint32 volley = 10; }
+message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; float spin = 12; float heat = 13; bool overheated = 14; float burning = 15; uint32 burn_owner = 16; uint32 damaged_cells = 17; }
+message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; uint32 weapon = 7; uint32 damage = 8; float gravity = 9; uint32 volley = 10; float age = 11; bool returning = 12; uint32 hit_mask = 13; }
 message Piece { uint64 id = 1; uint32 owner = 2; Vec position = 3; Vec velocity = 4; Vec size = 5; float angle = 6; float spin = 7; }
+message Fire { uint64 id = 1; uint32 owner = 2; Vec position = 3; float life = 4; float radius = 5; }
 message Corpse { Piece body = 1; uint32 integrity = 2; uint32 cells = 3; }
 message Snapshot {
   uint64 tick = 1; uint32 round = 2; uint32 phase = 3; float remaining = 4;
@@ -13,7 +14,7 @@ message Snapshot {
   uint32 map = 15; bool voting = 16; repeated sint32 votes = 17; uint64 selection_revision = 18; uint64 state_sequence = 19;
   repeated Corpse corpses = 20; repeated Piece pieces = 21;
   repeated uint32 loadout = 22; repeated uint32 rolled = 23;
-  repeated uint32 weapon_choice = 24; repeated float spin_remaining = 25;
+  repeated uint32 weapon_choice = 24; repeated float spin_remaining = 25; repeated Fire fires = 26;
 }
 message Hello { string owner_token = 1; string nickname = 2; string reservation_token = 3; }
 message Welcome { uint32 player_id = 1; }

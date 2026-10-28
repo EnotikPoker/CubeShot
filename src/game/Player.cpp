@@ -32,6 +32,7 @@ Vec2 Player::muzzlePosition() const
 
 std::optional<Bullet> Player::takeShot()
 {
+    weapon.driven = triggerHeld_;
     bool requested = shootRequested_ || (weapon.automatic() && triggerHeld_);
     shootRequested_ = false;
     if (!alive())
@@ -130,6 +131,7 @@ void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequen
 void Player::clearInput()
 {
     velocity.x = 0;
+    weapon.driven = false;
     jumpHeld_ = jumpRequested_ = false;
     shootHeld_ = shootRequested_ = triggerHeld_ = false;
     weapon.charging = false;

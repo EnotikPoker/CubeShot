@@ -22,6 +22,9 @@ struct Bullet
     WeaponKind weapon = WeaponKind::Pistol;
     std::uint32_t volley = 0;
     float acceleration = gravity;
+    float age = 0;
+    bool returning = false;
+    std::uint32_t hitMask = 0;
 
     void update(float deltaSeconds);
 };

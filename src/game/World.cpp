@@ -22,6 +22,7 @@ World::World(Arena arena, std::size_t playerCount)
 void World::resetPlayers(bool swapSpawns)
 {
     debris_.clear();
+    fires_.clear();
     players_.clear();
     events_.clear();
     bullets_.clear();
@@ -98,12 +99,18 @@ void World::update(float deltaSeconds, bool damageLiving)
         ++tick_;
         simulateBodies(players_, arena_, step);
         debris_.update(step, arena_, players_);
+        updateFire(step);
         updateBullets(step);
         for (Player& player : players_)
         {
             if (auto bullet = player.takeShot())
             {
                 emit(EventKind::Shot, *bullet, player.muzzlePosition());
+                if (meleeWeapon(bullet->weapon))
+                {
+                    melee(*bullet);
+                    continue;
+                }
                 const float speed = std::hypot(bullet->velocity.x, bullet->velocity.y);
                 const Vec2 muzzle{bullet->position.x + bullet->velocity.x / speed * player.weapon.barrel(),
                                   bullet->position.y + bullet->velocity.y / speed * player.weapon.barrel()};
@@ -148,7 +155,8 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     }
     for (Player& player : players_)
     {
-        if (!player.alive() || player.id == bullet.shooterId)
+        if (!player.alive() || player.id == bullet.shooterId ||
+            (bullet.weapon == WeaponKind::FireBoomerang && (bullet.hitMask & (1u << player.id))))
         {
             continue;
         }
@@ -172,6 +180,13 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     {
         Vec2 at{bullet.position.x + (destination.x - bullet.position.x) * nearest,
                 bullet.position.y + (destination.y - bullet.position.y) * nearest};
+        if (bullet.weapon == WeaponKind::Rpg)
+        {
+            explode(bullet, at);
+            return false;
+        }
+        if (incendiaryWeapon(bullet.weapon))
+            igniteSurface(at, bullet.shooterId);
         if (remains)
         {
             const auto owner = remains->fragment ? debris_.pieces()[remains->index].owner
@@ -179,26 +194,47 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             const bool broken = debris_.hit(*remains, bullet, at);
             emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, bullet, at, owner);
         }
+        else if (victim)
+            damage(*victim, bullet, at, bullet.damage, incendiaryWeapon(bullet.weapon));
         else
+            emit(EventKind::SurfaceImpact, bullet, at);
+        if (bullet.weapon == WeaponKind::FireBoomerang)
         {
-            emit(victim && damageLiving_ ? EventKind::Hit : EventKind::SurfaceImpact, bullet, at,
-                 victim && damageLiving_ ? victim->id : 0);
-            if (victim && damageLiving_)
+            if (victim)
+                bullet.hitMask |= 1u << victim->id;
+            else if (!bullet.returning)
             {
-                const auto index = static_cast<std::size_t>(victim - players_.data());
-                pendingDamage_[index] += bullet.damage;
-                const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
-                pendingImpact_[index] = {bullet.velocity.x / speed, bullet.velocity.y / speed};
+                bullet.returning = true;
+                bullet.hitMask = 0;
             }
+            else
+                return false;
+            const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
+            bullet.position = victim
+                                  ? destination
+                                  : Vec2{at.x - bullet.velocity.x / speed, at.y - bullet.velocity.y / speed};
+            return true;
         }
         return false;
     }
     bullet.position = destination;
     const Rect& bounds = arena_.bounds;
-    return destination.x >= bounds.position.x + Bullet::radius &&
-           destination.x <= bounds.position.x + bounds.size.x - Bullet::radius &&
-           destination.y >= bounds.position.y + Bullet::radius &&
-           destination.y <= bounds.position.y + bounds.size.y - Bullet::radius;
+    const bool inside = destination.x >= bounds.position.x + Bullet::radius &&
+                        destination.x <= bounds.position.x + bounds.size.x - Bullet::radius &&
+                        destination.y >= bounds.position.y + Bullet::radius &&
+                        destination.y <= bounds.position.y + bounds.size.y - Bullet::radius;
+    if (!inside && bullet.weapon == WeaponKind::FireBoomerang && !bullet.returning)
+    {
+        bullet.returning = true;
+        bullet.hitMask = 0;
+        bullet.position = {
+            std::clamp(destination.x, bounds.position.x + 4, bounds.position.x + bounds.size.x - 4),
+            std::clamp(destination.y, bounds.position.y + 4, bounds.position.y + bounds.size.y - 4)};
+        return true;
+    }
+    if (!inside && bullet.weapon == WeaponKind::Rpg)
+        explode(bullet, bullet.position);
+    return inside;
 }
 
 void World::updateBullets(float deltaSeconds)
@@ -207,10 +243,38 @@ void World::updateBullets(float deltaSeconds)
                                   [&](Bullet& bullet)
                                   {
                                       const Vec2 start = bullet.position;
+                                      if (bullet.weapon == WeaponKind::FireBoomerang)
+                                      {
+                                          if (!bullet.returning && bullet.age >= .55f)
+                                          {
+                                              bullet.returning = true;
+                                              bullet.hitMask = 0;
+                                          }
+                                          if (bullet.returning)
+                                          {
+                                              const auto owner = std::find_if(
+                                                  players_.begin(), players_.end(),
+                                                  [&](const auto& p) { return p.id == bullet.shooterId; });
+                                              if (owner == players_.end() || !owner->alive())
+                                                  return true;
+                                              const auto at = owner->weaponOrigin();
+                                              const float dx = at.x - start.x, dy = at.y - start.y;
+                                              const float distance = std::hypot(dx, dy);
+                                              if (distance < 24)
+                                                  return true;
+                                              bullet.velocity = {dx / distance * 700, dy / distance * 700};
+                                          }
+                                      }
                                       bullet.update(deltaSeconds);
                                       const Vec2 destination = bullet.position;
                                       bullet.position = start;
-                                      return bullet.lifetime <= 0.0f || !moveBullet(bullet, destination);
+                                      if (bullet.lifetime <= 0)
+                                      {
+                                          if (bullet.weapon == WeaponKind::Rpg)
+                                              explode(bullet, start);
+                                          return true;
+                                      }
+                                      return !moveBullet(bullet, destination);
                                   }),
                    bullets_.end());
 }

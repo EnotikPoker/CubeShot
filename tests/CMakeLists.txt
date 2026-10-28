@@ -118,3 +118,7 @@ add_test(NAME debris COMMAND cubeshot_debris_tests)
 add_executable(cubeshot_armory_tests armory_tests.cpp)
 target_link_libraries(cubeshot_armory_tests PRIVATE cubeshot_game)
 add_test(NAME armory COMMAND cubeshot_armory_tests)
+
+add_executable(cubeshot_arsenal_tests arsenal_tests.cpp)
+target_link_libraries(cubeshot_arsenal_tests PRIVATE cubeshot_network)
+add_test(NAME arsenal COMMAND cubeshot_arsenal_tests)

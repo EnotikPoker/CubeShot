@@ -2,6 +2,7 @@
 
 #include "game/Arena.h"
 #include "game/Bullet.h"
+#include "game/Combat.h"
 #include "game/Debris.h"
 #include "game/Events.h"
 #include "game/Player.h"
@@ -33,7 +34,19 @@ public:
     const std::vector<Bullet>& bullets() const;
     const Debris& debris() const;
 
+    const std::vector<FirePatch>& fires() const
+    {
+        return fires_;
+    }
+
 private:
+    void damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite = false);
+    void explode(const Bullet& bullet, Vec2 at);
+    void igniteSurface(Vec2 at, PlayerId owner);
+    void updateFire(float dt);
+    void melee(const Bullet& attack);
+    std::vector<FirePatch> fires_;
+    std::uint64_t nextFireId_ = 1;
     bool moveBullet(Bullet& bullet, Vec2 destination);
     void updateBullets(float deltaSeconds);
 

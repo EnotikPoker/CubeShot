@@ -116,6 +116,21 @@ std::optional<float> hitPiece(Vec2 from, Vec2 to, const PhysicsPiece& piece, Rec
     return collision::segmentHit(from, to, local, radius);
 }
 
+void Debris::blast(Vec2 at, float radius)
+{
+    for (auto& piece : pieces_)
+    {
+        const float dx = piece.position.x - at.x, dy = piece.position.y - at.y;
+        const float distance = std::hypot(dx, dy);
+        if (distance >= radius)
+            continue;
+        const float force = (1 - distance / radius) * 500;
+        piece.velocity.x += (distance > .01f ? dx / distance : 0) * force;
+        piece.velocity.y += (distance > .01f ? dy / distance : -1) * force - 100;
+        piece.spin = std::clamp(piece.spin + dx * .03f, -10.f, 10.f);
+    }
+}
+
 void Debris::clear()
 {
     corpses_.clear();
