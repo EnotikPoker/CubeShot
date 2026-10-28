@@ -33,9 +33,9 @@ struct Painter
 
     bool ellipse(Vec2 at, float rx, float ry, SDL_Color color, float angle = 0) const
     {
-        constexpr int sides = 12;
         static const auto circle = []
         {
+            constexpr int sides = 12;
             std::array<Vec2, sides> out{};
             for (int n = 0; n < sides; ++n)
             {
@@ -53,8 +53,8 @@ struct Painter
             return SDL_Vertex{{screen.x, screen.y}, tint, {0, 0}};
         };
         const auto centre = vertex({0, 0});
-        for (int n = 0; n < sides; ++n)
-            triangle(centre, vertex(circle[n]), vertex(circle[(n + 1) % sides]));
+        for (std::size_t n = 0; n < circle.size(); ++n)
+            triangle(centre, vertex(circle[n]), vertex(circle[(n + 1) % circle.size()]));
         return true;
     }
 

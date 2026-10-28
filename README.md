@@ -2,7 +2,7 @@
 
 2D-игра на C++17 и SDL3 с отдельным авторитетным сервером.
 
-Текущая версия: **0.14.0**.
+Текущая версия: **0.14.1**.
 
 **[Скачать для Windows](https://github.com/EnotikPoker/CubeShot/releases/latest/download/CubeShot-windows-x64.zip)** ·
 **[Скачать для Linux](https://github.com/EnotikPoker/CubeShot/releases/latest/download/CubeShot-linux-x64.tar.gz)** ·
@@ -128,6 +128,12 @@ ARM64, Alpine/musl и более старые системы пока не по�
 
 При изменениях обновляются версия в CMake, текущая версия выше и история.
 Каждая новая версия разрабатывается в отдельной ветке; прежние записи сохраняются.
+
+### 0.14.1 — 2026-10-28
+
+- Исправлена ошибка сборки Windows MSVC C3493 в кеше геометрии окружности:
+  константа размера объявлена внутри инициализирующей лямбды, внешний цикл
+  использует размер готового массива. Сохранена пакетная отрисовка версии 0.14.0.
 
 ### 0.14.0 — 2026-10-28
 
@@ -507,7 +513,7 @@ Windows/MSVC, чистые контейнеры и публикация пров
 
 ```bash
 python3 tools/package_game.py --build build --config Release
-python3 tools/check_package.py build/packages/CubeShot-linux-x64.tar.gz --version 0.14.0 --require-release
+python3 tools/check_package.py build/packages/CubeShot-linux-x64.tar.gz --version 0.14.1 --require-release
 ```
 
 На Windows во второй команде используйте `CubeShot-windows-x64.zip`.
