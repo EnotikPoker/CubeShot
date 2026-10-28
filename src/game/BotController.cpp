@@ -23,17 +23,21 @@ Vec2 center(const BotTarget& p)
 bool clearShot(const Player& self, Vec2 direction, float time, const Arena& arena)
 {
     Vec2 origin = self.weaponOrigin();
-    Vec2 muzzle{origin.x + direction.x * Weapon::barrelLength, origin.y + direction.y * Weapon::barrelLength};
+    Vec2 muzzle{origin.x + direction.x * self.weapon.barrel(), origin.y + direction.y * self.weapon.barrel()};
     for (const auto& r : arena.platforms)
         if (collision::segmentHit(origin, muzzle, r, Bullet::radius))
             return false;
     Bullet b;
     b.position = muzzle;
     b.velocity = {direction.x * self.weapon.bulletSpeed, direction.y * self.weapon.bulletSpeed};
+    b.acceleration = weaponDefinition(self.weapon.kind).gravity;
+    b.lifetime = weaponDefinition(self.weapon.kind).lifetime;
     for (float t = 0; t < time; t += step)
     {
         auto start = b.position;
         b.update(std::min(step, time - t));
+        if (b.lifetime < -1e-4f)
+            return false;
         for (const auto& r : arena.platforms)
             if (collision::segmentHit(start, b.position, r, Bullet::radius))
                 return false;
@@ -143,7 +147,7 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
 {
     const auto origin = self.weaponOrigin();
     float flight =
-        std::max(.001f, (distance(origin, center(target)) - Weapon::barrelLength) / self.weapon.bulletSpeed);
+        std::max(.001f, (distance(origin, center(target)) - self.weapon.barrel()) / self.weapon.bulletSpeed);
     Vec2 delta;
     for (int iteration = 0; iteration < 10; ++iteration)
     {
@@ -153,10 +157,11 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
         predicted.size = target.size;
         predicted.update(flight, arena);
         delta = {predicted.position.x + target.size.x / 2 - origin.x,
-                 predicted.position.y + target.size.y / 2 - origin.y - Bullet::gravity * flight * flight / 2};
+                 predicted.position.y + target.size.y / 2 - origin.y -
+                     weaponDefinition(self.weapon.kind).gravity * flight * flight / 2};
         flight =
-            std::max(.001f, (std::hypot(delta.x, delta.y) - Weapon::barrelLength) / self.weapon.bulletSpeed);
-        if (flight > 3 || !std::isfinite(flight))
+            std::max(.001f, (std::hypot(delta.x, delta.y) - self.weapon.barrel()) / self.weapon.bulletSpeed);
+        if (flight > weaponDefinition(self.weapon.kind).lifetime || !std::isfinite(flight))
             return {};
     }
     const float angle = std::atan2(delta.y, delta.x) + error;
@@ -391,6 +396,8 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
 {
     if (!(dt > 0) || !std::isfinite(dt) || !observation.self.alive())
         return {};
+    if (time_ == 0)
+        aim_ = observation.self.aimDirection;
     time_ += dt;
     history_.push_back({time_, observation.target, observation.bullets});
     while (!history_.empty() && history_.front().time <= time_ - tuning_.reaction)
@@ -418,6 +425,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
                  pi / 180;
         nextAim_ = time_ + .4f;
     }
+    bool alignedFire = false;
     if (perceived_.target)
     {
         // Extrapolate the delayed observation, never the opponent's unobserved input.
@@ -438,14 +446,23 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
             float change = std::remainder(desired - current, 2 * pi);
             current += std::clamp(change, -6.f * dt, 6.f * dt);
             aim_ = {std::cos(current), std::sin(current)};
+            alignedFire =
+                std::abs(change) < .06f && clearShot(observation.self, aim_, solution->flightTime, arena_);
             if (observation.target && time_ >= nextShot_ && observation.self.weapon.cooldown <= 0 &&
                 std::abs(change) < .06f && clearShot(observation.self, aim_, solution->flightTime, arena_))
             {
                 input.shoot = true;
-                nextShot_ = time_ + tuning_.shotInterval;
+                nextShot_ =
+                    time_ + std::max(tuning_.shotInterval * observation.self.weapon.shotInterval / .25f,
+                                     observation.self.weapon.shotInterval);
             }
         }
     }
+    if (observation.self.weapon.charging)
+        input.shoot = true;
+    if (observation.self.weapon.automatic())
+        input.shoot = alignedFire && observation.target.has_value();
+    input.triggerHeld = input.shoot;
     input.aimDirection = aim_;
     return input;
 }

@@ -1,29 +1,35 @@
 syntax = "proto3";
 package cubeshot.wire;
 message Vec { float x = 1; float y = 2; }
-message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; }
-message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; }
+message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; }
+message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; uint32 weapon = 7; uint32 damage = 8; float gravity = 9; uint32 volley = 10; }
+message Piece { uint64 id = 1; uint32 owner = 2; Vec position = 3; Vec velocity = 4; Vec size = 5; float angle = 6; float spin = 7; }
+message Corpse { Piece body = 1; uint32 integrity = 2; uint32 cells = 3; }
 message Snapshot {
   uint64 tick = 1; uint32 round = 2; uint32 phase = 3; float remaining = 4;
   repeated uint32 score = 5; repeated bool connected = 6; repeated bool ready = 7;
   uint32 winner = 8; uint32 aborted = 9; repeated Player players = 10; repeated Bullet bullets = 11;
   repeated uint64 input_ack = 12; repeated uint64 action_ack = 13; repeated string names = 14;
   uint32 map = 15; bool voting = 16; repeated sint32 votes = 17; uint64 selection_revision = 18; uint64 state_sequence = 19;
+  repeated Corpse corpses = 20; repeated Piece pieces = 21;
+  repeated uint32 loadout = 22; repeated uint32 rolled = 23;
+  repeated uint32 weapon_choice = 24; repeated float spin_remaining = 25;
 }
 message Hello { string owner_token = 1; string nickname = 2; string reservation_token = 3; }
 message Welcome { uint32 player_id = 1; }
-message InputCommand { uint64 sequence = 1; float movement = 2; Vec aim = 3; }
+message InputCommand { uint64 sequence = 1; float movement = 2; Vec aim = 3; bool fire_held = 4; }
 message Control { uint64 sequence = 1; uint32 round = 2; float movement = 3; Vec aim = 4; repeated InputCommand commands = 5; }
 message Action { uint64 sequence = 1; uint32 round = 2; bool jump = 3; bool shoot = 4; Vec aim = 5; uint64 input_sequence = 6; }
 message Ready { bool ready = 1; uint64 selection_revision = 2; }
 message MapChoice { uint32 map = 1; bool change = 2; uint64 selection_revision = 3; }
-message GameEvent { uint64 id = 1; uint64 tick = 2; uint64 shot_sequence = 3; uint32 round = 4; uint32 kind = 5; uint32 actor = 6; uint32 target = 7; Vec position = 8; Vec direction = 9; }
+message GameEvent { uint64 id = 1; uint64 tick = 2; uint64 shot_sequence = 3; uint32 round = 4; uint32 kind = 5; uint32 actor = 6; uint32 target = 7; Vec position = 8; Vec direction = 9; uint32 damage = 10; uint32 weapon = 11; uint32 volley = 12; }
 message Events { repeated GameEvent events = 1; }
+message WeaponChoice { bool reroll = 1; uint32 round = 2; uint64 selection_revision = 3; }
 message Empty {}
 message Envelope {
   uint32 protocol = 1;
   oneof body { Hello hello = 2; Welcome welcome = 3; Control control = 4; Action action = 5;
-    Ready ready = 6; Empty leave = 7; Snapshot snapshot = 8; Empty heartbeat = 9; MapChoice map_choice = 10; Events events = 11; }
+    Ready ready = 6; Empty leave = 7; Snapshot snapshot = 8; Empty heartbeat = 9; MapChoice map_choice = 10; Events events = 11; WeaponChoice weapon_choice = 12; }
 }
 message DiscoveryQuery { uint32 protocol = 1; uint64 nonce = 2; }
 message DiscoveryRoom { uint32 protocol = 1; uint64 nonce = 2; uint32 port = 3; uint32 players = 4; bool joinable = 5; string name = 6; }

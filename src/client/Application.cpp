@@ -103,6 +103,8 @@ void Application::screenChanged(Screen before)
     inputGate_.reset(rawInput());
     eventInput_.synchronize();
     SDL_SetCursor(menu_.playing() ? crosshair_ : SDL_GetDefaultCursor());
+    if (menu_.bots() && (menu_.screen() == Screen::Paused || menu_.screen() == Screen::Settings))
+        bots_.clearInput();
     if (menu_.screen() == Screen::Address)
         SDL_StartTextInput(window_);
     else if (before == Screen::Address)
@@ -129,6 +131,7 @@ bool Application::handle(MenuAction action)
     if (action == MenuAction::StartTest)
     {
         world_ = World{Arena::create(menu_.selectedMap(), true), 4};
+        world_.equip(1, menu_.testWeapon());
         effects_.clear();
     }
     if ((!connections_.session() && !bots_.match()) ||
@@ -347,6 +350,7 @@ int Application::run()
             {
                 {
                     world_ = World{Arena::create(menu_.selectedMap(), true), 4};
+                    world_.equip(1, menu_.testWeapon());
                     effects_.clear();
                 }
                 inputGate_.reset(rawInput());
@@ -442,10 +446,10 @@ int Application::run()
         const Uint64 now = SDL_GetTicksNS();
         const double elapsed = static_cast<double>(now - previousTime) / 1e9;
         previousTime = now;
-        if (menu_.playing() && !session)
+        if ((menu_.playing() || (menu_.bots() && menu_.screen() == Screen::Armory)) && !session)
         {
             accumulator += std::min(elapsed, .1);
-            const auto input = inputGate_.filter(rawInput());
+            const auto input = menu_.playing() ? inputGate_.filter(rawInput()) : PlayerInput{};
             if (bots_.match())
                 bots_.control(input);
             else
@@ -471,10 +475,12 @@ int Application::run()
                 inputGate_.reset(rawInput());
                 eventInput_.synchronize();
             }
-            effects_.update(
-                menu_.playing() || menu_.screen() == Screen::BotResult ? static_cast<float>(elapsed) : 0.f,
-                s.players, Arena::create(s.map), bots_.match()->takeEvents(), 1, settings_.active().blood,
-                settings_.active().shake);
+            effects_.update(menu_.playing() || menu_.screen() == Screen::BotResult ||
+                                    menu_.screen() == Screen::Armory
+                                ? static_cast<float>(elapsed)
+                                : 0.f,
+                            s.players, Arena::create(s.map), bots_.match()->takeEvents(), 1,
+                            settings_.active().blood, settings_.active().shake);
             const auto previousScreen = menu_.screen();
             bots_.synchronize(menu_);
             screenChanged(previousScreen);
@@ -509,7 +515,8 @@ int Application::run()
         }
         const bool sceneVisible = menu_.playing() || menu_.screen() == Screen::Paused ||
                                   (session && menu_.screen() == Screen::Result) ||
-                                  (bots_.match() && menu_.screen() == Screen::BotResult);
+                                  (bots_.match() && menu_.screen() == Screen::BotResult) ||
+                                  menu_.screen() == Screen::Armory;
         bool rendered = true;
         if (sceneVisible)
         {
@@ -525,7 +532,9 @@ int Application::run()
                                     {137, 153, 175, 255});
             }
             else
-                rendered = renderScene(renderer_, world_, false, &effects_);
+                rendered = renderScene(renderer_, world_, false, &effects_) &&
+                           drawText(renderer_, weaponDefinition(world_.players()[0].weapon.kind).name,
+                                    {650, 500}, 2, {232, 240, 255, 255});
         }
         if (menu_.screen() == Screen::Settings)
             rendered = renderSettings(renderer_, settings_, SDL_GetTicks(), menu_.lan());

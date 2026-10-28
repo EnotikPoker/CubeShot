@@ -26,7 +26,8 @@ enum class Screen
     Settings,
     Maps,
     BotSetup,
-    BotResult
+    BotResult,
+    Armory
 };
 enum class MenuAction
 {
@@ -34,6 +35,8 @@ enum class MenuAction
     StartTest,
     StartBots,
     BotRematch,
+    RollWeapon,
+    KeepWeapon,
     Quit,
     CreateRoom,
     FindRooms,
@@ -83,6 +86,11 @@ public:
     }
 
     void botState(const WorldSnapshot& snapshot);
+
+    WeaponKind testWeapon() const
+    {
+        return testWeapon_;
+    }
 
     MapId selectedMap() const
     {
@@ -173,6 +181,8 @@ public:
 private:
     std::optional<int> buttonAt(Vec2 position) const;
     MapId selectedMap_ = MapId::Test;
+    WeaponKind testWeapon_ = WeaponKind::Pistol;
+    std::u32string testWeaponLabel_ = U"Оружие: Пистолет";
     MapId botMap_ = MapId::Duel;
     BotDifficulty botDifficulty_ = BotDifficulty::Medium;
     bool bots_ = false;

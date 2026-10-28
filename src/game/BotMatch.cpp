@@ -16,7 +16,7 @@ Arena botArena(MapId map)
 } // namespace
 
 BotMatch::BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed)
-    : bot_(botArena(map), difficulty, seed), nickname_(std::move(nickname))
+    : match_(false, seed), bot_(botArena(map), difficulty, seed), nickname_(std::move(nickname))
 {
     match_.connect(1);
     match_.connect(2);
@@ -32,6 +32,11 @@ void BotMatch::control(const PlayerInput& input)
 void BotMatch::action(bool jump, bool shoot, Vec2 aim)
 {
     match_.action(1, match_.round(), ++humanSequence_, jump, shoot, aim);
+}
+
+bool BotMatch::chooseWeapon(bool reroll)
+{
+    return match_.chooseWeapon(1, reroll, match_.round(), match_.snapshot().selectionRevision);
 }
 
 void BotMatch::clearInput()
@@ -53,13 +58,22 @@ void BotMatch::update(float dt)
         {
             round_ = match_.round();
             bot_.reset();
+            botHeld_ = false;
         }
         if (match_.phase() == MatchPhase::Round)
         {
             const auto input = bot_.update(observeBot(match_.world(), 2, 1), delta);
             match_.setInput(2, input);
-            if (input.jump || input.shoot)
-                match_.action(2, match_.round(), ++botSequence_, input.jump, input.shoot, input.aimDirection);
+            if (input.jump || (input.shoot && !botHeld_))
+                match_.action(2, match_.round(), ++botSequence_, input.jump, input.shoot && !botHeld_,
+                              input.aimDirection);
+            botHeld_ = input.shoot;
+        }
+        if (match_.phase() == MatchPhase::Armory)
+        {
+            auto state = match_.snapshot();
+            if (state.weaponChoice[1] == WeaponChoice::Pending)
+                match_.chooseWeapon(2, state.winner != 2, state.round, state.selectionRevision);
         }
         match_.update(delta);
     }
@@ -73,6 +87,7 @@ void BotMatch::rematch(const std::string& nickname)
     match_.setReady(1, true);
     match_.setReady(2, true);
     bot_.reset();
+    botHeld_ = false;
     round_ = match_.round();
 }
 

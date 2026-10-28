@@ -80,6 +80,8 @@ void matches()
     std::uint32_t lastRound = 0;
     for (int tick = 0; tick < 120 * 240 && game.snapshot().phase != MatchPhase::Finished; ++tick)
     {
+        if (game.snapshot().phase == MatchPhase::Armory)
+            game.chooseWeapon(false);
         game.update(dt);
         auto s = game.snapshot();
         if (s.round != lastRound)

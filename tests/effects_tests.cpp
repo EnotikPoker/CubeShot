@@ -5,6 +5,7 @@
 #include "client/WorldView.h"
 #include "game/World.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -42,7 +43,8 @@ void effects()
     GameEvent hit{2, 20, 7, 1, EventKind::Hit, 1, 2, {850, 420}, {1, 0}};
     fx.update(.01f, world.players(), arena, {hit}, 1);
     const auto count = fx.particles().size();
-    expect(count > 0 && fx.pose(2).hit > 0, "Confirmed hit creates blood and hit animation");
+    expect(count > 0 && fx.pose(2).hit > 0 && !fx.pose(2).wounds.empty(),
+           "Confirmed hit creates blood and hit animation");
     fx.update(0, world.players(), arena, {hit}, 1);
     expect(fx.particles().size() == count, "Duplicate authoritative event produces no extra blood");
     for (int i = 0; i < 180; ++i)
@@ -53,11 +55,14 @@ void effects()
         hit.id = 10 + i;
         fx.update(0, world.players(), arena, {hit}, 1);
     }
-    expect(fx.particles().size() <= 512 && fx.stains().size() <= 256,
+    expect(fx.particles().size() <= Effects::maxParticles && fx.stains().size() <= Effects::maxStains &&
+               fx.pose(2).wounds.size() <= 12,
            "Presentation resources remain bounded");
     fx.update(0, world.players(), arena, {}, 1, false, false);
-    expect(fx.particles().empty() && fx.stains().empty() && near(fx.shakeOffset().x, 0),
-           "Disabling effects clears current blood and shake");
+    expect(
+        std::none_of(fx.particles().begin(), fx.particles().end(), [](const auto& p) { return p.blood; }) &&
+            fx.stains().empty() && near(fx.shakeOffset().x, 0),
+        "Disabling effects clears current blood and shake");
     auto dead = world.players();
     dead[1].health = 0;
     fx.update(.1f, dead, arena, {}, 1);

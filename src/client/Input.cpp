@@ -122,6 +122,7 @@ PlayerInput GameplayInputGate::filter(PlayerInput input)
         blockShoot_ = false;
     input.jump = input.jump && !blockJump_;
     input.shoot = input.shoot && !blockShoot_;
+    input.triggerHeld = input.shoot;
     return input;
 }
 

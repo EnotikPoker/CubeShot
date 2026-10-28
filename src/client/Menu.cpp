@@ -86,9 +86,21 @@ std::vector<MenuButton> Menu::buttons() const
             result = {{U"Отмена", {}}};
             break;
         case Screen::Maps:
-            result = {
-                {U"Предыдущая карта", {}}, {U"Следующая карта", {}}, {U"Начать тест", {}}, {U"Назад", {}}};
+            result = {{U"Предыдущая карта", {}},
+                      {U"Следующая карта", {}},
+                      {U"Начать тест", {}},
+                      {U"Назад", {}},
+                      {testWeaponLabel_, {}}};
             break;
+        case Screen::Armory:
+        {
+            const auto choice = own_ ? snapshot_.weaponChoice[own_ - 1] : WeaponChoice::Pending;
+            result = {{U"Сменить оружие", {}, choice != WeaponChoice::Pending},
+                      {choice == WeaponChoice::Ready ? U"Ожидание соперника" : U"Продолжить",
+                       {},
+                       choice != WeaponChoice::Pending}};
+            break;
+        }
         case Screen::BotSetup:
             result = {{U"Предыдущая карта", {}},
                       {U"Следующая карта", {}},
@@ -121,7 +133,9 @@ std::vector<MenuButton> Menu::buttons() const
         case Screen::Settings:
             break;
     }
-    const float top = screen_ == Screen::BotSetup                                        ? 270
+    const float top = screen_ == Screen::Armory                                          ? 398
+                      : screen_ == Screen::Maps                                          ? 270
+                      : screen_ == Screen::BotSetup                                      ? 270
                       : screen_ == Screen::BotResult                                     ? 300
                       : screen_ == Screen::Modes                                         ? 166
                       : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser) ? 161
@@ -134,13 +148,13 @@ std::vector<MenuButton> Menu::buttons() const
     for (std::size_t i = 0; i < result.size(); ++i)
         result[i].bounds = {
             {264, top + static_cast<float>(i) *
-                            (screen_ == Screen::BotSetup
+                            ((screen_ == Screen::BotSetup || screen_ == Screen::Maps)
                                  ? 44
                                  : ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
                                      screen_ == Screen::Lobby || screen_ == Screen::Maps)
                                         ? 48
                                         : 66))},
-            {432, screen_ == Screen::BotSetup ? 38.f
+            {432, (screen_ == Screen::BotSetup || screen_ == Screen::Maps) ? 38.f
                   : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
                      screen_ == Screen::Lobby || screen_ == Screen::Maps)
                       ? 42.f
@@ -226,10 +240,11 @@ MenuAction Menu::activate()
         return MenuAction::None;
     if (items[selection_].placeholder)
     {
-        message_ = screen_ == Screen::OnlineBrowser ? U"Сервер занят или матч уже начался"
-                   : screen_ == Screen::Browser     ? U"Комната недоступна. Можно ввести IP"
-                   : screen_ == Screen::Modes       ? U"Этот режим пока недоступен"
-                                                    : U"Настройки пока недоступны";
+        message_ = screen_ == Screen::Armory          ? U"Ожидаем завершения выбора оружия"
+                   : screen_ == Screen::OnlineBrowser ? U"Сервер занят или матч уже начался"
+                   : screen_ == Screen::Browser       ? U"Комната недоступна. Можно ввести IP"
+                   : screen_ == Screen::Modes         ? U"Этот режим пока недоступен"
+                                                      : U"Настройки пока недоступны";
     }
     else if (screen_ == Screen::Main)
     {
@@ -350,9 +365,16 @@ MenuAction Menu::activate()
             open(Screen::Playing);
             return MenuAction::StartTest;
         }
+        else if (selection_ == 4)
+        {
+            testWeapon_ = static_cast<WeaponKind>((static_cast<unsigned>(testWeapon_) + 1) % 7);
+            testWeaponLabel_ = U"Оружие: " + std::u32string(weaponDefinition(testWeapon_).name);
+        }
         else
             open(Screen::Modes);
     }
+    else if (screen_ == Screen::Armory)
+        return selection_ == 0 ? MenuAction::RollWeapon : MenuAction::KeepWeapon;
     else if (screen_ == Screen::BotSetup)
     {
         if (selection_ <= 1)
@@ -407,7 +429,7 @@ MenuAction Menu::activate()
 
 void Menu::escape()
 {
-    if (screen_ == Screen::Playing)
+    if (screen_ == Screen::Playing || screen_ == Screen::Armory)
         open(Screen::Paused);
     else if (screen_ == Screen::Paused)
         open(Screen::Playing);
@@ -429,7 +451,7 @@ void Menu::escape()
 void Menu::loseFocus()
 {
     cancelClick();
-    if (bots_ && playing())
+    if (bots_ && (playing() || screen_ == Screen::Armory))
         open(Screen::Paused);
 }
 
@@ -502,6 +524,11 @@ void Menu::botState(const WorldSnapshot& snapshot)
 {
     snapshot_ = snapshot;
     own_ = 1;
+    if (snapshot.phase == MatchPhase::Armory && screen_ != Screen::Armory && screen_ != Screen::Paused &&
+        screen_ != Screen::Settings)
+        open(Screen::Armory);
+    else if (snapshot.phase != MatchPhase::Armory && screen_ == Screen::Armory)
+        open(Screen::Playing);
     if (snapshot.phase == MatchPhase::Finished && screen_ == Screen::Playing)
         open(Screen::BotResult);
 }
@@ -526,6 +553,11 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
             open(Screen::Lobby);
         if (snapshot.aborted != AbortReason::None)
             message_ = U"Игрок отключился. Матч отменён, счёт сброшен";
+    }
+    else if (phase == MatchPhase::Armory)
+    {
+        if (screen_ != Screen::Paused && screen_ != Screen::Armory)
+            open(Screen::Armory);
     }
     else if (phase == MatchPhase::Finished)
     {

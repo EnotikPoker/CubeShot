@@ -87,6 +87,15 @@ void testMirroredWeapon(cubeshot::Vec2 aim)
     }
 }
 
+void testEyeBehindWeapon()
+{
+    const auto right = drawPlayer({1, -.85f});
+    const auto left = drawPlayer({-1, -.85f});
+    const auto a = pixel(right.get(), 78, 52), b = pixel(left.get(), 50, 52);
+    expect(a.r > 150 && a.g > 150 && a.b > 150 && b.r > 150 && b.g > 150 && b.b > 150,
+           "Barrel covers the eye when they overlap, for both aiming directions");
+}
+
 void testHealthBars()
 {
     using namespace cubeshot;
@@ -158,6 +167,7 @@ int main()
         testMirroredWeapon({1, 0});
         testMirroredWeapon({3, -4});
         testMirroredWeapon({3, 4});
+        testEyeBehindWeapon();
         testHealthBars();
         std::cout << "Renderer tests passed\n";
     }

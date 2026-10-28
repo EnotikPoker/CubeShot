@@ -22,6 +22,7 @@ public:
     void control(PlayerInput input);
     void action(bool jump, bool shoot, Vec2 aim);
     void ready(bool value);
+    void chooseWeapon(bool reroll);
     void selectMap(MapId map);
     void changeMap();
     std::vector<GameEvent> takeEvents();

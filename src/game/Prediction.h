@@ -1,6 +1,7 @@
 #pragma once
 #include "game/Match.h"
 #include <deque>
+#include <set>
 
 namespace cubeshot
 {
@@ -18,6 +19,7 @@ public:
     void reset();
     void reconcile(const WorldSnapshot& snapshot, PlayerId own);
     void advance(PlayerInput input);
+    std::vector<GameEvent> takeEvents();
     std::optional<GameEvent> action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim);
 
     const std::optional<Player>& player() const
@@ -53,7 +55,10 @@ private:
         Vec2 aim;
     };
 
-    void simulate(const PredictedCommand& command);
+    void simulate(const PredictedCommand& command, bool visuals = false);
+    std::optional<GameEvent> presentShot(const Bullet& bullet);
+    std::vector<GameEvent> events_;
+    std::set<std::uint32_t> shown_;
     Arena arena_ = Arena::createDuel();
     std::vector<Player> others_;
     float visualCooldown_ = 0;

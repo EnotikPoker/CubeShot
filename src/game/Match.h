@@ -1,6 +1,7 @@
 #pragma once
 #include "game/World.h"
 #include <array>
+#include <random>
 #include <string>
 
 namespace cubeshot
@@ -11,13 +12,21 @@ enum class MatchPhase
     Countdown,
     Round,
     RoundEnd,
-    Finished
+    Finished,
+    Armory
 };
 enum class AbortReason
 {
     None,
     PeerLeft,
     PeerTimeout
+};
+
+enum class WeaponChoice
+{
+    Pending,
+    Spinning,
+    Ready
 };
 
 struct WorldSnapshot
@@ -38,6 +47,11 @@ struct WorldSnapshot
     bool voting = false;
     std::array<int, 2> votes{{-1, -1}};
     std::uint64_t selectionRevision = 0, stateSequence = 0;
+    std::vector<Corpse> corpses;
+    std::vector<PhysicsPiece> pieces;
+    std::array<WeaponChoice, 2> weaponChoice{};
+    std::array<WeaponKind, 2> loadout{}, rolled{};
+    std::array<float, 2> spinRemaining{};
 };
 
 // Чистые правила дуэли. Сеть назначает слоты; только сервер меняет Match.
@@ -45,8 +59,12 @@ class Match
 {
 public:
     static constexpr unsigned winsRequired = 5;
+    static constexpr float aftermathSeconds = 4, spinSeconds = 3.2f, wheelSeconds = 2.4f;
 
-    explicit Match(bool voting = false) : voting_(voting) {}
+    explicit Match(bool voting = false, std::uint32_t seed = 0)
+        : voting_(voting), random_(seed ? seed : std::random_device{}())
+    {
+    }
 
     bool selectMap(PlayerId id, MapId map, std::uint64_t revision);
     bool changeMap(PlayerId id, std::uint64_t revision);
@@ -58,6 +76,7 @@ public:
     void clearInput(PlayerId id);
     bool action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim);
     void update(float dt);
+    bool chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision);
     WorldSnapshot snapshot() const;
 
     const World& world() const
@@ -77,6 +96,10 @@ public:
 
 private:
     void beginCountdown();
+    void collectEvents();
+    std::array<WeaponKind, 2> loadout_{}, rolled_{};
+    std::array<WeaponChoice, 2> weaponChoice_{};
+    std::array<float, 2> spinRemaining_{};
     World world_{Arena::createDuel(), 2};
     bool voting_ = false, rematch_ = false;
     std::array<int, 2> votes_{{-1, -1}};
@@ -92,5 +115,6 @@ private:
     unsigned roundsPlayed_ = 0;
     float remaining_ = 0;
     PlayerId winner_ = 0;
+    std::mt19937 random_;
 };
 } // namespace cubeshot

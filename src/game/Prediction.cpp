@@ -10,6 +10,8 @@ namespace cubeshot
 void Prediction::reset()
 {
     others_.clear();
+    events_.clear();
+    shown_.clear();
     visualCooldown_ = 0;
     player_.reset();
     commands_.clear();
@@ -22,7 +24,7 @@ void Prediction::reset()
     waitingForSnapshot_ = false;
 }
 
-void Prediction::simulate(const PredictedCommand& command)
+void Prediction::simulate(const PredictedCommand& command, bool visuals)
 {
     auto input = command.input;
     input.jump = input.shoot = false;
@@ -42,7 +44,10 @@ void Prediction::simulate(const PredictedCommand& command)
             others_.push_back(p);
     }
     // Advance weapon state during replay without spawning additional visuals.
-    player_->takeShot();
+    if (auto bullet = player_->takeShot())
+        if (visuals)
+            if (auto event = presentShot(*bullet))
+                events_.push_back(*event);
 }
 
 void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
@@ -70,6 +75,8 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
         commands_.clear();
         actions_.clear();
         bullets_.clear();
+        shown_.clear();
+        events_.clear();
         offset_ = {};
     }
     waitingForSnapshot_ = false;
@@ -83,7 +90,12 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
     while (!actions_.empty() && actions_.front().sequence <= actionAck_)
         actions_.pop_front();
     bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
-                                  [&](const Bullet& b) { return b.shotSequence <= actionAck_; }),
+                                  [&](const Bullet& b)
+                                  {
+                                      return b.volley <= found->weapon.shots ||
+                                             (!weaponDefinition(b.weapon).automatic &&
+                                              b.shotSequence <= actionAck_);
+                                  }),
                    bullets_.end());
     for (const auto& c : commands_)
         simulate(c);
@@ -98,7 +110,8 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
 
 void Prediction::advance(PlayerInput input)
 {
-    if (waitingForSnapshot_ || !player_ || phase_ != MatchPhase::Round || !player_->alive())
+    if (waitingForSnapshot_ || !player_ || (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd) ||
+        !player_->alive())
         return;
     // Two seconds maximum; recover from the next authoritative snapshot.
     if (commands_.size() >= 240)
@@ -112,7 +125,7 @@ void Prediction::advance(PlayerInput input)
     visualCooldown_ = std::max(0.f, visualCooldown_ - step);
     PredictedCommand command{++sequence_, input};
     commands_.push_back(command);
-    simulate(command);
+    simulate(command, true);
     offset_.x *= .85f;
     offset_.y *= .85f;
     bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
@@ -135,33 +148,59 @@ void Prediction::advance(PlayerInput input)
 
 std::optional<GameEvent> Prediction::action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim)
 {
-    if (!player_ || phase_ != MatchPhase::Round || !player_->alive() || actions_.size() >= 240)
+    if (!player_ || (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd) || !player_->alive() ||
+        actions_.size() >= 240)
         return {};
     actions_.push_back({sequence, sequence_ + 1, jump, shoot, aim});
     if (shoot && visualCooldown_ <= 0)
     {
-        // Separate copy keeps the pending action and replay weapon state intact.
         auto visual = *player_;
         visual.requestAction(false, true, aim, sequence);
         if (auto bullet = visual.takeShot())
         {
-            visualCooldown_ = Weapon{}.shotInterval;
-            bullet->id = std::numeric_limits<BulletId>::max() - sequence;
-            const auto from = bullet->position;
-            const Vec2 muzzle{from.x + aim.x / std::hypot(aim.x, aim.y) * Weapon::barrelLength,
-                              from.y + aim.y / std::hypot(aim.x, aim.y) * Weapon::barrelLength};
-            bool blocked = false;
-            for (const auto& rect : arena_.platforms)
-                if (collision::segmentHit(from, muzzle, rect, Bullet::radius))
-                    blocked = true;
-            if (!blocked)
-            {
-                bullet->position = muzzle;
-                bullets_.push_back(*bullet);
-            }
-            return GameEvent{0, 0, sequence, round_, EventKind::Shot, player_->id, 0, muzzle, aim};
+            visualCooldown_ = visual.weapon.shotInterval;
+            return presentShot(*bullet);
         }
     }
     return {};
+}
+
+std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
+{
+    if (!shown_.insert(prototype.volley).second)
+        return {};
+    if (shown_.size() > 512)
+        shown_.erase(shown_.begin());
+    const float speed = std::hypot(prototype.velocity.x, prototype.velocity.y);
+    const auto& definition = weaponDefinition(prototype.weapon);
+    const Vec2 direction{prototype.velocity.x / speed, prototype.velocity.y / speed};
+    const Vec2 muzzle{prototype.position.x + direction.x * definition.barrel,
+                      prototype.position.y + direction.y * definition.barrel};
+    bool blocked = false;
+    for (const auto& rect : arena_.platforms)
+        if (collision::segmentHit(prototype.position, muzzle, rect, Bullet::radius))
+            blocked = true;
+    if (!blocked)
+    {
+        unsigned pellet = 0;
+        for (auto bullet : scatterShot(prototype))
+        {
+            bullet.id =
+                std::numeric_limits<BulletId>::max() - static_cast<BulletId>(prototype.volley) * 8 - pellet++;
+            bullet.position = muzzle;
+            if (bullets_.size() < 256)
+                bullets_.push_back(bullet);
+        }
+    }
+    return GameEvent{
+        0,      0,         prototype.shotSequence, round_,           EventKind::Shot, prototype.shooterId, 0,
+        muzzle, direction, prototype.damage,       prototype.weapon, prototype.volley};
+}
+
+std::vector<GameEvent> Prediction::takeEvents()
+{
+    auto result = std::move(events_);
+    events_.clear();
+    return result;
 }
 } // namespace cubeshot

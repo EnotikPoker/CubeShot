@@ -40,6 +40,9 @@ bool Match::changeMap(PlayerId id, std::uint64_t revision)
     votes_ = {{-1, -1}};
     rematch_ = false;
     roundsPlayed_ = 0;
+    loadout_ = {};
+    weaponChoice_ = {};
+    spinRemaining_ = {};
     winner_ = 0;
     ++round_;
     ++selectionRevision_;
@@ -76,6 +79,9 @@ void Match::disconnect(PlayerId id, AbortReason reason)
     remaining_ = 0;
     winner_ = 0;
     roundsPlayed_ = 0;
+    loadout_ = {};
+    weaponChoice_ = {};
+    spinRemaining_ = {};
     votes_ = {{-1, -1}};
     rematch_ = false;
     events_.clear();
@@ -86,6 +92,10 @@ void Match::disconnect(PlayerId id, AbortReason reason)
 
 void Match::beginCountdown()
 {
+    if (phase_ == MatchPhase::Lobby || phase_ == MatchPhase::Finished)
+        loadout_ = {};
+    weaponChoice_ = {};
+    spinRemaining_ = {};
     if (phase_ == MatchPhase::Finished)
     {
         score_ = {};
@@ -105,6 +115,8 @@ void Match::beginCountdown()
     aborted_ = AbortReason::None;
     winner_ = 0;
     world_.resetPlayers(roundsPlayed_ % 2 != 0);
+    world_.equip(1, loadout_[0]);
+    world_.equip(2, loadout_[1]);
     phase_ = MatchPhase::Countdown;
     remaining_ = 3;
 }
@@ -123,12 +135,14 @@ void Match::setReady(PlayerId id, bool ready)
 
 void Match::setInput(PlayerId id, const PlayerInput& input)
 {
-    if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Round)
+    if (!validId(id) || !connected_[id - 1] ||
+        (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd))
         return;
     if (!std::isfinite(input.moveDirection) || !std::isfinite(input.aimDirection.x) ||
         !std::isfinite(input.aimDirection.y))
         return;
     PlayerInput continuous = input;
+    continuous.triggerHeld = input.triggerHeld || input.shoot;
     continuous.jump = continuous.shoot = false;
     world_.setPlayerInput(id, continuous);
 }
@@ -141,13 +155,43 @@ void Match::clearInput(PlayerId id)
 
 bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim)
 {
-    if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Round || round != round_ ||
-        sequence == 0 || sequence <= lastAction_[id - 1] || !std::isfinite(aim.x) || !std::isfinite(aim.y) ||
-        std::hypot(aim.x, aim.y) < 0.0001f)
+    if (!validId(id) || !connected_[id - 1] ||
+        (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd) || round != round_ || sequence == 0 ||
+        sequence <= lastAction_[id - 1] || !std::isfinite(aim.x) || !std::isfinite(aim.y) ||
+        std::hypot(aim.x, aim.y) < 0.0001f || !world_.players()[id - 1].alive())
         return false;
     lastAction_[id - 1] = sequence;
     world_.requestAction(id, jump, shoot, aim, sequence);
     return true;
+}
+
+bool Match::chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision)
+{
+    if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Armory || round != round_ ||
+        revision != selectionRevision_ || weaponChoice_[id - 1] != WeaponChoice::Pending)
+        return false;
+    const auto slot = id - 1;
+    if (reroll)
+    {
+        rolled_[slot] = static_cast<WeaponKind>(std::uniform_int_distribution<unsigned>(0, 6)(random_));
+        spinRemaining_[slot] = spinSeconds;
+        weaponChoice_[slot] = WeaponChoice::Spinning;
+    }
+    else
+        weaponChoice_[slot] = WeaponChoice::Ready;
+    return true;
+}
+
+void Match::collectEvents()
+{
+    for (auto event : world_.takeEvents())
+    {
+        event.tick = tick_;
+        event.round = round_;
+        events_.push_back(event);
+    }
+    if (events_.size() > 256)
+        events_.erase(events_.begin(), events_.end() - 256);
 }
 
 void Match::update(float dt)
@@ -155,18 +199,44 @@ void Match::update(float dt)
     if (!std::isfinite(dt) || dt <= 0)
         return;
     ++tick_;
+    if (phase_ == MatchPhase::Armory)
+    {
+        for (unsigned i = 0; i < 2; ++i)
+            if (weaponChoice_[i] == WeaponChoice::Spinning)
+            {
+                spinRemaining_[i] = std::max(0.f, spinRemaining_[i] - dt);
+                if (spinRemaining_[i] <= .0001f)
+                {
+                    spinRemaining_[i] = 0;
+                    loadout_[i] = rolled_[i];
+                    weaponChoice_[i] = WeaponChoice::Ready;
+                }
+            }
+        if (weaponChoice_[0] == WeaponChoice::Ready && weaponChoice_[1] == WeaponChoice::Ready)
+            beginCountdown();
+        return;
+    }
     if (phase_ == MatchPhase::Countdown || phase_ == MatchPhase::RoundEnd)
     {
-        remaining_ = std::max(0.0f, remaining_ - dt);
-        if (remaining_ <= 0.0001f)
+        if (phase_ == MatchPhase::RoundEnd)
+        {
+            world_.update(dt, false);
+            collectEvents();
+        }
+        remaining_ = std::max(0.f, remaining_ - dt);
+        if (remaining_ <= .0001f)
         {
             remaining_ = 0;
             if (phase_ == MatchPhase::RoundEnd)
             {
-                beginCountdown();
-                phase_ = MatchPhase::Round;
-                remaining_ = 0;
-                ready_ = {};
+                const bool finished = winner_ && score_[winner_ - 1] >= winsRequired;
+                phase_ = finished ? MatchPhase::Finished : MatchPhase::Armory;
+                weaponChoice_ = {};
+                spinRemaining_ = {};
+                rolled_ = loadout_;
+                ++selectionRevision_;
+                for (PlayerId id : {1u, 2u})
+                    world_.clearPlayerInput(id);
             }
             else
             {
@@ -178,14 +248,7 @@ void Match::update(float dt)
     else if (phase_ == MatchPhase::Round)
     {
         world_.update(dt);
-        for (auto event : world_.takeEvents())
-        {
-            event.tick = tick_;
-            event.round = round_;
-            events_.push_back(event);
-        }
-        if (events_.size() > 256)
-            events_.erase(events_.begin(), events_.end() - 256);
+        collectEvents();
         const bool first = world_.players()[0].alive(), second = world_.players()[1].alive();
         if (!first || !second)
         {
@@ -195,9 +258,8 @@ void Match::update(float dt)
             ++roundsPlayed_;
             for (PlayerId id : {1u, 2u})
                 world_.clearPlayerInput(id);
-            phase_ =
-                winner_ && score_[winner_ - 1] >= winsRequired ? MatchPhase::Finished : MatchPhase::RoundEnd;
-            remaining_ = phase_ == MatchPhase::RoundEnd ? 3.0f : 0;
+            phase_ = MatchPhase::RoundEnd;
+            remaining_ = aftermathSeconds;
             ready_ = {};
         }
     }
@@ -207,6 +269,12 @@ WorldSnapshot Match::snapshot() const
 {
     WorldSnapshot s{tick_,  round_,  phase_,   remaining_,       score_,          connected_,
                     ready_, winner_, aborted_, world_.players(), world_.bullets()};
+    s.corpses = world_.debris().corpses();
+    s.pieces = world_.debris().pieces();
+    s.weaponChoice = weaponChoice_;
+    s.loadout = loadout_;
+    s.rolled = rolled_;
+    s.spinRemaining = spinRemaining_;
     s.map = world_.arena().map;
     s.voting = voting_;
     s.votes = votes_;
