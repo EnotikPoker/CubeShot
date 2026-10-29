@@ -46,6 +46,7 @@ void World::resetPlayers(bool swapSpawns)
         players_[1].aimDirection = {-direction, 0};
     }
     pendingDamage_.assign(players_.size(), 0);
+    pendingCauses_.assign(players_.size(), {});
     pendingImpact_.assign(players_.size(), {});
 }
 
@@ -96,6 +97,8 @@ void World::update(float deltaSeconds, bool damageLiving)
         const float step = static_cast<float>(std::min(remaining, maxStep));
         remaining -= std::min(remaining, maxStep);
         std::fill(pendingDamage_.begin(), pendingDamage_.end(), 0);
+        for (auto& causes : pendingCauses_)
+            causes.clear();
         ++tick_;
         simulateBodies(players_, arena_, step);
         debris_.update(step, arena_, players_);
@@ -130,12 +133,25 @@ void World::update(float deltaSeconds, bool damageLiving)
             players_[i].takeDamage(pendingDamage_[i]);
             if (wasAlive && !players_[i].alive())
             {
-                debris_.spawn(players_[i], velocity, pendingImpact_[i]);
+                const auto& causes = pendingCauses_[i];
                 Bullet marker;
                 marker.shooterId = players_[i].id;
-                marker.velocity = pendingImpact_[i];
-                marker.damage = pendingDamage_[i];
+                if (!causes.empty())
+                    marker = *std::max_element(
+                        causes.begin(), causes.end(), [](const auto& a, const auto& b)
+                        { return a.damage == b.damage ? a.id > b.id : a.damage < b.damage; });
+                const float speed = std::hypot(marker.velocity.x, marker.velocity.y);
+                const Vec2 deathImpact = speed > .001f
+                                             ? Vec2{marker.velocity.x / speed, marker.velocity.y / speed}
+                                             : pendingImpact_[i];
+                const int volleyDamage = players_[i].lastDamageActor == marker.shooterId &&
+                                                 players_[i].lastDamageVolley == marker.volley &&
+                                                 players_[i].lastDamageWeapon == marker.weapon
+                                             ? players_[i].lastVolleyDamage
+                                             : marker.damage;
+                debris_.spawn(players_[i], velocity, deathImpact, marker.weapon, volleyDamage);
                 emit(EventKind::Death, marker, players_[i].position, players_[i].id);
+                events_.back().volleyDamage = volleyDamage;
             }
         }
     }
@@ -160,7 +176,10 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         {
             continue;
         }
-        const auto hit = collision::segmentHit(bullet.position, destination, player.bounds(), Bullet::radius);
+        const auto hit =
+            hitPolygon({bullet.position.x - player.position.x, bullet.position.y - player.position.y},
+                       {destination.x - player.position.x, destination.y - player.position.y},
+                       player.bodyContour(), Bullet::radius);
         // При равном расстоянии платформа закрывает игрока.
         if (hit && *hit < nearest)
         {
@@ -288,6 +307,13 @@ void World::emit(EventKind kind, const Bullet& bullet, Vec2 at, PlayerId target)
     events_.push_back({nextEvent_++, tick_, bullet.shotSequence, 0, kind, bullet.shooterId, target, at,
                        len > 0 ? Vec2{bullet.velocity.x / len, bullet.velocity.y / len} : Vec2{1, 0},
                        bullet.damage, bullet.weapon, bullet.volley});
+    if (target)
+        for (const auto& player : players_)
+            if (player.id == target)
+            {
+                events_.back().local = player.bodyLocal({at.x - player.position.x, at.y - player.position.y});
+                events_.back().surfaceRevision = player.surface.revision;
+            }
 }
 
 std::vector<GameEvent> World::takeEvents()

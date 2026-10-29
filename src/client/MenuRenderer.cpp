@@ -1,10 +1,12 @@
 #include "client/MenuRenderer.h"
 #include "client/BitmapFont.h"
 #include "client/Menu.h"
+#include "client/VisualAssets.h"
 #include "network/Identity.h"
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace cubeshot::client
@@ -26,6 +28,113 @@ bool rectangle(SDL_Renderer* renderer, const Rect& bounds, SDL_Color color)
 bool centeredText(SDL_Renderer* renderer, std::u32string_view text, float y, int scale, SDL_Color color)
 {
     return drawText(renderer, text, {(960 - textWidth(text, scale)) / 2, y}, scale, color);
+}
+
+bool weaponCard(SDL_Renderer* renderer, WeaponKind kind, float x)
+{
+    constexpr SDL_Color ink{8, 17, 27, 255}, steel{182, 204, 215, 255}, dark{63, 85, 104, 255},
+        wood{164, 102, 55, 255};
+    bool ok = true;
+    auto part = [&](float left, float top, float width, float height, SDL_Color color)
+    {
+        ok = ok && rectangle(renderer, {{x + left - 2, 260 + top - 2}, {width + 4, height + 4}}, ink) &&
+             rectangle(renderer, {{x + left, 260 + top}, {width, height}}, color);
+    };
+    auto round = [&](float cx, float cy, float radius, SDL_Color color)
+    {
+        for (int layer = 0; layer < 2; ++layer)
+        {
+            const float r = radius + (layer ? 0 : 2);
+            const auto tint = layer ? color : ink;
+            const SDL_FColor f{tint.r / 255.f, tint.g / 255.f, tint.b / 255.f, 1};
+            std::array<SDL_Vertex, 36> vertices{};
+            for (int n = 0; n < 12; ++n)
+            {
+                const float a = n * 6.2831853f / 12, b = (n + 1) * 6.2831853f / 12;
+                vertices[n * 3] = {{x + cx, 260 + cy}, f, {}};
+                vertices[n * 3 + 1] = {{x + cx + std::cos(a) * r, 260 + cy + std::sin(a) * r}, f, {}};
+                vertices[n * 3 + 2] = {{x + cx + std::cos(b) * r, 260 + cy + std::sin(b) * r}, f, {}};
+            }
+            ok = ok && SDL_RenderGeometry(renderer, nullptr, vertices.data(),
+                                          static_cast<int>(vertices.size()), nullptr, 0);
+        }
+    };
+    if (kind == WeaponKind::FireBoomerang)
+    {
+        part(-37, -9, 40, 9, {255, 119, 39, 255});
+        part(-5, -25, 10, 24, {255, 187, 55, 255});
+        part(-36, -8, 28, 3, {255, 227, 124, 255});
+        return ok;
+    }
+    if (meleeWeapon(kind))
+    {
+        const bool bat = kind == WeaponKind::Bat, knife = kind == WeaponKind::Knife;
+        part(-43, -4, 22, 10, wood);
+        part(-19, -(bat ? 8 : 4), knife ? 35 : 66, bat ? 18 : 7, bat ? wood : steel);
+        if (!bat)
+            part(-23, -10, 4, 22, {218, 177, 80, 255});
+        if (!bat)
+            part(-13, -3, knife ? 28 : 55, 2, {244, 249, 245, 255});
+        return ok;
+    }
+    const bool longGun =
+        kind == WeaponKind::Rifle || kind == WeaponKind::Sniper || kind == WeaponKind::Shotgun;
+    if (kind == WeaponKind::Minigun)
+    {
+        round(-14, 8, 15, dark);
+        part(-35, -10, 27, 20, dark);
+        for (int n = 0; n < 3; ++n)
+            part(-5, -10 + n * 7, 48, 4, steel);
+        part(24, -15, 7, 30, dark);
+        part(-24, 13, 8, 16, wood);
+        return ok;
+    }
+    if (kind == WeaponKind::Rpg)
+    {
+        part(-47, -8, 77, 17, {100, 126, 70, 255});
+        part(-43, -11, 8, 23, dark);
+        part(31, -13, 15, 27, {156, 170, 78, 255});
+        part(47, -7, 8, 15, {201, 188, 90, 255});
+        part(-10, 11, 8, 18, wood);
+        part(6, -19, 7, 10, dark);
+        return ok;
+    }
+    if (kind == WeaponKind::Flamethrower)
+    {
+        round(-27, 11, 12, {184, 81, 48, 255});
+        part(-33, -15, 17, 27, {222, 144, 67, 255});
+        part(-8, -7, 42, 13, dark);
+        part(33, -10, 13, 18, steel);
+        part(45, -4, 9, 6, {255, 177, 49, 255});
+        part(-4, 8, 8, 18, wood);
+        return ok;
+    }
+    part(-28, 1, 11, 26, wood);
+    if (longGun || kind == WeaponKind::Automatic)
+        part(-49, -4, 20, 14, wood);
+    const float length = kind == WeaponKind::Pistol ? 36 : kind == WeaponKind::Smg ? 45 : longGun ? 76 : 58;
+    part(-29, -11, length, 12, dark);
+    part(-25, -10, length - 5, 4, steel);
+    if (kind == WeaponKind::Shotgun)
+    {
+        part(-2, 2, 25, 7, wood);
+        part(25, -4, 25, 4, steel);
+    }
+    if (kind == WeaponKind::Revolver)
+    {
+        round(-15, -1, 10, steel);
+        round(-15, -1, 3, dark);
+        part(6, -10, 23, 8, steel);
+    }
+    if (kind == WeaponKind::Automatic || kind == WeaponKind::Smg)
+        part(-2, 3, 9, kind == WeaponKind::Smg ? 22 : 18, dark);
+    if (kind == WeaponKind::Rifle || kind == WeaponKind::Sniper)
+    {
+        part(-4, -21, 29, 6, dark);
+        round(25, -18, 6, steel);
+    }
+    part(-20, -13, 5, 2, {239, 225, 168, 255});
+    return ok;
 }
 
 bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
@@ -62,21 +171,7 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
             rectangle(renderer, {{x - 70, 211}, {140, 124}}, selected ? color : SDL_Color{40, 50, 66, 255}) &&
             rectangle(renderer, {{x - 67, 214}, {134, 118}}, {23, 31, 45, 255}) &&
             rectangle(renderer, {{x - 67, 323}, {134, 9}}, color);
-        // Large silhouettes identify the cards while their names pass below the pointer.
-        const float barrel = std::min(78.f, weaponDefinition(kind).barrel);
-        if (meleeWeapon(kind))
-            ok = ok &&
-                 rectangle(renderer, {{x - 38, 256}, {74, kind == WeaponKind::Bat ? 12.f : 5.f}},
-                           {215, 215, 205, 255}) &&
-                 rectangle(renderer, {{x - 42, 252}, {20, 14}}, {150, 95, 45, 255});
-        else if (kind == WeaponKind::FireBoomerang)
-            ok = ok && rectangle(renderer, {{x - 33, 255}, {66, 10}}, {255, 155, 45, 255}) &&
-                 rectangle(renderer, {{x + 23, 233}, {10, 32}}, {255, 210, 85, 255});
-        else
-            ok = ok &&
-                 rectangle(renderer, {{x - 36, 249}, {barrel, kind == WeaponKind::Rpg ? 20.f : 12.f}},
-                           color) &&
-                 rectangle(renderer, {{x - 21, 258}, {13, 23}}, {165, 175, 185, 255});
+        ok = ok && weaponCard(renderer, kind, x);
         const auto name = weaponDefinition(kind).name;
         ok = ok && drawText(renderer, name, {x - textWidth(name, 1) / 2, 299}, 1, white);
     }
@@ -139,16 +234,16 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 !SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE))
                 return false;
         }
-        else if (!SDL_SetRenderDrawColor(renderer, 20, 25, 35, 255) || !SDL_RenderClear(renderer))
-            return false;
-        if (!rectangle(renderer, {{90, 245}, {80, 80}}, {28, 41, 57, 255}) ||
-            !rectangle(renderer, {{790, 245}, {80, 80}}, {28, 41, 57, 255}) ||
-            !rectangle(renderer, {{0, 532}, {960, 8}}, {39, 70, 99, 255}))
+        else if (!uiBackdrop(renderer))
             return false;
         if (menu.screen() == Screen::Main)
         {
-            if (!centeredText(renderer, U"CubeShot", 54, 8, blue) ||
-                !centeredText(renderer, U"Главное меню", 134, 2, muted))
+            const auto logoWidth = textWidth(U"CubeShot", 8);
+            const float x = (960 - logoWidth) / 2;
+            if (!drawText(renderer, U"CubeShot", {x + 3, 57}, 8, {8, 16, 26, 255}) ||
+                !drawText(renderer, U"Cube", {x, 54}, 8, {72, 179, 248, 255}) ||
+                !drawText(renderer, U"Shot", {x + textWidth(U"Cube", 8), 54}, 8, {245, 76, 80, 255}) ||
+                !centeredText(renderer, U"Главное меню", 137, 2, muted))
                 return false;
         }
         else
@@ -220,7 +315,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 const auto other = menu.ownId() == 1 ? 1 : 0;
                 const auto choice = menu.networkSnapshot().weaponChoice[other];
                 if (!centeredText(renderer,
-                                  choice == WeaponChoice::Ready      ? U"Соперник готов"
+                                  choice == WeaponChoice::Ready ? U"Соперник готов"
                                   : choice == WeaponChoice::Spinning ? U"Соперник меняет оружие"
                                                                      : U"Соперник выбирает",
                                   140, 1, muted))
@@ -296,18 +391,14 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
         const auto& button = buttons[i];
         const bool selected = static_cast<int>(i) == menu.selection();
         const Rect& bounds = button.bounds;
-        if (!rectangle(renderer, bounds, selected ? blue : SDL_Color{52, 64, 83, 255}) ||
-            !rectangle(
-                renderer,
-                {{bounds.position.x + 2, bounds.position.y + 2}, {bounds.size.x - 4, bounds.size.y - 4}},
-                selected ? SDL_Color{34, 56, 78, 255} : SDL_Color{29, 36, 49, 255}) ||
-            !centeredText(renderer, button.label, bounds.position.y + 16,
-                          (menu.screen() == Screen::Browser || menu.screen() == Screen::OnlineBrowser ||
-                           menu.screen() == Screen::Maps || menu.screen() == Screen::Lobby ||
-                           menu.screen() == Screen::BotSetup || menu.screen() == Screen::BotResult ||
-                           menu.screen() == Screen::Armory)
-                              ? 2
-                              : 3,
+        const int scale = (menu.screen() == Screen::Main || menu.screen() == Screen::Modes ||
+                           menu.screen() == Screen::Paused)
+                              ? 3
+                              : 2;
+        const SDL_Color face = selected ? SDL_Color{54, 103, 147, 255} : SDL_Color{41, 62, 86, 255};
+        if (!uiPanel(renderer, bounds, face, selected, button.placeholder) ||
+            !centeredText(renderer, button.label,
+                          bounds.position.y + (bounds.size.y - textHeight(scale)) / 2 - 1, scale,
                           button.placeholder ? muted : white))
             return false;
         if (button.placeholder && menu.screen() != Screen::Armory && menu.screen() != Screen::Lobby &&
@@ -319,11 +410,11 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
     }
     const auto footer =
         menu.message().empty()
-            ? (menu.screen() == Screen::Main                                       ? U"Мышь / стрелки / Enter"
+            ? (menu.screen() == Screen::Main ? U"Мышь / стрелки / Enter"
                : menu.screen() == Screen::Lobby || menu.screen() == Screen::Result ? U"Esc — выйти из комнаты"
-               : menu.screen() == Screen::Connecting                               ? U"Esc — отмена"
-               : menu.screen() == Screen::Paused                                   ? U"Esc — продолжить"
-                                                                                   : U"Esc — назад")
+               : menu.screen() == Screen::Connecting ? U"Esc — отмена"
+               : menu.screen() == Screen::Paused     ? U"Esc — продолжить"
+                                                     : U"Esc — назад")
             : menu.message();
     return centeredText(renderer, footer, 510, 2, muted);
 }
@@ -332,8 +423,9 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
 {
     auto score = network::nicknameText(s.names[0]) + U" " + asciiText(std::to_string(s.score[0])) + U" : " +
                  asciiText(std::to_string(s.score[1])) + U" " + network::nicknameText(s.names[1]);
-    if (!centeredText(renderer, score, 20, 2, white) ||
-        !centeredText(renderer, U"Вы — игрок " + asciiText(std::to_string(own)) + U". До 5 побед", 51, 2,
+    if (!uiPanel(renderer, {{235, 8}, {490, 69}}, {30, 46, 66, 255}) ||
+        !centeredText(renderer, score, 14, textWidth(score, 2) > 466 ? 1 : 2, white) ||
+        !centeredText(renderer, U"Вы — игрок " + asciiText(std::to_string(own)) + U". До 5 побед", 45, 1,
                       muted))
         return false;
     const auto player =

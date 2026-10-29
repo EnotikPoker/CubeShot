@@ -40,31 +40,45 @@ void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
         player.burning = 2.5f;
         player.burnOwner = bullet.shooterId;
     }
-    if (amount >= 8)
+    auto& causes = pendingCauses_[index];
+    auto source = std::find_if(causes.begin(), causes.end(),
+                               [&](const auto& b) {
+                                   return b.shooterId == bullet.shooterId && b.volley == bullet.volley &&
+                                          b.weapon == bullet.weapon;
+                               });
+    if (source == causes.end())
     {
-        unsigned removed = 0;
-        for (unsigned cell = 0; cell < 16; ++cell)
-            removed += (player.damagedCells >> cell) & 1u;
-        if (removed < 7)
-        {
-            float nearest = std::numeric_limits<float>::max();
-            unsigned chosen = 0;
-            for (unsigned cell = 0; cell < 16; ++cell)
-            {
-                if ((player.damagedCells & (1u << cell)) || cell == 5 || cell == 6 || cell == 9 || cell == 10)
-                    continue;
-                const Vec2 centre{player.position.x + (cell % 4) * 12 + 6,
-                                  player.position.y + (cell / 4) * 12 + 6};
-                const float distance = std::hypot(centre.x - at.x, centre.y - at.y);
-                if (distance < nearest)
-                {
-                    nearest = distance;
-                    chosen = cell;
-                }
-            }
-            player.damagedCells |= 1u << chosen;
-        }
+        auto contribution = bullet;
+        contribution.damage = amount;
+        causes.push_back(contribution);
     }
+    else
+        source->damage += amount;
+    if (player.lastDamageActor != bullet.shooterId || player.lastDamageVolley != bullet.volley ||
+        player.lastDamageWeapon != bullet.weapon)
+    {
+        player.lastDamageActor = bullet.shooterId;
+        player.lastDamageVolley = bullet.volley;
+        player.lastDamageWeapon = bullet.weapon;
+        player.lastVolleyDamage = 0;
+    }
+    player.lastVolleyDamage += amount;
+    if (incendiaryWeapon(bullet.weapon))
+        player.surface.charred = true;
+    else
+    {
+        const auto wanted =
+            std::min(6u, static_cast<unsigned>(Player::maxHealth -
+                                               std::max(0, player.health - pendingDamage_[index])) /
+                             15);
+        while (player.surface.count < wanted)
+            if (!addEdgeChip(player.surface,
+                             player.bodyLocal({at.x - player.position.x, at.y - player.position.y}),
+                             bullet.volley + bullet.shooterId * 17 + player.surface.count))
+                break;
+    }
+    // Marks and particles use body-local coordinates, never the later interpolated world position.
+    events_.back().surfaceRevision = player.surface.revision;
 }
 
 void World::explode(const Bullet& bullet, Vec2 at)
@@ -87,15 +101,12 @@ void World::explode(const Bullet& bullet, Vec2 at)
     {
         const auto corpse = debris_.corpses()[i];
         const float distance = std::hypot(corpse.body.position.x - at.x, corpse.body.position.y - at.y);
-        if (!corpse.cells || distance >= explosionRadius)
+        if (corpse.body.outline.empty() || distance >= explosionRadius)
             continue;
-        unsigned cell = 0;
-        while (!(corpse.cells & (1u << cell)))
-            ++cell;
         auto impact = bullet;
         impact.damage = std::max(1, static_cast<int>(100 * (1 - distance / explosionRadius)));
         impact.velocity = {corpse.body.position.x - at.x, corpse.body.position.y - at.y - 20};
-        const bool broken = debris_.hit({0, false, i, cell}, impact, corpse.body.position);
+        const bool broken = debris_.hit({0, false, i}, impact, corpse.body.position);
         emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, impact, corpse.body.position,
              corpse.body.owner);
     }

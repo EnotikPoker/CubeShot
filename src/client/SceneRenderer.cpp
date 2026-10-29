@@ -1,5 +1,6 @@
 #include "client/SceneRenderer.h"
 #include "client/Effects.h"
+#include "client/VisualAssets.h"
 #include "client/WorldView.h"
 #include "game/Match.h"
 #include "game/World.h"
@@ -7,54 +8,42 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 
 namespace cubeshot::client
 {
 namespace
 {
+struct DrawSpan
+{
+    SDL_Texture* texture = nullptr;
+    std::size_t start = 0, count = 0;
+};
+
 struct Painter
 {
     SDL_Renderer* renderer;
     WorldView view;
+    VisualAssets& assets;
     std::vector<SDL_Vertex>& vertices;
+    std::vector<DrawSpan>& spans;
 
-    void triangle(SDL_Vertex a, SDL_Vertex b, SDL_Vertex c) const
+    void triangle(SDL_Vertex a, SDL_Vertex b, SDL_Vertex c, SDL_Texture* texture = nullptr) const
     {
-        vertices.push_back(a);
-        vertices.push_back(b);
-        vertices.push_back(c);
+        if (spans.empty() || spans.back().texture != texture)
+            spans.push_back({texture, vertices.size(), 0});
+        vertices.insert(vertices.end(), {a, b, c});
+        spans.back().count += 3;
     }
 
-    bool rect(Rect r, SDL_Color color) const
+    bool flush() const
     {
-        return part(r.position, {1, 0}, 0, 0, r.size.x, r.size.y,
-                    {color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f});
-    }
-
-    bool ellipse(Vec2 at, float rx, float ry, SDL_Color color, float angle = 0) const
-    {
-        static const auto circle = []
-        {
-            constexpr int sides = 12;
-            std::array<Vec2, sides> out{};
-            for (int n = 0; n < sides; ++n)
-            {
-                const float t = n * 6.283185307f / sides;
-                out[n] = {std::cos(t), std::sin(t)};
-            }
-            return out;
-        }();
-        const float c = std::cos(angle), sn = std::sin(angle);
-        const SDL_FColor tint{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
-        auto vertex = [&](Vec2 local)
-        {
-            auto screen = view.toScreen(
-                {at.x + local.x * rx * c - local.y * ry * sn, at.y + local.x * rx * sn + local.y * ry * c});
-            return SDL_Vertex{{screen.x, screen.y}, tint, {0, 0}};
-        };
-        const auto centre = vertex({0, 0});
-        for (std::size_t n = 0; n < circle.size(); ++n)
-            triangle(centre, vertex(circle[n]), vertex(circle[(n + 1) % circle.size()]));
+        for (const auto& span : spans)
+            if (!SDL_RenderGeometry(renderer, span.texture, vertices.data() + span.start,
+                                    static_cast<int>(span.count), nullptr, 0))
+                return false;
+        vertices.clear();
+        spans.clear();
         return true;
     }
 
@@ -74,23 +63,134 @@ struct Painter
         triangle(a, c, d);
         return true;
     }
+
+    bool rect(Rect r, SDL_Color color) const
+    {
+        return part(r.position, {1, 0}, 0, 0, r.size.x, r.size.y,
+                    {color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f});
+    }
+
+    bool ellipse(Vec2 at, float rx, float ry, SDL_Color color, float angle = 0) const
+    {
+        static const auto circle = []
+        {
+            constexpr int count = 12;
+            std::array<Vec2, count> points{};
+            for (int n = 0; n < count; ++n)
+            {
+                float t = n * 6.2831853f / count;
+                points[n] = {std::cos(t), std::sin(t)};
+            }
+            return points;
+        }();
+        float co = std::cos(angle), si = std::sin(angle);
+        const SDL_FColor tint{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
+        auto vertex = [&](Vec2 v)
+        {
+            auto a =
+                view.toScreen({at.x + v.x * rx * co - v.y * ry * si, at.y + v.x * rx * si + v.y * ry * co});
+            return SDL_Vertex{{a.x, a.y}, tint, {0, 0}};
+        };
+        for (std::size_t i = 0; i < circle.size(); ++i)
+            triangle(vertex({}), vertex(circle[i]), vertex(circle[(i + 1) % circle.size()]));
+        return true;
+    }
+
+    bool line(Vec2 a, Vec2 b, float width, SDL_FColor color) const
+    {
+        float length = std::hypot(b.x - a.x, b.y - a.y);
+        if (length < .001f)
+            return true;
+        return part(a, {(b.x - a.x) / length, (b.y - a.y) / length}, 0, -width / 2, length, width, color);
+    }
+
+    bool sprite(unsigned index, Vec2 centre, Vec2 size, float angle = 0,
+                SDL_FColor color = {1, 1, 1, 1}) const
+    {
+        const float c = std::cos(angle), s = std::sin(angle), u = (index % 6 + .015f) / 6,
+                    v = (index / 6 + .015f) / 4, du = .97f / 6, dv = .97f / 4;
+        auto vertex = [&](float x, float y, float tu, float tv)
+        {
+            auto at = view.toScreen({centre.x + x * c - y * s, centre.y + x * s + y * c});
+            return SDL_Vertex{{at.x, at.y}, color, {tu, tv}};
+        };
+        const auto a = vertex(-size.x / 2, -size.y / 2, u, v), b = vertex(size.x / 2, -size.y / 2, u + du, v),
+                   d = vertex(-size.x / 2, size.y / 2, u, v + dv),
+                   e = vertex(size.x / 2, size.y / 2, u + du, v + dv);
+        triangle(a, b, e, assets.effects);
+        triangle(a, e, d, assets.effects);
+        return true;
+    }
+
+    bool material(unsigned index, const Polygon& shape, Vec2 origin, float angle, SDL_FColor color,
+                  Vec2 uvOffset = {}) const
+    {
+        const auto indices = triangulate(shape);
+        float c = std::cos(angle), s = std::sin(angle);
+        auto vertex = [&](Vec2 local)
+        {
+            auto at =
+                view.toScreen({origin.x + local.x * c - local.y * s, origin.y + local.x * s + local.y * c});
+            const float u = (index % 4 + .01f + std::clamp((local.x + uvOffset.x) / 48, 0.f, 1.f) * .98f) / 4;
+            const float v = (index / 4 + .01f + std::clamp((local.y + uvOffset.y) / 48, 0.f, 1.f) * .98f) / 2;
+            return SDL_Vertex{{at.x, at.y}, color, {u, v}};
+        };
+        for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+            triangle(vertex(shape[indices[i]]), vertex(shape[indices[i + 1]]), vertex(shape[indices[i + 2]]),
+                     assets.materials);
+        return true;
+    }
+
+    bool tile(unsigned index, Rect box, SDL_FColor color = {1, 1, 1, 1}) const
+    {
+        const float u = (index % 4 + .01f) / 4, v = (index / 4 + .01f) / 2, du = .98f / 4, dv = .98f / 2;
+        auto vertex = [&](float x, float y, float tu, float tv)
+        {
+            auto at = view.toScreen({box.position.x + x, box.position.y + y});
+            return SDL_Vertex{{at.x, at.y}, color, {tu, tv}};
+        };
+        auto a = vertex(0, 0, u, v), b = vertex(box.size.x, 0, u + du, v),
+             c = vertex(box.size.x, box.size.y, u + du, v + dv), d = vertex(0, box.size.y, u, v + dv);
+        triangle(a, b, c, assets.materials);
+        triangle(a, c, d, assets.materials);
+        return true;
+    }
+
+    bool outline(const Polygon& shape, Vec2 origin, float angle, float width, SDL_FColor color) const
+    {
+        const float c = std::cos(angle), s = std::sin(angle);
+        auto world = [&](Vec2 v) { return Vec2{origin.x + v.x * c - v.y * s, origin.y + v.x * s + v.y * c}; };
+        for (std::size_t i = 0; i < shape.size(); ++i)
+            line(world(shape[i]), world(shape[(i + 1) % shape.size()]), width, color);
+        return true;
+    }
 };
 
 bool weapon(const Painter& p, const Player& player, const Pose& pose)
 {
     Vec2 origin = player.weaponOrigin(), aim = player.aimDirection;
     const float recoil = pose.shot / .1f;
+    origin.y += player.grounded ? std::sin(pose.cycle) *
+                                      std::min(1.f, std::abs(player.velocity.x) / Player::moveSpeed) * .9f
+                                : 0;
     origin.x -= aim.x * recoil * 6;
     origin.y -= aim.y * recoil * 6;
     const bool mirror = aim.x < 0;
     const auto kind = player.weapon.kind;
     const float length = player.weapon.barrel();
+    if (!meleeWeapon(kind) && kind != WeaponKind::FireBoomerang && kind != WeaponKind::Rpg &&
+        !p.part(origin, aim, 8, -7, length - 7, 14, {.04f, .07f, .11f, 1}, mirror))
+        return false;
     if (meleeWeapon(kind))
     {
         const float swing = pose.shot > 0 ? std::sin(pose.shot / .1f * 3.14159f) * 1.4f - .7f : -.5f;
         const float angle = std::atan2(aim.y, aim.x) + (mirror ? -swing : swing);
         aim = {std::cos(angle), std::sin(angle)};
         const float drawn = kind == WeaponKind::Knife ? 26 : kind == WeaponKind::Katana ? 64 : 51;
+        if (!p.part(origin, aim, -1, -5, 18, 10, {.04f, .06f, .08f, 1}, mirror) ||
+            !p.part(origin, aim, 13, kind == WeaponKind::Bat ? -8.f : -4.f, drawn - 12,
+                    kind == WeaponKind::Bat ? 16.f : 8.f, {.04f, .06f, .08f, 1}, mirror))
+            return false;
         return p.part(origin, aim, 0, -4, 16, 8, {.5f, .3f, .15f, 1}, mirror) &&
                p.part(origin, aim, 14, kind == WeaponKind::Bat ? -7.f : -3.f, drawn - 14,
                       kind == WeaponKind::Bat ? 14.f : 6.f,
@@ -141,38 +241,107 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
     if (kind == WeaponKind::Sniper && (!p.part(origin, aim, 15, -14, 23, 6, {.17f, .2f, .24f, 1}, mirror) ||
                                        !p.part(origin, aim, 21, -9, 5, 5, {.3f, .33f, .37f, 1}, mirror)))
         return false;
-    return pose.shot < .055f ||
-           p.part(player.muzzlePosition(), aim, 0, -6, 12 + recoil * 7, 12, {1, .86f, .3f, 1});
+    return pose.shot < .055f || p.sprite(18, player.muzzlePosition(), {30, 22},
+                                         std::atan2(aim.y, aim.x) + 3.14159265f, {1, 1, 1, 1});
 }
 
 bool background(const Painter& p, const Arena& arena)
 {
     const auto theme = mapInfo(arena.map).theme;
-    // Muted decoration never resembles the bright, solid collision surfaces.
-    if (theme == MapTheme::Factory)
+    const auto bounds = arena.bounds;
+    const SDL_Color top = theme == MapTheme::Nature  ? SDL_Color{45, 79, 92, 255}
+                          : theme == MapTheme::Ruins ? SDL_Color{66, 65, 83, 255}
+                                                     : SDL_Color{38, 56, 79, 255};
+    for (float y = 0; y < bounds.size.y; y += 16)
     {
-        for (float x = 35; x < arena.bounds.size.x; x += 160)
+        float t = y / bounds.size.y;
+        p.rect({{bounds.position.x, bounds.position.y + y}, {bounds.size.x, 16}},
+               {static_cast<Uint8>(top.r + t * 18), static_cast<Uint8>(top.g + t * 16),
+                static_cast<Uint8>(top.b + t * 12), 255});
+    }
+    const SDL_Color quiet{static_cast<Uint8>(top.r + 5), static_cast<Uint8>(top.g + 6),
+                          static_cast<Uint8>(top.b + 6), 255};
+    for (float ratio : {.13f, .78f})
+    {
+        const float x = bounds.size.x * ratio;
+        if (theme == MapTheme::Nature)
         {
-            if (!p.rect({{x, 80}, {12, arena.bounds.size.y - 80}}, {30, 40, 52, 255}) ||
-                !p.rect({{x, 80}, {100, 10}}, {36, 46, 58, 255}))
-                return false;
+            p.rect({{x, bounds.size.y * .42f}, {22, bounds.size.y * .58f}}, quiet);
+            p.ellipse({x + 11, bounds.size.y * .4f}, 95, 75, quiet);
+        }
+        else if (theme == MapTheme::Ruins)
+        {
+            p.rect({{x, bounds.size.y * .4f}, {75, bounds.size.y * .6f}}, quiet);
+            p.rect({{x - 6, bounds.size.y * .4f}, {88, 12}}, quiet);
+        }
+        else
+        {
+            p.rect({{x, bounds.size.y * .28f}, {18, bounds.size.y * .72f}}, quiet);
+            p.rect({{x, bounds.size.y * .28f}, {105, 9}}, quiet);
         }
     }
-    else if (theme == MapTheme::Ruins)
-    {
-        for (float x = 40; x < arena.bounds.size.x; x += 180)
-            if (!p.rect({{x, 140}, {50, arena.bounds.size.y - 140}}, {38, 36, 49, 255}) ||
-                !p.rect({{x - 10, 130}, {70, 20}}, {45, 42, 54, 255}))
-                return false;
-    }
-    else if (theme == MapTheme::Nature)
-    {
-        for (float x = 40; x < arena.bounds.size.x; x += 170)
-            if (!p.rect({{x, 160}, {18, arena.bounds.size.y - 160}}, {26, 47, 40, 255}) ||
-                !p.rect({{x - 42, 90}, {102, 110}}, {27, 55, 45, 255}))
-                return false;
-    }
     return true;
+}
+
+void staticScene(const Painter& p, const Arena& arena)
+{
+    const auto theme = mapInfo(arena.map).theme;
+    background(p, arena);
+    for (const auto& box : arena.platforms)
+    {
+        p.rect({{box.position.x + 3, box.position.y + 5}, box.size}, {12, 22, 33, 130});
+        p.rect(box, {9, 19, 28, 255});
+        const unsigned tile = theme == MapTheme::Nature ? 3 : theme == MapTheme::Ruins ? 1 : 0;
+        p.tile(tile, {{box.position.x + 2, box.position.y + 2},
+                      {std::max(0.f, box.size.x - 4), std::max(0.f, box.size.y - 4)}});
+        if (theme == MapTheme::Nature)
+            p.tile(2, {box.position, {box.size.x, 7}});
+        else
+            p.rect({{box.position.x + 2, box.position.y + 2}, {box.size.x - 4, 2}},
+                   theme == MapTheme::Ruins ? SDL_Color{166, 161, 157, 255} : SDL_Color{143, 168, 186, 255});
+    }
+}
+
+SDL_FColor ownerColor(PlayerId id, PlayerId own)
+{
+    return id == own ? SDL_FColor{.23f, .67f, .98f, 1} : SDL_FColor{.96f, .21f, .29f, 1};
+}
+
+void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blood, bool fragment)
+{
+    if (piece.outline.empty())
+        return;
+    const auto color = ownerColor(piece.owner, own);
+    p.ellipse({piece.position.x, piece.position.y + piece.size.y * .4f}, piece.size.x * .6f, 3,
+              {7, 15, 25, 85});
+    const SDL_FColor tint = piece.charred       ? SDL_FColor{.22f, .19f, .2f, 1}
+                            : fragment && blood ? SDL_FColor{.92f, .7f, .7f, 1}
+                                                : color;
+    p.material(fragment && blood ? 5 : 4, piece.outline, piece.position, piece.angle, tint, piece.skinOffset);
+    p.outline(piece.outline, piece.position, piece.angle, 2.2f, {.025f, .045f, .065f, 1});
+    if (fragment)
+    {
+        for (std::size_t i = 0; i < piece.outline.size(); ++i)
+        {
+            auto a = piece.outline[i], b = piece.outline[(i + 1) % piece.outline.size()];
+            const bool shell =
+                (std::abs(a.x + piece.skinOffset.x) < .2f && std::abs(b.x + piece.skinOffset.x) < .2f) ||
+                (std::abs(a.x + piece.skinOffset.x - 48) < .2f &&
+                 std::abs(b.x + piece.skinOffset.x - 48) < .2f) ||
+                (std::abs(a.y + piece.skinOffset.y) < .2f && std::abs(b.y + piece.skinOffset.y) < .2f) ||
+                (std::abs(a.y + piece.skinOffset.y - 48) < .2f &&
+                 std::abs(b.y + piece.skinOffset.y - 48) < .2f);
+            if (shell)
+                p.line(piecePoint(piece, a), piecePoint(piece, b), 4, color);
+        }
+    }
+    const Vec2 eye{36 - piece.skinOffset.x, 14 - piece.skinOffset.y};
+    if (containsPoint(piece.outline, eye))
+    {
+        const Vec2 direction{std::cos(piece.angle), std::sin(piece.angle)};
+        p.part(piece.position, direction, eye.x - 3, eye.y - 3, 7, 7, {.95f, .95f, .9f, 1});
+        p.part(piece.position, direction, eye.x, eye.y - 1, 3, 4, {.05f, .06f, .08f, 1});
+    }
 }
 } // namespace
 
@@ -181,264 +350,270 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                         const Effects* effects, const std::vector<Corpse>& corpses,
                         const std::vector<PhysicsPiece>& pieces, const std::vector<FirePatch>& fires)
 {
-    const auto theme = mapInfo(arena.map).theme;
-    const SDL_Color bg = theme == MapTheme::Nature  ? SDL_Color{19, 32, 31, 255}
-                         : theme == MapTheme::Ruins ? SDL_Color{28, 26, 36, 255}
-                                                    : SDL_Color{24, 28, 38, 255};
-    if (!SDL_SetRenderDrawColor(renderer, bg.r, bg.g, bg.b, bg.a) || !SDL_RenderClear(renderer))
+    auto* assets = VisualAssets::get(renderer);
+    if (!assets)
+        return false;
+    if (!SDL_SetRenderDrawColor(renderer, 32, 48, 68, 255) || !SDL_RenderClear(renderer) ||
+        !SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND))
         return false;
     thread_local std::vector<SDL_Vertex> geometry;
+    thread_local std::vector<DrawSpan> spans;
     geometry.clear();
+    spans.clear();
     if (geometry.capacity() < 65536)
         geometry.reserve(65536);
-    Painter p{renderer, WorldView(arena.bounds), geometry};
+    Painter p{renderer, WorldView(arena.bounds), *assets, geometry, spans};
     if (effects)
     {
-        const auto shake = effects->shakeOffset();
+        auto shake = effects->shakeOffset();
         p.view.offset.x += shake.x;
         p.view.offset.y += shake.y;
     }
-    if (!background(p, arena))
-        return false;
-    for (const auto& r : arena.platforms)
-    {
-        SDL_Color color = theme == MapTheme::Factory  ? SDL_Color{90, 110, 130, 255}
-                          : theme == MapTheme::Ruins  ? SDL_Color{121, 112, 126, 255}
-                          : theme == MapTheme::Nature ? SDL_Color{98, 112, 80, 255}
-                                                      : SDL_Color{95, 110, 125, 255};
-        if (!p.rect(r, color))
-            return false;
-        if (theme != MapTheme::Classic)
-        {
-            if (!p.rect({r.position, {r.size.x, 4}}, theme == MapTheme::Nature
-                                                         ? SDL_Color{114, 167, 95, 255}
-                                                         : SDL_Color{177, 166, 125, 255}))
-                return false;
-            for (float x = r.position.x + 12; x < r.position.x + r.size.x - 8; x += 48)
-                if (!p.rect({{x, r.position.y + 8}, {6, 3}}, theme == MapTheme::Factory
-                                                                 ? SDL_Color{46, 58, 70, 255}
-                                                                 : SDL_Color{71, 73, 67, 255}))
-                    return false;
-        }
-    }
-    if (effects)
-        for (const auto& stain : effects->stains())
-        {
-            if (!p.ellipse(stain.position, stain.width / 2, stain.height / 2, {108, 20, 35, 255},
-                           stain.angle) ||
-                !p.ellipse({stain.position.x + stain.width * .23f, stain.position.y - 1}, stain.width * .31f,
-                           stain.height * .4f, {142, 26, 40, 255}, -.4f))
-                return false;
-        }
-    auto remainsColor = [&](PlayerId owner)
-    { return owner == own ? SDL_FColor{.22f, .47f, .68f, 1} : SDL_FColor{.65f, .22f, .24f, 1}; };
+    const float time = effects ? effects->time() : 0;
     const bool blood = !effects || effects->bloodVisible();
-    for (const auto& corpse : corpses)
-        for (unsigned cell = 0; cell < 16; ++cell)
-            if (corpse.cells & (1u << cell))
-            {
-                auto r = corpseCell(cell);
-                const Vec2 direction{std::cos(corpse.body.angle), std::sin(corpse.body.angle)};
-                if (!p.part(corpse.body.position, direction, r.position.x, r.position.y, r.size.x - .3f,
-                            r.size.y - .3f, remainsColor(corpse.body.owner)))
-                    return false;
-                if (blood && (cell % 3 == 0 || (corpse.integrity < 50 && cell % 2 == 0)))
-                    if (!p.part(corpse.body.position, direction, r.position.x + 2, r.position.y + 1, 6, 5,
-                                {.42f, .05f, .1f, 1}))
-                        return false;
-            }
-    for (const auto& piece : pieces)
+
+    struct StaticCache
     {
-        const Vec2 direction{std::cos(piece.angle), std::sin(piece.angle)};
-        if (!p.part(piece.position, direction, -piece.size.x / 2, -piece.size.y / 2, piece.size.x,
-                    piece.size.y, remainsColor(piece.owner)))
-            return false;
-        if (blood && !p.part(piece.position, direction, -2, -2, 4, 4, {.62f, .07f, .13f, 1}))
-            return false;
+        std::uint64_t key = 0;
+        std::vector<SDL_Vertex> vertices;
+        std::vector<DrawSpan> spans;
+    };
+
+    thread_local StaticCache cached;
+    std::uint64_t key = assets->identity;
+    auto mix = [&](float value)
+    {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        key = (key ^ bits) * 1099511628211ull;
+    };
+    mix(static_cast<float>(arena.map));
+    mix(arena.bounds.position.x);
+    mix(arena.bounds.position.y);
+    mix(arena.bounds.size.x);
+    mix(arena.bounds.size.y);
+    for (const auto& box : arena.platforms)
+    {
+        mix(box.position.x);
+        mix(box.position.y);
+        mix(box.size.x);
+        mix(box.size.y);
     }
-    for (const auto& player : players)
+    if (cached.key != key)
     {
-        static const Pose emptyPose;
-        const Pose& pose = effects ? effects->pose(player.id) : emptyPose;
-        const bool local = player.id == own;
-        SDL_Color color = pose.hit > 0 ? SDL_Color{255, 230, 225, 255}
-                          : local      ? SDL_Color{80, 175, 255, 255}
-                                       : SDL_Color{230, 85, 85, 255};
-        if (!player.alive())
-            continue;
-        float squash = pose.land > 0 ? std::sin(pose.land / .16f * 3.14159265f) * .14f : 0;
-        float walk = player.grounded ? std::sin(pose.cycle) * .035f : 0;
-        float stretch = !player.grounded ? std::clamp(-player.velocity.y / 620.f, -.08f, .08f) : 0;
-        Rect body = player.bounds();
-        body.size.x *= 1 + squash + walk - stretch;
-        body.size.y *= 1 - squash - walk + stretch;
-        body.position.x += (player.size.x - body.size.x) / 2;
-        body.position.y += player.size.y - body.size.y;
-        if (!player.damagedCells)
-        {
-            if (!p.rect(body, color))
-                return false;
-        }
-        else
-            for (int cell = 0; cell < 16; ++cell)
+        cached.key = key;
+        cached.vertices.clear();
+        cached.spans.clear();
+        Painter backdrop{renderer, WorldView(arena.bounds), *assets, cached.vertices, cached.spans};
+        staticScene(backdrop, arena);
+    }
+    geometry = cached.vertices;
+    spans = cached.spans;
+    if (effects)
+    {
+        const auto shake = effects->shakeOffset();
+        if (shake.x != 0 || shake.y != 0)
+            for (auto& v : geometry)
             {
-                if (player.damagedCells & (1u << cell))
-                    continue;
-                if (!p.rect({{body.position.x + (cell % 4) * body.size.x / 4,
-                              body.position.y + (cell / 4) * body.size.y / 4},
-                             {body.size.x / 4 + .05f, body.size.y / 4 + .05f}},
-                            color))
-                    return false;
+                v.position.x += shake.x;
+                v.position.y += shake.y;
             }
-        if (blood)
-            for (const auto& wound : pose.wounds)
-            {
-                const Vec2 at{body.position.x + wound.local.x / 48 * body.size.x,
-                              body.position.y + wound.local.y / 48 * body.size.y};
-                if (!p.ellipse(at, wound.radius, wound.radius * .75f, {115, 17, 32, 255}, .3f) ||
-                    !p.ellipse({at.x + 1, at.y - 1}, wound.radius * .6f, wound.radius * .4f,
-                               {202, 33, 47, 255}))
-                    return false;
-            }
-        // A small gaze mark gives the otherwise square body a clear facing direction.
-        if (!p.rect({{body.position.x + (player.aimDirection.x < 0 ? 8.f : body.size.x - 12),
-                      body.position.y + 12},
-                     {4, 4}},
-                    {24, 36, 52, 255}) ||
-            !weapon(p, player, pose))
-            return false;
-        if (player.burning > 0)
-            for (int n = 0; n < 5; ++n)
-            {
-                const float flicker = std::sin(player.burning * 29 + n * 2.1f);
-                if (!p.ellipse({player.position.x + 5 + n * 9.f, player.position.y + 36 + flicker * 4}, 6,
-                               12 + flicker * 4, {255, 105, 20, 255}) ||
-                    !p.ellipse({player.position.x + 5 + n * 9.f, player.position.y + 38}, 3, 7,
-                               {255, 215, 65, 255}))
-                    return false;
-            }
-        if (player.weapon.kind == WeaponKind::Minigun)
+    }
+
+    if (effects)
+    {
+        for (const auto& s : effects->stains())
         {
-            if (!p.rect({{player.position.x, player.position.y - 21}, {48, 4}}, {45, 38, 30, 255}) ||
-                !p.rect({{player.position.x, player.position.y - 21}, {48 * player.weapon.heat, 4}},
-                        player.weapon.overheated ? SDL_Color{255, 65, 35, 255}
-                                                 : SDL_Color{255, 190, 50, 255}) ||
-                !p.rect({{player.position.x, player.position.y - 27}, {48 * player.weapon.spin, 3}},
-                        {150, 200, 245, 255}))
-                return false;
+            float dark = std::min(1.f, s.age / 8);
+            p.sprite(6 + s.variant, s.position, {s.width, s.height}, s.angle,
+                     {1 - dark * .35f, .6f - dark * .25f, .65f - dark * .25f, .9f});
         }
-        if (player.weapon.charging)
+        for (const auto& d : effects->drips())
         {
-            const float progress =
-                1 - player.weapon.preparation / weaponDefinition(player.weapon.kind).preparation;
-            if (!p.rect({{player.position.x, player.position.y - 21}, {48, 4}}, {55, 47, 25, 255}) ||
-                !p.rect(
-                    {{player.position.x, player.position.y - 21}, {48 * std::clamp(progress, 0.f, 1.f), 4}},
-                    {255, 204, 91, 255}))
-                return false;
+            p.line(d.position, {d.position.x + 1, d.position.y + d.length}, 2.5f, {.55f, .015f, .035f, .9f});
+            p.ellipse({d.position.x + 1, d.position.y + d.length}, 2, 3, {170, 15, 33, 235});
         }
-        const Vec2 hp{player.position.x, std::max(player.position.y - 12, arena.bounds.position.y + 1)};
-        const float f =
-            static_cast<float>(std::clamp(player.health, 0, Player::maxHealth)) / Player::maxHealth;
-        if (!p.rect({{hp.x - 1, hp.y - 1}, {player.size.x + 2, 8}}, {12, 16, 24, 255}) ||
-            !p.rect({hp, {player.size.x, 6}}, {80, 35, 45, 255}) ||
-            !p.rect({hp, {player.size.x * f, 6}}, {85, 210, 125, 255}))
-            return false;
+        for (const auto& smoke : effects->particles())
+            if (smoke.smoke)
+                p.sprite(12 + static_cast<unsigned>(std::clamp((1.2f - smoke.life) * 5, 0.f, 5.f)),
+                         smoke.position, {smoke.size, smoke.size}, 0,
+                         {1, 1, 1, std::clamp(smoke.life / 2.4f, 0.f, .4f)});
     }
     for (const auto& fire : fires)
-        for (int n = 0; n < 5; ++n)
-        {
-            const float flicker = std::sin(fire.life * 24 + n * 2 + fire.id);
-            const Vec2 at{fire.position.x + (n - 2) * fire.radius * .4f, fire.position.y - 6};
-            if (!p.ellipse(at, fire.radius * .28f, 10 + flicker * 4, {240, 75, 15, 255}) ||
-                !p.ellipse({at.x, at.y + 3}, fire.radius * .14f, 6 + flicker * 2, {255, 205, 50, 255}))
-                return false;
-        }
-    for (const auto& bullet : bullets)
+        p.sprite(14 + static_cast<unsigned>(fire.id % 3), {fire.position.x, fire.position.y - 42},
+                 {fire.radius * 1.5f, 62}, 0, {1, 1, 1, .2f});
+    for (const auto& corpse : corpses)
+        remains(p, corpse.body, own, blood, false);
+    for (const auto& piece : pieces)
+        remains(p, piece, own, blood, true);
+    for (const auto& player : players)
     {
-        const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
-        const Vec2 dir = speed > 0 ? Vec2{bullet.velocity.x / speed, bullet.velocity.y / speed} : Vec2{1, 0};
-        if (bullet.weapon == WeaponKind::Flamethrower)
-        {
-            if (!p.ellipse(bullet.position, 8 + bullet.age * 14, 5 + bullet.age * 10, {255, 110, 15, 255}) ||
-                !p.ellipse(bullet.position, 4, 3, {255, 225, 95, 255}))
-                return false;
+        if (!player.alive())
             continue;
-        }
-        if (bullet.weapon == WeaponKind::FireBoomerang)
+        static const Pose empty;
+        const auto& pose = effects ? effects->pose(player.id) : empty;
+        auto color = ownerColor(player.id, own);
+        const float hit = pose.hit / .12f * .3f;
+        color.r += (1 - color.r) * hit;
+        color.g += (1 - color.g) * hit;
+        color.b += (1 - color.b) * hit;
+        if (player.surface.charred)
         {
-            const Vec2 rotation{std::cos(bullet.age * 22), std::sin(bullet.age * 22)};
-            if (!p.ellipse(bullet.position, 17, 17, {240, 90, 15, 255}) ||
-                !p.part(bullet.position, rotation, -13, -3, 26, 6, {1, .8f, .25f, 1}) ||
-                !p.part(bullet.position, rotation, 7, -12, 6, 15, {1, .9f, .5f, 1}))
-                return false;
-            continue;
+            color.r *= .55f;
+            color.g *= .55f;
+            color.b *= .55f;
         }
-        if (bullet.weapon == WeaponKind::Rpg)
-        {
-            if (!p.part(bullet.position, dir, -16, -5, 25, 10, {.55f, .65f, .3f, 1}) ||
-                !p.part(bullet.position, dir, -25, -3, 10, 6, {1, .4f, .08f, 1}))
-                return false;
-            continue;
-        }
-        if (!p.part(bullet.position, dir, -15, -1.5f, 15, 3, {1, .55f, .12f, 1}) ||
-            !p.rect({{bullet.position.x - Bullet::radius, bullet.position.y - Bullet::radius},
-                     {Bullet::radius * 2, Bullet::radius * 2}},
-                    {255, 240, 150, 255}))
-            return false;
-    }
-    if (effects)
-        for (const auto& blast : effects->blasts())
-        {
-            const float age = 1 - blast.life / .45f, radius = 15 + age * explosionRadius;
-            for (int n = 0; n < 12; ++n)
+        const auto shape = player.bodyContour();
+        p.ellipse({player.position.x + 24, player.position.y + 49}, 24, 3, {7, 17, 26, 90});
+        p.material(4, shape, player.position, 0, color);
+        p.outline(shape, player.position, 0, 1.7f, {.025f, .045f, .07f, 1});
+        // Irregular exposed flesh belongs to the cut edges, never to an independent floating decal.
+        if (blood)
+            for (std::size_t i = 0; i < shape.size(); ++i)
             {
-                const float a = n * 6.2831853f / 12;
-                if (!p.ellipse(
-                        {blast.position.x + std::cos(a) * radius, blast.position.y + std::sin(a) * radius},
-                        8 + blast.life * 45, 8 + blast.life * 45,
-                        {255, static_cast<Uint8>(100 + blast.life * 220), 35, 255}))
-                    return false;
+                auto a = shape[i], b = shape[(i + 1) % shape.size()];
+                if (std::abs(a.x - b.x) > .1f && std::abs(a.y - b.y) > .1f)
+                    p.line({player.position.x + a.x, player.position.y + a.y},
+                           {player.position.x + b.x, player.position.y + b.y}, 1.2f, {.6f, .015f, .045f, 1});
+            }
+        const float eyeX = player.position.x + (player.aimDirection.x < 0 ? 7.f : 33.f),
+                    eyeY = player.position.y + 11;
+        p.rect({{eyeX - 1, eyeY - 1}, {10, 11}}, {12, 22, 32, 255});
+        p.rect({{eyeX, eyeY}, {8, 9}}, {245, 247, 236, 255});
+        p.rect({{eyeX + (player.aimDirection.x < 0 ? 0.f : 5.f), eyeY + 2}, {3, 6}}, {18, 29, 41, 255});
+        weapon(p, player, pose);
+        if (pose.shot > .055f &&
+            (player.weapon.kind == WeaponKind::Minigun || player.weapon.kind == WeaponKind::Rpg))
+            p.sprite(18, player.muzzlePosition(), {36, 26},
+                     std::atan2(player.aimDirection.y, player.aimDirection.x) + 3.14159265f);
+        if (meleeWeapon(player.weapon.kind) && pose.shot > 0)
+        {
+            const auto aim = player.aimDirection;
+            const float reach = player.weapon.kind == WeaponKind::Knife ? 30.f : 48.f;
+            p.sprite(19, {player.weaponOrigin().x + aim.x * reach, player.weaponOrigin().y + aim.y * reach},
+                     {reach * 1.5f, reach * 1.2f}, std::atan2(aim.y, aim.x),
+                     {1, 1, 1, std::clamp(pose.shot / .08f, 0.f, .85f)});
+        }
+        if (player.burning > 0)
+            p.sprite(static_cast<unsigned>(time * 12 + player.id) % 6,
+                     {player.position.x + 24, player.position.y + 29}, {45, 48}, 0, {1, 1, 1, .9f});
+    }
+    for (const auto& b : bullets)
+    {
+        const float speed = std::hypot(b.velocity.x, b.velocity.y);
+        const Vec2 dir = speed > .001f ? Vec2{b.velocity.x / speed, b.velocity.y / speed} : Vec2{1, 0};
+        if (b.weapon == WeaponKind::Flamethrower)
+        {
+            p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position,
+                     {20 + b.age * 25, 28 + b.age * 25}, std::atan2(dir.y, dir.x) + 1.5707963f,
+                     {1, 1, 1, .9f});
+            continue;
+        }
+        if (b.weapon == WeaponKind::FireBoomerang)
+        {
+            p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position, {32, 32}, b.age * 15);
+            p.part(b.position, {std::cos(b.age * 22), std::sin(b.age * 22)}, -13, -3, 26, 6,
+                   {1, .85f, .4f, 1});
+            continue;
+        }
+        if (b.weapon == WeaponKind::Rpg)
+        {
+            p.part(b.position, dir, -17, -6, 27, 12, {.04f, .08f, .1f, 1});
+            p.part(b.position, dir, -14, -4, 22, 8, {.5f, .65f, .24f, 1});
+            p.sprite(18, {b.position.x - dir.x * 22, b.position.y - dir.y * 22}, {23, 16},
+                     std::atan2(dir.y, dir.x), {1, 1, 1, .85f});
+            continue;
+        }
+        p.part(b.position, dir, -13, -1.5f, 13, 3, {1, .58f, .15f, .8f});
+        p.ellipse(b.position, 3, 3, {255, 244, 167, 255});
+    }
+    for (const auto& fire : fires)
+        p.sprite(static_cast<unsigned>(time * 12 + fire.id) % 6, {fire.position.x, fire.position.y - 20},
+                 {fire.radius * 2.1f, 48}, 0, {1, 1, 1, std::min(1.f, fire.life * 3)});
+    if (effects)
+    {
+        for (const auto& b : effects->blasts())
+        {
+            float age = 1 - b.life / .45f;
+            for (int n = 0; n < 6; ++n)
+            {
+                float a = n * 6.2831853f / 6, spread = age * explosionRadius * .65f;
+                p.sprite(static_cast<unsigned>(time * 18 + n) % 6,
+                         {b.position.x + std::cos(a) * spread, b.position.y + std::sin(a) * spread},
+                         {65 * (1 - age) + 20, 85 * (1 - age) + 20}, a, {1, 1, 1, 1 - age});
             }
         }
-    if (effects)
+        for (const auto& splash : effects->splashes())
+            p.sprite(6 + splash.variant, splash.position, {splash.size, splash.size * .65f}, splash.angle,
+                     {1, 1, 1, std::min(1.f, splash.life * 8)});
+        for (const auto& particle : effects->particles())
+            if (particle.blood && !particle.chip && !particle.smoke)
+            {
+                float stretch =
+                    std::clamp(std::hypot(particle.velocity.x, particle.velocity.y) / 150, 1.f, 2.2f);
+                p.ellipse(particle.position, particle.size * stretch, particle.size * .7f, {195, 14, 35, 245},
+                          std::atan2(particle.velocity.y, particle.velocity.x));
+            }
         for (const auto& particle : effects->particles())
         {
-            if (particle.blood)
+            if (particle.smoke || (!particle.chip && particle.blood))
+                continue;
+            if (particle.chip)
             {
-                if (!p.ellipse(particle.position, particle.size, particle.size * .75f, {190, 24, 43, 255},
-                               particle.angle))
-                    return false;
+                auto tint = particle.blood ? SDL_FColor{1, 1, 1, 1} : ownerColor(particle.owner, own);
+                if (particle.blood)
+                    p.sprite(particle.sprite, particle.position, {particle.size, particle.size},
+                             particle.angle, tint);
+                else
+                    p.part(particle.position, {std::cos(particle.angle), std::sin(particle.angle)},
+                           -particle.size / 2, -particle.size / 3, particle.size, particle.size * .7f, tint);
             }
-            else if (particle.chip)
-            {
-                if (!p.part(particle.position, {std::cos(particle.angle), std::sin(particle.angle)},
-                            -particle.size / 2, -particle.size / 2, particle.size, particle.size,
-                            remainsColor(particle.owner)))
-                    return false;
-            }
-            else if (!p.rect({particle.position, {2, 2}}, {250, 196, 95, 255}))
-                return false;
+            else
+                p.sprite(20, particle.position, {particle.size * 5, particle.size * 5}, particle.angle,
+                         {1, 1, 1, std::min(1.f, particle.life * 3)});
         }
-    if (!geometry.empty() && !SDL_RenderGeometry(renderer, nullptr, geometry.data(),
-                                                 static_cast<int>(geometry.size()), nullptr, 0))
-        return false;
-    return !present || SDL_RenderPresent(renderer);
+    }
+    // All gameplay indicators are above smoke, blood and flames.
+    for (const auto& player : players)
+        if (player.alive())
+        {
+            const auto hp =
+                Vec2{player.position.x, std::max(player.position.y - 12, arena.bounds.position.y + 1)};
+            const float fraction = std::clamp(player.health, 0, 100) / 100.f;
+            p.rect({{hp.x - 1, hp.y - 1}, {50, 8}}, {10, 20, 30, 255});
+            p.rect({hp, {48, 6}}, {80, 35, 45, 255});
+            p.rect({hp, {48 * fraction, 6}}, {85, 210, 125, 255});
+            if (player.weapon.charging)
+            {
+                p.rect({{hp.x, hp.y - 9}, {48, 4}}, {45, 37, 22, 255});
+                p.rect(
+                    {{hp.x, hp.y - 9}, {48 * std::clamp(1 - player.weapon.preparation / .3f, 0.f, 1.f), 4}},
+                    {255, 205, 80, 255});
+            }
+            if (player.weapon.kind == WeaponKind::Minigun)
+            {
+                p.rect({{hp.x, hp.y - 9}, {48, 4}}, {45, 37, 22, 255});
+                p.rect({{hp.x, hp.y - 9}, {48 * player.weapon.heat, 4}},
+                       player.weapon.overheated ? SDL_Color{255, 60, 25, 255} : SDL_Color{255, 195, 65, 255});
+                p.rect({{hp.x, hp.y - 14}, {48 * player.weapon.spin, 3}}, {135, 196, 240, 255});
+            }
+        }
+    const bool rendered = p.flush();
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    return rendered && (!present || SDL_RenderPresent(renderer));
 }
 
-bool renderScene(SDL_Renderer* renderer, const World& world, bool present, const Effects* effects)
+bool renderScene(SDL_Renderer* r, const World& world, bool present, const Effects* effects)
 {
-    return renderWorld(renderer, world.arena(), world.players(), world.bullets(), World::localPlayerId,
-                       present, effects, world.debris().corpses(), world.debris().pieces(), world.fires());
+    return renderWorld(r, world.arena(), world.players(), world.bullets(), World::localPlayerId, present,
+                       effects, world.debris().corpses(), world.debris().pieces(), world.fires());
 }
 
-bool renderSnapshot(SDL_Renderer* renderer, const WorldSnapshot& snapshot, PlayerId own,
-                    const Effects* effects)
+bool renderSnapshot(SDL_Renderer* r, const WorldSnapshot& s, PlayerId own, const Effects* effects)
 {
-    thread_local Arena cachedArena = Arena::create(snapshot.map);
-    if (cachedArena.map != snapshot.map)
-        cachedArena = Arena::create(snapshot.map);
-    return renderWorld(renderer, cachedArena, snapshot.players, snapshot.bullets, own, false, effects,
-                       snapshot.corpses, snapshot.pieces, snapshot.fires);
+    thread_local Arena cached = Arena::create(s.map);
+    if (cached.map != s.map)
+        cached = Arena::create(s.map);
+    return renderWorld(r, cached, s.players, s.bullets, own, false, effects, s.corpses, s.pieces, s.fires);
 }
 } // namespace cubeshot::client

@@ -14,6 +14,28 @@ Rect Player::bounds() const
     return {position, size};
 }
 
+Vec2 Player::bodyPoint(Vec2 local) const
+{
+    const float stretch = std::clamp(-velocity.y / 620.f, -.025f, .025f);
+    const float land = grounded ? std::min(std::abs(velocity.x) / moveSpeed, 1.f) * .012f : 0;
+    return {24 + (local.x - 24) * (1 - stretch + land), 48 + (local.y - 48) * (1 + stretch - land)};
+}
+
+Vec2 Player::bodyLocal(Vec2 point) const
+{
+    const float stretch = std::clamp(-velocity.y / 620.f, -.025f, .025f);
+    const float land = grounded ? std::min(std::abs(velocity.x) / moveSpeed, 1.f) * .012f : 0;
+    return {24 + (point.x - 24) / (1 - stretch + land), 48 + (point.y - 48) / (1 + stretch - land)};
+}
+
+Polygon Player::bodyContour() const
+{
+    auto shape = damageOutline(surface);
+    for (auto& v : shape)
+        v = bodyPoint(v);
+    return shape;
+}
+
 bool Player::alive() const
 {
     return health > 0;
