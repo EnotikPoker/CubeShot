@@ -70,6 +70,18 @@ struct Painter
                     {color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f});
     }
 
+    void gradient(Rect box, SDL_Color top, SDL_Color bottom) const
+    {
+        const auto a = view.toScreen(box.position);
+        const auto b = view.toScreen({box.position.x + box.size.x, box.position.y + box.size.y});
+        const SDL_FColor first{top.r / 255.f, top.g / 255.f, top.b / 255.f, 1};
+        const SDL_FColor last{bottom.r / 255.f, bottom.g / 255.f, bottom.b / 255.f, 1};
+        const SDL_Vertex tl{{a.x, a.y}, first, {}}, tr{{b.x, a.y}, first, {}}, br{{b.x, b.y}, last, {}},
+            bl{{a.x, b.y}, last, {}};
+        triangle(tl, tr, br);
+        triangle(tl, br, bl);
+    }
+
     bool ellipse(Vec2 at, float rx, float ry, SDL_Color color, float angle = 0) const
     {
         static const auto circle = []
@@ -252,13 +264,9 @@ bool background(const Painter& p, const Arena& arena)
     const SDL_Color top = theme == MapTheme::Nature  ? SDL_Color{45, 79, 92, 255}
                           : theme == MapTheme::Ruins ? SDL_Color{66, 65, 83, 255}
                                                      : SDL_Color{38, 56, 79, 255};
-    for (float y = 0; y < bounds.size.y; y += 16)
-    {
-        float t = y / bounds.size.y;
-        p.rect({{bounds.position.x, bounds.position.y + y}, {bounds.size.x, 16}},
-               {static_cast<Uint8>(top.r + t * 18), static_cast<Uint8>(top.g + t * 16),
-                static_cast<Uint8>(top.b + t * 12), 255});
-    }
+    p.gradient(bounds, top,
+               {static_cast<Uint8>(top.r + 18), static_cast<Uint8>(top.g + 16),
+                static_cast<Uint8>(top.b + 12), 255});
     const SDL_Color quiet{static_cast<Uint8>(top.r + 5), static_cast<Uint8>(top.g + 6),
                           static_cast<Uint8>(top.b + 6), 255};
     for (float ratio : {.13f, .78f})

@@ -106,6 +106,20 @@ void testEyeBehindWeapon()
            "Barrel covers the eye when they overlap, for both aiming directions");
 }
 
+void testScaledBackdrop()
+{
+    cubeshot::World world(cubeshot::Arena::create(cubeshot::MapId::FactoryLarge));
+    const auto surface = drawWorld(world);
+    for (int y = 0; y < 200; ++y)
+    {
+        SDL_Color color{};
+        expect(SDL_ReadSurfacePixel(surface.get(), 10, y, &color.r, &color.g, &color.b, &color.a),
+               "Read scaled background");
+        expect(color.r >= 38 && color.b >= 79,
+               "Non-integer map scaling leaves no dark seams in the quiet gradient");
+    }
+}
+
 void testHealthBars()
 {
     using namespace cubeshot;
@@ -178,6 +192,7 @@ int main()
         testMirroredWeapon({3, 4});
         testEyeBehindWeapon();
         testHealthBars();
+        testScaledBackdrop();
         std::cout << "Renderer tests passed\n";
     }
     catch (const std::exception& error)
