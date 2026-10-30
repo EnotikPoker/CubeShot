@@ -103,6 +103,18 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Unsafe archive"):
                 check_package.extract(archive, root / "out")
 
+    def test_player_archive_requires_visual_assets_and_font_license(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "assets" / "fonts").mkdir(parents=True)
+            for name in ("effects.png", "materials.png", "font.png"):
+                (root / "assets" / name).write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+            (root / "assets" / "fonts" / "OFL.txt").write_text("OFL")
+            check_package.verify_visual_assets(root)
+            (root / "assets" / "font.png").unlink()
+            with self.assertRaisesRegex(RuntimeError, "font.png"):
+                check_package.verify_visual_assets(root)
+
     def test_detect_missing_or_damaged_library(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1,149 +1,76 @@
 #include "client/BitmapFont.h"
-
+#include "client/FontAtlas.h"
+#include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
-
-#include <array>
-#include <cstdint>
+#include <vector>
 
 namespace cubeshot::client
 {
 namespace
 {
-
-struct Glyph
+float factor(int scale)
 {
-    char32_t letter;
-    std::array<std::uint8_t, 7> rows;
-};
-
-// Собственный шрифт 5 x 7: каждый бит задаёт один пиксель строки.
-constexpr Glyph glyphs[]{{U'A', {14, 17, 17, 31, 17, 17, 17}}, {U'B', {30, 17, 17, 30, 17, 17, 30}},
-                         {U'C', {14, 17, 16, 16, 16, 17, 14}}, {U'D', {30, 17, 17, 17, 17, 17, 30}},
-                         {U'E', {31, 16, 16, 30, 16, 16, 31}}, {U'F', {31, 16, 16, 30, 16, 16, 16}},
-                         {U'G', {14, 17, 16, 23, 17, 17, 14}}, {U'H', {17, 17, 17, 31, 17, 17, 17}},
-                         {U'I', {14, 4, 4, 4, 4, 4, 14}},      {U'J', {7, 2, 2, 2, 2, 18, 12}},
-                         {U'K', {17, 18, 20, 24, 20, 18, 17}}, {U'L', {16, 16, 16, 16, 16, 16, 31}},
-                         {U'M', {17, 27, 21, 21, 17, 17, 17}}, {U'N', {17, 25, 25, 21, 19, 19, 17}},
-                         {U'O', {14, 17, 17, 17, 17, 17, 14}}, {U'P', {30, 17, 17, 30, 16, 16, 16}},
-                         {U'Q', {14, 17, 17, 17, 21, 18, 13}}, {U'R', {30, 17, 17, 30, 20, 18, 17}},
-                         {U'S', {15, 16, 16, 14, 1, 1, 30}},   {U'T', {31, 4, 4, 4, 4, 4, 4}},
-                         {U'U', {17, 17, 17, 17, 17, 17, 14}}, {U'V', {17, 17, 17, 17, 17, 10, 4}},
-                         {U'W', {17, 17, 17, 21, 21, 21, 10}}, {U'X', {17, 17, 10, 4, 10, 17, 17}},
-                         {U'Y', {17, 17, 10, 4, 4, 4, 4}},     {U'Z', {31, 1, 2, 4, 8, 16, 31}},
-                         {U'0', {14, 17, 19, 21, 25, 17, 14}}, {U'1', {4, 12, 4, 4, 4, 4, 14}},
-                         {U'2', {14, 17, 1, 2, 4, 8, 31}},     {U'3', {30, 1, 1, 14, 1, 1, 30}},
-                         {U'4', {2, 6, 10, 18, 31, 2, 2}},     {U'5', {31, 16, 16, 30, 1, 1, 30}},
-                         {U'6', {14, 16, 16, 30, 17, 17, 14}}, {U'7', {31, 1, 2, 4, 8, 8, 8}},
-                         {U'8', {14, 17, 17, 14, 17, 17, 14}}, {U'9', {14, 17, 17, 15, 1, 1, 14}},
-                         {U'Б', {31, 16, 16, 30, 17, 17, 30}}, {U'Г', {31, 16, 16, 16, 16, 16, 16}},
-                         {U'Д', {14, 10, 10, 10, 10, 31, 17}}, {U'Ё', {10, 0, 31, 16, 30, 16, 31}},
-                         {U'Ж', {21, 21, 21, 14, 21, 21, 21}}, {U'З', {14, 17, 1, 6, 1, 17, 14}},
-                         {U'И', {17, 17, 19, 21, 25, 17, 17}}, {U'Й', {10, 4, 17, 19, 21, 25, 17}},
-                         {U'Л', {7, 9, 9, 9, 9, 9, 17}},       {U'П', {31, 17, 17, 17, 17, 17, 17}},
-                         {U'У', {17, 17, 17, 15, 1, 1, 14}},   {U'Ф', {4, 14, 21, 21, 14, 4, 4}},
-                         {U'Ц', {18, 18, 18, 18, 18, 31, 1}},  {U'Ч', {17, 17, 17, 15, 1, 1, 1}},
-                         {U'Ш', {21, 21, 21, 21, 21, 21, 31}}, {U'Щ', {21, 21, 21, 21, 21, 31, 1}},
-                         {U'Ъ', {24, 8, 8, 14, 9, 9, 14}},     {U'Ы', {17, 17, 17, 29, 21, 21, 29}},
-                         {U'Ь', {16, 16, 16, 30, 17, 17, 30}}, {U'Э', {14, 17, 1, 7, 1, 17, 14}},
-                         {U'Ю', {18, 21, 21, 29, 21, 21, 18}}, {U'Я', {15, 17, 17, 15, 5, 9, 17}},
-                         {U' ', {0, 0, 0, 0, 0, 0, 0}},        {U'.', {0, 0, 0, 0, 0, 12, 12}},
-                         {U'-', {0, 0, 0, 31, 0, 0, 0}},       {U'/', {1, 2, 2, 4, 8, 8, 16}},
-                         {U':', {0, 12, 12, 0, 12, 12, 0}},    {U'_', {0, 0, 0, 0, 0, 0, 31}},
-                         {U'?', {14, 17, 1, 2, 4, 0, 4}},      {U',', {0, 0, 0, 0, 0, 4, 8}},
-                         {U'!', {4, 4, 4, 4, 4, 0, 4}},        {U'"', {10, 10, 10, 0, 0, 0, 0}},
-                         {U'#', {10, 31, 10, 10, 31, 10, 0}},  {U'$', {4, 15, 20, 14, 5, 30, 4}},
-                         {U'%', {25, 26, 2, 4, 8, 11, 19}},    {U'&', {12, 18, 20, 8, 21, 18, 13}},
-                         {U'\'', {4, 4, 8, 0, 0, 0, 0}},       {U'(', {2, 4, 8, 8, 8, 4, 2}},
-                         {U')', {8, 4, 2, 2, 2, 4, 8}},        {U'*', {0, 21, 14, 31, 14, 21, 0}},
-                         {U'+', {0, 4, 4, 31, 4, 4, 0}},       {U';', {0, 12, 12, 0, 12, 4, 8}},
-                         {U'<', {2, 4, 8, 16, 8, 4, 2}},       {U'=', {0, 31, 0, 31, 0, 0, 0}},
-                         {U'>', {8, 4, 2, 1, 2, 4, 8}},        {U'@', {14, 17, 23, 21, 23, 16, 14}},
-                         {U'[', {14, 8, 8, 8, 8, 8, 14}},      {U'\\', {16, 8, 8, 4, 2, 2, 1}},
-                         {U']', {14, 2, 2, 2, 2, 2, 14}},      {U'^', {4, 10, 17, 0, 0, 0, 0}},
-                         {U'`', {8, 4, 2, 0, 0, 0, 0}},        {U'{', {2, 4, 4, 8, 4, 4, 2}},
-                         {U'|', {4, 4, 4, 4, 4, 4, 4}},        {U'}', {8, 4, 4, 2, 4, 4, 8}},
-                         {U'~', {0, 0, 9, 22, 0, 0, 0}}};
-
-char32_t fontLetter(char32_t letter)
-{
-    if (letter >= U'a' && letter <= U'z')
-        letter -= U'a' - U'A';
-    if (letter >= U'а' && letter <= U'я')
-        letter -= U'а' - U'А';
-    if (letter == U'ё')
-        letter = U'Ё';
-    switch (letter)
-    {
-        case U'А':
-            return U'A';
-        case U'В':
-            return U'B';
-        case U'Е':
-            return U'E';
-        case U'К':
-            return U'K';
-        case U'М':
-            return U'M';
-        case U'Н':
-            return U'H';
-        case U'О':
-            return U'O';
-        case U'Р':
-            return U'P';
-        case U'С':
-            return U'C';
-        case U'Т':
-            return U'T';
-        case U'Х':
-            return U'X';
-        case U'—':
-            return U'-';
-        default:
-            return letter;
-    }
+    const float size = scale <= 1   ? 10.f
+                       : scale == 2 ? 18.f
+                       : scale == 3 ? 26.f
+                       : scale == 4 ? 34.f
+                       : scale == 5 ? 42.f
+                                    : scale * 8.f;
+    return size / 32;
 }
 
-const Glyph& glyph(char32_t letter)
+const FontGlyph& glyph(char32_t code, unsigned weight)
 {
-    letter = fontLetter(letter);
-    for (const Glyph& candidate : glyphs)
-    {
-        if (candidate.letter == letter)
-            return candidate;
-    }
-    return glyph(U'?');
+    for (const auto& g : fontGlyphs)
+        if (g.code == static_cast<unsigned>(code) && g.weight == weight)
+            return g;
+    for (const auto& g : fontGlyphs)
+        if (g.code == '?' && g.weight == weight)
+            return g;
+    return fontGlyphs.front();
 }
-
 } // namespace
 
 float textWidth(std::u32string_view text, int scale)
 {
-    return text.empty() ? 0.0f : static_cast<float>((text.size() * 6 - 1) * scale);
+    float width = 0;
+    for (auto letter : text)
+        width += glyph(letter, scale >= 3 ? 1 : 0).advance * factor(scale);
+    return width;
 }
 
-bool drawText(SDL_Renderer* renderer, std::u32string_view text, Vec2 position, int scale, SDL_Color color)
+float textHeight(int scale)
 {
-    if (!SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a))
-        return false;
-    for (char32_t letter : text)
-    {
-        const auto& rows = glyph(letter).rows;
-        for (int y = 0; y < 7; ++y)
-        {
-            for (int x = 0; x < 5; ++x)
-            {
-                if ((rows[y] & (1 << (4 - x))) != 0)
-                {
-                    const SDL_FRect pixel{position.x + x * scale, position.y + y * scale,
-                                          static_cast<float>(scale), static_cast<float>(scale)};
-                    if (!SDL_RenderFillRect(renderer, &pixel))
-                        return false;
-                }
-            }
-        }
-        position.x += 6 * scale;
-    }
-    return true;
+    return 38 * factor(scale);
 }
 
+bool drawText(SDL_Renderer* r, std::u32string_view text, Vec2 at, int scale, SDL_Color color)
+{
+    if (text.empty())
+        return true;
+    auto* assets = VisualAssets::get(r);
+    if (!assets)
+        return false;
+    const float f = factor(scale);
+    float w = 0, h = 0;
+    SDL_GetTextureSize(assets->font, &w, &h);
+    std::vector<SDL_Vertex> vertices;
+    vertices.reserve(text.size() * 6);
+    const SDL_FColor tint{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
+    for (auto letter : text)
+    {
+        const auto& g = glyph(letter, scale >= 3 ? 1 : 0);
+        if (g.width > 0 && g.height > 0)
+        {
+            const float x = at.x + g.left * f, y = at.y + g.top * f, dx = g.width * f, dy = g.height * f;
+            const float u = g.x / w, v = g.y / h, du = g.width / w, dv = g.height / h;
+            const SDL_Vertex a{{x, y}, tint, {u, v}}, b{{x + dx, y}, tint, {u + du, v}},
+                c{{x + dx, y + dy}, tint, {u + du, v + dv}}, d{{x, y + dy}, tint, {u, v + dv}};
+            vertices.insert(vertices.end(), {a, b, c, a, c, d});
+        }
+        at.x += g.advance * f;
+    }
+    return vertices.empty() || SDL_RenderGeometry(r, assets->font, vertices.data(),
+                                                  static_cast<int>(vertices.size()), nullptr, 0);
+}
 } // namespace cubeshot::client

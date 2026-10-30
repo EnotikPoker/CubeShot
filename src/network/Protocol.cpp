@@ -1,5 +1,6 @@
 #include "network/Protocol.h"
 #include "network/Identity.h"
+#include <algorithm>
 #include <cmath>
 #include <set>
 
@@ -33,17 +34,40 @@ void encodePiece(wire::Piece* out, const PhysicsPiece& p)
     vec(out->mutable_size(), p.size);
     out->set_angle(p.angle);
     out->set_spin(p.spin);
+    for (auto v : p.outline)
+        vec(out->add_outline(), v);
+    vec(out->mutable_skin_offset(), p.skinOffset);
+    out->set_integrity(std::max(0, p.integrity));
+    out->set_revision(p.revision);
+    out->set_charred(p.charred);
 }
 
-std::optional<PhysicsPiece> decodePiece(const wire::Piece& p)
+std::optional<PhysicsPiece> decodePiece(const wire::Piece& p, bool allowEmpty = false)
 {
     if (!p.id() || p.owner() < 1 || p.owner() > 2 || !finite(p.position()) || !finite(p.velocity()) ||
         !finite(p.size()) || p.size().x() <= 0 || p.size().y() <= 0 || p.size().x() > 64 ||
         p.size().y() > 64 || !std::isfinite(p.angle()) || std::abs(p.angle()) > 3.15f ||
         !std::isfinite(p.spin()) || std::abs(p.spin()) > 40)
         return {};
-    return PhysicsPiece{p.id(),        p.owner(), vec(p.position()), vec(p.velocity()),
-                        vec(p.size()), p.angle(), p.spin()};
+    PhysicsPiece out{p.id(),        p.owner(), vec(p.position()), vec(p.velocity()),
+                     vec(p.size()), p.angle(), p.spin()};
+    if (p.outline_size() > 32 || !finite(p.skin_offset()) || std::abs(p.skin_offset().x()) > 96 ||
+        std::abs(p.skin_offset().y()) > 96 || p.integrity() > 100)
+        return {};
+    for (const auto& v : p.outline())
+    {
+        if (!finite(v))
+            return {};
+        out.outline.push_back(vec(v));
+    }
+    if (!(allowEmpty && out.outline.empty()) && !validPolygon(out.outline))
+        return {};
+    out.skinOffset = vec(p.skin_offset());
+    out.integrity = p.integrity();
+    out.revision = p.revision();
+    out.charred = p.charred();
+    refreshPiece(out);
+    return out;
 }
 } // namespace
 
@@ -113,10 +137,11 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         auto* v = out.add_corpses();
         encodePiece(v->mutable_body(), corpse.body);
         v->set_integrity(corpse.integrity);
-        v->set_cells(corpse.cells);
+        v->set_cause(static_cast<unsigned>(corpse.cause));
     }
     for (const auto& piece : s.pieces)
-        encodePiece(out.add_pieces(), piece);
+        if (!piece.outline.empty())
+            encodePiece(out.add_pieces(), piece);
     for (const auto& p : s.players)
     {
         auto* v = out.add_players();
@@ -136,7 +161,18 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_overheated(p.weapon.overheated);
         v->set_burning(p.burning);
         v->set_burn_owner(p.burnOwner);
-        v->set_damaged_cells(p.damagedCells);
+        auto* surface = v->mutable_surface();
+        surface->set_revision(p.surface.revision);
+        surface->set_charred(p.surface.charred);
+        for (unsigned i = 0; i < p.surface.count; ++i)
+        {
+            auto* c = surface->add_chips();
+            const auto& chip = p.surface.chips[i];
+            c->set_edge(chip.edge);
+            c->set_along(chip.along);
+            c->set_width(chip.width);
+            c->set_depth(chip.depth);
+        }
     }
     for (const auto& b : s.bullets)
     {
@@ -229,7 +265,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         if (!std::isfinite(v.spin()) || v.spin() < 0 || v.spin() > 1 || !std::isfinite(v.heat()) ||
             v.heat() < 0 || v.heat() > 1 || !std::isfinite(v.burning()) || v.burning() < 0 ||
-            v.burning() > 2.51f || v.burn_owner() > 2 || v.damaged_cells() > 0xffff)
+            v.burning() > 2.51f || v.burn_owner() > 2 || v.surface().chips_size() > 6)
             return {};
         Player p;
         p.id = v.id();
@@ -248,7 +284,22 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         p.weapon.overheated = v.overheated();
         p.burning = v.burning();
         p.burnOwner = v.burn_owner();
-        p.damagedCells = v.damaged_cells();
+        p.surface.revision = v.surface().revision();
+        p.surface.charred = v.surface().charred();
+        for (const auto& c : v.surface().chips())
+        {
+            if (c.edge() > 3 || !std::isfinite(c.along()) || !std::isfinite(c.width()) ||
+                !std::isfinite(c.depth()) || c.width() < 8 || c.width() > 14 || c.depth() < 0 ||
+                c.depth() > 6 || c.along() - c.width() / 2 < 0 || c.along() + c.width() / 2 > 48)
+                return {};
+            for (unsigned i = 0; i < p.surface.count; ++i)
+                if (p.surface.chips[i].edge == c.edge() && std::abs(p.surface.chips[i].along - c.along()) <
+                                                               (p.surface.chips[i].width + c.width()) / 2)
+                    return {};
+            p.surface.chips[p.surface.count++] = {c.edge(), c.along(), c.width(), c.depth()};
+        }
+        if (!validPolygon(damageOutline(p.surface)) || polygonArea(damageOutline(p.surface)) < 48 * 48 * .85f)
+            return {};
         s.players.push_back(p);
     }
     std::set<BulletId> bullets;
@@ -281,11 +332,12 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     std::set<PlayerId> corpseOwners;
     for (const auto& v : in.corpses())
     {
-        auto body = decodePiece(v.body());
+        auto body = decodePiece(v.body(), v.integrity() == 0);
         if (!body || !pieces.insert(body->id).second || !corpseOwners.insert(body->owner).second ||
-            v.integrity() > 100 || v.cells() > 0xffff || (v.integrity() == 0 && v.cells() != 0))
+            v.integrity() > 100 || v.cause() >= weaponCount ||
+            (v.integrity() == 0 && !body->outline.empty()) || (v.integrity() > 0 && body->outline.empty()))
             return {};
-        s.corpses.push_back({*body, static_cast<int>(v.integrity()), v.cells()});
+        s.corpses.push_back({*body, static_cast<int>(v.integrity()), static_cast<WeaponKind>(v.cause())});
     }
     for (const auto& v : in.pieces())
     {
@@ -313,6 +365,9 @@ wire::Events encodeEvents(const std::vector<GameEvent>& events)
         v->set_damage(e.damage);
         v->set_weapon(static_cast<unsigned>(e.weapon));
         v->set_volley(e.volley);
+        vec(v->mutable_local(), e.local);
+        v->set_surface_revision(e.surfaceRevision);
+        v->set_volley_damage(e.volleyDamage);
         vec(v->mutable_position(), e.position);
         vec(v->mutable_direction(), e.direction);
     }
@@ -328,11 +383,12 @@ std::optional<std::vector<GameEvent>> decodeEvents(const wire::Events& in)
     {
         if (!e.id() || !e.round() || e.kind() > 6 || e.actor() < 1 || e.actor() > 2 || e.target() > 2 ||
             !finite(e.position()) || !validAim(e.direction()) || e.damage() > 1000 ||
-            e.weapon() >= weaponCount)
+            e.weapon() >= weaponCount || !finite(e.local()) || e.volley_damage() > 1000)
             return {};
         result.push_back({e.id(), e.tick(), e.shot_sequence(), e.round(), static_cast<EventKind>(e.kind()),
                           e.actor(), e.target(), vec(e.position()), vec(e.direction()),
-                          static_cast<int>(e.damage()), static_cast<WeaponKind>(e.weapon()), e.volley()});
+                          static_cast<int>(e.damage()), static_cast<WeaponKind>(e.weapon()), e.volley(),
+                          vec(e.local()), e.surface_revision(), static_cast<int>(e.volley_damage())});
     }
     return result;
 }

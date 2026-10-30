@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.14.1 LANGUAGES C CXX)
+project(CubeShot VERSION 0.15.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -8,7 +8,7 @@ option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
     src/game/BodyPhysics.cpp src/game/Arena.cpp src/game/Bullet.cpp src/game/Collision.cpp
-    src/game/Combat.cpp src/game/Debris.cpp src/game/BotNavigation.cpp src/game/BotController.cpp src/game/BotMatch.cpp
+    src/game/Shape.cpp src/game/Combat.cpp src/game/Debris.cpp src/game/BotNavigation.cpp src/game/BotController.cpp src/game/BotMatch.cpp
     src/game/Prediction.cpp src/game/Player.cpp src/game/Weapon.cpp src/game/World.cpp src/game/Match.cpp)
 target_include_directories(cubeshot_game PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(cubeshot_game PUBLIC CUBESHOT_VERSION="${PROJECT_VERSION}")
@@ -48,12 +48,17 @@ add_library(cubeshot_directory STATIC src/network/Directory.cpp)
 target_link_libraries(cubeshot_directory PUBLIC cubeshot_network PRIVATE httplib::httplib nlohmann_json::nlohmann_json Threads::Threads)
 
 if(CUBESHOT_BUILD_CLIENT)
-    find_package(SDL3 3.2 REQUIRED CONFIG)
+    find_package(SDL3 3.4 REQUIRED CONFIG)
+    add_custom_target(cubeshot_assets
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:cubeshot_client>/assets")
+    add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/BitmapFont.cpp)
+    target_link_libraries(cubeshot_visuals PUBLIC cubeshot_game SDL3::SDL3)
+    add_dependencies(cubeshot_visuals cubeshot_assets)
     add_library(cubeshot_preferences STATIC
         src/client/Settings.cpp src/client/SettingsStore.cpp src/client/Profile.cpp
         src/client/WindowSettings.cpp src/client/SettingsController.cpp src/client/SettingsRenderer.cpp
-        src/client/BitmapFont.cpp src/client/Input.cpp)
-    target_link_libraries(cubeshot_preferences PUBLIC cubeshot_game SDL3::SDL3 PRIVATE cubeshot_directory nlohmann_json::nlohmann_json)
+        src/client/Input.cpp)
+    target_link_libraries(cubeshot_preferences PUBLIC cubeshot_game SDL3::SDL3 cubeshot_visuals PRIVATE cubeshot_directory nlohmann_json::nlohmann_json)
     add_executable(cubeshot_client
         src/client/main.cpp src/client/Application.cpp src/client/ConnectionController.cpp
         src/client/BotGameController.cpp
@@ -80,6 +85,7 @@ endif()
 install(TARGETS cubeshot_server RUNTIME DESTINATION bin)
 if(CUBESHOT_BUILD_CLIENT)
     install(TARGETS cubeshot_client RUNTIME DESTINATION bin)
+    install(DIRECTORY assets DESTINATION bin)
 endif()
 
 if(WIN32)

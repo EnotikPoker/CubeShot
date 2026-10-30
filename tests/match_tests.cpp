@@ -185,6 +185,12 @@ void actionsAndDraw()
     Match m;
     ready(m);
     approach(m);
+    // At contact both muzzle sweeps land in the same simulation step even with chipped edges.
+    m.setInput(1, {1});
+    m.setInput(2, {-1});
+    advance(m, 60);
+    m.setInput(1, {});
+    m.setInput(2, {});
     for (unsigned i = 1; i <= 5; ++i)
     {
         expect(m.action(1, m.round(), i, false, true, aim(m, 1)), "Player one shot");

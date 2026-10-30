@@ -1,6 +1,7 @@
 #include "client/SettingsRenderer.h"
 #include "client/BitmapFont.h"
 #include "client/SettingsController.h"
+#include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 
@@ -18,8 +19,7 @@ bool renderSettings(SDL_Renderer* renderer, const SettingsController& settings, 
                     bool networkMatch)
 {
     const SDL_Color white{232, 240, 255, 255}, muted{150, 165, 185, 255}, blue{80, 175, 255, 255};
-    if (!SDL_SetRenderDrawColor(renderer, 20, 25, 35, 255) || !SDL_RenderClear(renderer) ||
-        !centered(renderer, U"Настройки", 24, 4, white))
+    if (!uiBackdrop(renderer, true) || !centered(renderer, U"Настройки", 24, 4, white))
         return false;
     if (settings.previewing())
     {
@@ -55,25 +55,22 @@ bool renderSettings(SDL_Renderer* renderer, const SettingsController& settings, 
         const bool selected =
             static_cast<int>(i) == settings.selection() ||
             (item.kind == SettingsItem::Kind::Tab && item.value == static_cast<int>(settings.tab()));
-        if (!SDL_SetRenderDrawColor(renderer, selected ? 80 : 52, selected ? 175 : 64, selected ? 255 : 83,
-                                    255))
-            return false;
         const SDL_FRect box{b.position.x, b.position.y, b.size.x, b.size.y};
-        if (!SDL_RenderFillRect(renderer, &box))
-            return false;
-        if (!SDL_SetRenderDrawColor(renderer, 29, 36, 49, 255))
-            return false;
-        const SDL_FRect inner{box.x + 2, box.y + 2, box.w - 4, box.h - 4};
-        if (!SDL_RenderFillRect(renderer, &inner))
+        if (!uiPanel(renderer, b, selected ? SDL_Color{56, 103, 145, 255} : SDL_Color{42, 60, 81, 255},
+                     selected, !item.enabled))
             return false;
         auto label = item.label;
         const int scale = 2;
-        const auto maxLetters = static_cast<std::size_t>((box.w - 12) / (6 * scale));
-        if (label.size() > maxLetters)
-            label = label.substr(0, maxLetters - 2) + U"..";
-        if (!drawText(renderer, label,
-                      {box.x + (box.w - textWidth(label, scale)) / 2, box.y + (box.h - 14) / 2}, scale,
-                      item.enabled ? white : muted))
+        if (textWidth(label, scale) > box.w - 14)
+        {
+            while (label.size() > 1 && textWidth(label + U"…", scale) > box.w - 14)
+                label.pop_back();
+            label += U"…";
+        }
+        if (!drawText(
+                renderer, label,
+                {box.x + (box.w - textWidth(label, scale)) / 2, box.y + (box.h - textHeight(scale)) / 2 - 1},
+                scale, item.enabled ? white : muted))
             return false;
     }
     if (!centered(renderer, settings.message(), 489, 2, blue))

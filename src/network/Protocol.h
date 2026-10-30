@@ -6,7 +6,7 @@
 
 namespace cubeshot::network
 {
-constexpr unsigned protocolVersion = 6;
+constexpr unsigned protocolVersion = 7;
 constexpr std::uint16_t gamePort = 27015, discoveryPort = 27016;
 constexpr int maxPacketBytes = 64 * 1024;
 wire::Envelope envelope();

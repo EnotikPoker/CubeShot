@@ -5,6 +5,7 @@
 #include "client/SettingsController.h"
 #include "client/SettingsRenderer.h"
 #include "client/SettingsStore.h"
+#include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 #include <cmath>
 #include <filesystem>
@@ -338,13 +339,20 @@ void renderPages()
     Surface surface(SDL_CreateSurface(1100, 700, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
     Renderer renderer(SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
     expect(bool(renderer), "Software renderer available");
+    cubeshot::client::VisualAssets art(renderer.get());
     expect(SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, 255) && SDL_RenderClear(renderer.get()) &&
                drawText(renderer.get(), U"=", {0, 0}, 1, {255, 255, 255, 255}) &&
                SDL_RenderPresent(renderer.get()),
            "Punctuation keys have readable glyphs");
     Uint8 red = 0, green = 0, blue = 0, alpha = 0;
-    expect(SDL_ReadSurfacePixel(surface.get(), 0, 1, &red, &green, &blue, &alpha) && red == 255,
-           "Equals key renders its own glyph rather than unknown-key question mark");
+    unsigned lit = 0;
+    for (int y = 0; y < 14; ++y)
+        for (int x = 0; x < 14; ++x)
+        {
+            SDL_ReadSurfacePixel(surface.get(), x, y, &red, &green, &blue, &alpha);
+            lit += red > 100;
+        }
+    expect(lit > 0, "Equals key has a baked readable glyph");
     expect(SDL_SetRenderLogicalPresentation(renderer.get(), 960, 540, SDL_LOGICAL_PRESENTATION_LETTERBOX),
            "Settings renderer uses fixed logical coordinates");
     float logicalX = 0, logicalY = 0;

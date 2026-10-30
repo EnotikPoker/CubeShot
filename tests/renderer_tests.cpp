@@ -2,6 +2,7 @@
 #include "client/WorldView.h"
 #include "game/World.h"
 
+#include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 
 #include <cmath>
@@ -30,6 +31,7 @@ Surface drawWorld(const cubeshot::World& world)
     expect(surface != nullptr, "Create test surface");
     Renderer renderer(SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
     expect(renderer != nullptr, "Create software renderer");
+    cubeshot::client::VisualAssets art(renderer.get());
     expect(cubeshot::client::renderScene(renderer.get(), world), "Render test scene");
     return surface;
 }
@@ -65,6 +67,7 @@ void testMirroredWeapon(cubeshot::Vec2 aim)
 {
     const auto right = drawPlayer(aim);
     const auto left = drawPlayer({-aim.x, aim.y});
+    unsigned compared = 0;
     for (int y = 1; y < imageSize - 1; ++y)
     {
         for (int x = 1; x < imageSize - 1; ++x)
@@ -81,10 +84,17 @@ void testMirroredWeapon(cubeshot::Vec2 aim)
                     interior = sameColor(first, pixel(right.get(), x + dx, y + dy));
                 }
             }
-            expect(!interior || sameColor(first, pixel(left.get(), mirroredX, y)),
-                   "Weapon aiming left mirrors right-facing weapon without turning upside down");
+            const bool metal = first.r > 150 && first.g > 150 && first.b > 150;
+            if (interior && metal)
+            {
+                ++compared;
+                expect(sameColor(first, pixel(left.get(), mirroredX, y)),
+                       "Weapon aiming left mirrors right-facing weapon without turning upside down");
+            }
         }
     }
+    expect(compared >= 10,
+           "Mirroring comparison covers visible barrel pixels rather than textured bodies or scenery");
 }
 
 void testEyeBehindWeapon()
@@ -94,6 +104,20 @@ void testEyeBehindWeapon()
     const auto a = pixel(right.get(), 78, 52), b = pixel(left.get(), 50, 52);
     expect(a.r > 150 && a.g > 150 && a.b > 150 && b.r > 150 && b.g > 150 && b.b > 150,
            "Barrel covers the eye when they overlap, for both aiming directions");
+}
+
+void testScaledBackdrop()
+{
+    cubeshot::World world(cubeshot::Arena::create(cubeshot::MapId::FactoryLarge));
+    const auto surface = drawWorld(world);
+    for (int y = 0; y < 200; ++y)
+    {
+        SDL_Color color{};
+        expect(SDL_ReadSurfacePixel(surface.get(), 10, y, &color.r, &color.g, &color.b, &color.a),
+               "Read scaled background");
+        expect(color.r >= 38 && color.b >= 79,
+               "Non-integer map scaling leaves no dark seams in the quiet gradient");
+    }
 }
 
 void testHealthBars()
@@ -106,7 +130,6 @@ void testHealthBars()
     World world(arena);
     const SDL_Color green{85, 210, 125, 255};
     const SDL_Color empty{80, 35, 45, 255};
-    const SDL_Color background{24, 28, 38, 255};
     for (int hits = 0; hits <= 5; ++hits)
     {
         const auto surface = drawWorld(world);
@@ -116,7 +139,8 @@ void testHealthBars()
             const SDL_Color color = pixel(surface.get(), x, 42);
             if (hits == 5)
             {
-                expect(sameColor(color, background), "Dead player's health bar disappears");
+                expect(!sameColor(color, green) && !sameColor(color, empty),
+                       "Dead player's health bar disappears even with new scenery behind it");
             }
             else
             {
@@ -143,8 +167,7 @@ void testHealthBars()
     world.setPlayerInput(2, PlayerInput{0.0f, true});
     world.update(1.0f / 120.0f);
     const auto jumped = drawWorld(world);
-    expect(sameColor(pixel(jumped.get(), 100, 37), green) &&
-               sameColor(pixel(jumped.get(), 100, 42), background),
+    expect(sameColor(pixel(jumped.get(), 100, 37), green) && !sameColor(pixel(jumped.get(), 100, 42), green),
            "Health bar follows character during jump");
     world.update(0.12f);
     const auto ceiling = drawWorld(world);
@@ -169,6 +192,7 @@ int main()
         testMirroredWeapon({3, 4});
         testEyeBehindWeapon();
         testHealthBars();
+        testScaledBackdrop();
         std::cout << "Renderer tests passed\n";
     }
     catch (const std::exception& error)

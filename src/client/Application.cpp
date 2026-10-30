@@ -19,6 +19,7 @@ Application::~Application()
         SDL_SetCursor(SDL_GetDefaultCursor());
         SDL_DestroyCursor(crosshair_);
     }
+    visuals_.reset();
     SDL_DestroyRenderer(renderer_);
     SDL_DestroyWindow(window_);
     if (sdlInitialized_)
@@ -42,6 +43,17 @@ bool Application::initialize()
         !SDL_SetRenderLogicalPresentation(renderer_, 960, 540, SDL_LOGICAL_PRESENTATION_LETTERBOX))
     {
         SDL_Log("Window/renderer creation failed: %s", SDL_GetError());
+        return false;
+    }
+    try
+    {
+        visuals_ = std::make_unique<VisualAssets>(renderer_);
+    }
+    catch (const std::exception& e)
+    {
+        SDL_Log("Visual resources failed: %s", e.what());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "CubeShot",
+                                 "Не удалось загрузить графику. Распакуйте архив игры полностью.", window_);
         return false;
     }
     windowSettings_ = std::make_unique<SdlWindowSettings>(window_, renderer_);

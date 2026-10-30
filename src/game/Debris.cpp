@@ -14,53 +14,98 @@ float dot(Vec2 a, Vec2 b)
     return a.x * b.x + a.y * b.y;
 }
 
-Vec2 rotate(Vec2 v, float a)
+Vec2 rotate(Vec2 p, float a)
 {
-    const float c = std::cos(a), s = std::sin(a);
-    return {c * v.x - s * v.y, s * v.x + c * v.y};
+    float c = std::cos(a), s = std::sin(a);
+    return {p.x * c - p.y * s, p.x * s + p.y * c};
+}
+
+Rect pieceBounds(const PhysicsPiece& p)
+{
+    float left = 1e6f, top = 1e6f, right = -1e6f, bottom = -1e6f;
+    for (auto v : p.hull)
+    {
+        v = piecePoint(p, v);
+        left = std::min(left, v.x);
+        top = std::min(top, v.y);
+        right = std::max(right, v.x);
+        bottom = std::max(bottom, v.y);
+    }
+    return {{left, top}, {right - left, bottom - top}};
 }
 
 void collide(PhysicsPiece& p, Rect box, float dt)
 {
-    const auto right = rotate({1, 0}, p.angle), down = rotate({0, 1}, p.angle);
+    if (!collision::overlaps(pieceBounds(p), box))
+        return;
     const Vec2 centre{box.position.x + box.size.x / 2, box.position.y + box.size.y / 2};
-    const Vec2 delta{p.position.x - centre.x, p.position.y - centre.y};
-    float depth = std::numeric_limits<float>::max();
-    Vec2 normal;
-    for (auto axis : {Vec2{1, 0}, Vec2{0, 1}, right, down})
+    float depth = 1e6f;
+    Vec2 normal{};
+    auto test = [&](Vec2 axis)
     {
-        const float extent = std::abs(dot(axis, right)) * p.size.x / 2 +
-                             std::abs(dot(axis, down)) * p.size.y / 2 + std::abs(axis.x) * box.size.x / 2 +
-                             std::abs(axis.y) * box.size.y / 2;
-        const float overlap = extent - std::abs(dot(delta, axis));
+        float length = std::hypot(axis.x, axis.y);
+        if (length < .001f)
+            return true;
+        axis = {axis.x / length, axis.y / length};
+        float lo = 1e6f, hi = -1e6f;
+        for (auto v : p.hull)
+        {
+            float projection = dot(piecePoint(p, v), axis);
+            lo = std::min(lo, projection);
+            hi = std::max(hi, projection);
+        }
+        float at = dot(centre, axis),
+              extent = std::abs(axis.x) * box.size.x / 2 + std::abs(axis.y) * box.size.y / 2;
+        float overlap = std::min(hi - (at - extent), at + extent - lo);
         if (overlap <= 0)
-            return;
+            return false;
         if (overlap < depth)
         {
             depth = overlap;
-            const float sign = dot(delta, axis) >= 0 ? 1.f : -1.f;
+            float sign = dot({p.position.x - centre.x, p.position.y - centre.y}, axis) >= 0 ? 1.f : -1.f;
             normal = {axis.x * sign, axis.y * sign};
         }
+        return true;
+    };
+    if (!test({1, 0}) || !test({0, 1}))
+        return;
+    for (std::size_t i = 0; i < p.hull.size(); ++i)
+    {
+        auto a = p.hull[i], b = p.hull[(i + 1) % p.hull.size()];
+        if (!test(rotate({a.y - b.y, b.x - a.x}, p.angle)))
+            return;
     }
     p.position.x += normal.x * depth;
     p.position.y += normal.y * depth;
-    const float speed = dot(p.velocity, normal);
+    float speed = dot(p.velocity, normal);
     if (speed < 0)
     {
-        p.velocity.x -= 1.16f * speed * normal.x;
-        p.velocity.y -= 1.16f * speed * normal.y;
+        p.velocity.x -= 1.08f * speed * normal.x;
+        p.velocity.y -= 1.08f * speed * normal.y;
     }
     if (normal.y < -.5f)
     {
-        p.velocity.x *= std::pow(.86f, dt * 120);
-        p.spin = p.spin * std::pow(.94f, dt * 120) - std::sin(2 * p.angle) * dt * 16;
-        if (std::abs(p.velocity.y) < 12)
+        p.velocity.x *= std::pow(.84f, dt * 120);
+        p.spin *= std::pow(.87f, dt * 120);
+        if (std::abs(p.velocity.y) < 18)
             p.velocity.y = 0;
     }
 }
 
 void stepPiece(PhysicsPiece& p, float dt, const Arena& arena, const std::vector<Player>& players)
 {
+    if (p.outline.empty())
+        return;
+    auto bounds = pieceBounds(p);
+    for (const auto& player : players)
+        if (player.alive() && std::abs(player.velocity.x) > 1 && collision::overlaps(bounds, player.bounds()))
+        {
+            p.velocity.x += (player.velocity.x * .8f - p.velocity.x) * std::min(1.f, dt * 24);
+            p.spin += player.velocity.x * dt * .009f;
+            p.sleep = 0;
+        }
+    if (p.sleep >= .5f)
+        return;
     p.velocity.y += Player::gravity * dt;
     p.velocity.x = std::clamp(p.velocity.x, -650.f, 650.f);
     p.velocity.y = std::clamp(p.velocity.y, -650.f, 900.f);
@@ -69,66 +114,69 @@ void stepPiece(PhysicsPiece& p, float dt, const Arena& arena, const std::vector<
     p.position.y += p.velocity.y * dt;
     p.angle = std::remainder(p.angle + p.spin * dt, 6.283185307f);
     for (int pass = 0; pass < 2; ++pass)
-        for (const auto& r : arena.platforms)
-            collide(p, r, dt / 2);
-    const float c = std::abs(std::cos(p.angle)), s = std::abs(std::sin(p.angle));
-    Vec2 half{(c * p.size.x + s * p.size.y) / 2, (s * p.size.x + c * p.size.y) / 2};
-    const auto& b = arena.bounds;
-    const float x = std::clamp(p.position.x, b.position.x + half.x, b.position.x + b.size.x - half.x);
-    const float y = std::clamp(p.position.y, b.position.y + half.y, b.position.y + b.size.y - half.y);
-    if (x != p.position.x)
+        for (auto box : arena.platforms)
+            collide(p, box, dt / 2);
+    bounds = pieceBounds(p);
+    const auto& a = arena.bounds;
+    if (bounds.position.x < a.position.x)
     {
-        p.velocity.x *= -.2f;
-        p.spin *= .5f;
+        p.position.x += a.position.x - bounds.position.x;
+        p.velocity.x = std::abs(p.velocity.x) * .1f;
     }
-    if (y != p.position.y)
+    if (bounds.position.x + bounds.size.x > a.position.x + a.size.x)
     {
-        p.velocity.y *= -.15f;
-        p.spin *= .7f;
+        p.position.x -= bounds.position.x + bounds.size.x - a.position.x - a.size.x;
+        p.velocity.x = -std::abs(p.velocity.x) * .1f;
     }
-    p.position = {x, y};
-    const Rect bounds{{x - half.x, y - half.y}, {half.x * 2, half.y * 2}};
-    for (const auto& player : players)
-        if (player.alive() && std::abs(player.velocity.x) > 1 && collision::overlaps(bounds, player.bounds()))
+    if (bounds.position.y < a.position.y)
+    {
+        p.position.y += a.position.y - bounds.position.y;
+        p.velocity.y = std::abs(p.velocity.y) * .1f;
+    }
+    if (bounds.position.y + bounds.size.y > a.position.y + a.size.y)
+    {
+        p.position.y -= bounds.position.y + bounds.size.y - a.position.y - a.size.y;
+        p.velocity.y = 0;
+    }
+    if (std::hypot(p.velocity.x, p.velocity.y) < 2 && std::abs(p.spin) < .05f)
+    {
+        p.sleep += dt;
+        if (p.sleep >= .5f)
         {
-            // One-way contact: a living player pushes remains without losing movement or support.
-            p.velocity.x += (player.velocity.x * .85f - p.velocity.x) * std::min(1.f, dt * 30);
-            p.spin += player.velocity.x * dt * .012f;
+            p.velocity = {};
+            p.spin = 0;
         }
+    }
+    else
+        p.sleep = 0;
 }
 } // namespace
 
-Rect corpseCell(unsigned cell)
-{
-    return {{-24 + static_cast<float>(cell % 4) * 12, -16 + static_cast<float>(cell / 4) * 8}, {12, 8}};
-}
-
 Vec2 piecePoint(const PhysicsPiece& piece, Vec2 local)
 {
-    auto at = rotate(local, piece.angle);
-    return {piece.position.x + at.x, piece.position.y + at.y};
+    local = rotate(local, piece.angle);
+    return {piece.position.x + local.x, piece.position.y + local.y};
 }
 
-std::optional<float> hitPiece(Vec2 from, Vec2 to, const PhysicsPiece& piece, Rect local, float radius)
+void refreshPiece(PhysicsPiece& p)
 {
-    from = rotate({from.x - piece.position.x, from.y - piece.position.y}, -piece.angle);
-    to = rotate({to.x - piece.position.x, to.y - piece.position.y}, -piece.angle);
-    return collision::segmentHit(from, to, local, radius);
-}
-
-void Debris::blast(Vec2 at, float radius)
-{
-    for (auto& piece : pieces_)
+    p.hull = convexHull(p.outline);
+    if (p.hull.empty())
+        return;
+    float x = 0, y = 0;
+    for (auto v : p.hull)
     {
-        const float dx = piece.position.x - at.x, dy = piece.position.y - at.y;
-        const float distance = std::hypot(dx, dy);
-        if (distance >= radius)
-            continue;
-        const float force = (1 - distance / radius) * 500;
-        piece.velocity.x += (distance > .01f ? dx / distance : 0) * force;
-        piece.velocity.y += (distance > .01f ? dy / distance : -1) * force - 100;
-        piece.spin = std::clamp(piece.spin + dx * .03f, -10.f, 10.f);
+        x = std::max(x, std::abs(v.x));
+        y = std::max(y, std::abs(v.y));
     }
+    p.size = {x * 2, y * 2};
+}
+
+std::optional<float> hitPiece(Vec2 from, Vec2 to, const PhysicsPiece& p, float radius)
+{
+    from = rotate({from.x - p.position.x, from.y - p.position.y}, -p.angle);
+    to = rotate({to.x - p.position.x, to.y - p.position.y}, -p.angle);
+    return hitPolygon(from, to, p.outline, radius);
 }
 
 void Debris::clear()
@@ -137,97 +185,220 @@ void Debris::clear()
     pieces_.clear();
 }
 
-void Debris::spawn(const Player& player, Vec2 velocity, Vec2 impact)
+void Debris::blast(Vec2 at, float radius)
+{
+    for (auto& p : pieces_)
+    {
+        float dx = p.position.x - at.x, dy = p.position.y - at.y, d = std::hypot(dx, dy);
+        if (d >= radius)
+            continue;
+        float force = (1 - d / radius) * 500;
+        p.velocity.x += (d > .01f ? dx / d : 0) * force;
+        p.velocity.y += (d > .01f ? dy / d : -1) * force - 100;
+        p.spin = std::clamp(p.spin + dx * .03f, -10.f, 10.f);
+        p.sleep = 0;
+    }
+}
+
+void Debris::spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind cause, int volleyDamage)
 {
     Corpse corpse;
-    corpse.body.id = nextId_++;
-    corpse.body.owner = player.id;
-    corpse.body.position = {player.position.x + player.size.x / 2, player.position.y + player.size.y / 2};
-    corpse.body.size = {48, 32};
-    corpse.body.velocity = {velocity.x * .35f + impact.x * 110, std::min(velocity.y * .2f, 0.f) - 90};
-    corpse.body.spin = impact.x * 3;
+    auto& p = corpse.body;
+    p.id = nextId_++;
+    p.owner = player.id;
+    p.position = {player.position.x + 24, player.position.y + 24};
+    auto pose = player;
+    pose.velocity = velocity;
+    p.outline = pose.bodyContour();
+    for (auto& v : p.outline)
+    {
+        v.x -= 24;
+        v.y -= 24;
+    }
+    p.velocity = {velocity.x * .35f + impact.x * 110, std::min(velocity.y * .2f, 0.f) - 60};
+    p.spin = impact.x * 2.4f;
+    p.integrity = 100;
+    p.charred = incendiaryWeapon(cause) || player.surface.charred;
+    corpse.cause = cause;
+    refreshPiece(p);
+    unsigned count = cause == WeaponKind::Rpg                                              ? 6
+                     : cause == WeaponKind::Sniper                                         ? 3
+                     : (cause == WeaponKind::Katana || cause == WeaponKind::FireBoomerang) ? 2
+                     : cause == WeaponKind::Shotgun && volleyDamage >= 60                  ? 3
+                                                                                           : 1;
+    if (count > 1)
+    {
+        split(p, count, {impact.x * 160, -100});
+        p.outline.clear();
+        p.hull.clear();
+        corpse.integrity = 0;
+    }
+    else if (cause == WeaponKind::Rifle)
+    {
+        Bullet b;
+        b.damage = 25;
+        b.velocity = {impact.x * 100, impact.y * 100};
+        corpses_.push_back(corpse);
+        hit({0, false, corpses_.size() - 1}, b, {p.position.x + impact.x * 22, p.position.y + impact.y * 22});
+        return;
+    }
     corpses_.push_back(corpse);
+}
+
+void Debris::split(PhysicsPiece source, unsigned count, Vec2 impulse)
+{
+    std::vector<Polygon> parts{source.outline};
+    while (parts.size() < count)
+    {
+        auto largest = std::max_element(parts.begin(), parts.end(), [](const auto& a, const auto& b)
+                                        { return polygonArea(a) < polygonArea(b); });
+        if (largest == parts.end() || polygonArea(*largest) < 70)
+            break;
+        auto centre = polygonCentre(*largest);
+        Polygon a, b;
+        // A half-plane can disconnect a concave chipped edge. Try a different
+        // cut rather than joining disconnected material with a phantom bridge.
+        for (unsigned attempt = 0; attempt < 16; ++attempt)
+        {
+            float angle =
+                static_cast<float>(
+                    (source.id * 47 + parts.size() * 71 + source.revision * 19 + attempt * 29) % 180) *
+                .01745329252f;
+            Vec2 normal{std::cos(angle), std::sin(angle)};
+            const float offset = dot(centre, normal);
+            a = clipPolygon(*largest, normal, offset);
+            b = clipPolygon(*largest, {-normal.x, -normal.y}, -offset);
+            if (validPolygon(a) && validPolygon(b))
+                break;
+            a.clear();
+            b.clear();
+        }
+        if (a.empty() || b.empty())
+            break;
+        *largest = std::move(a);
+        parts.push_back(std::move(b));
+    }
+    for (auto part : parts)
+    {
+        if (pieces_.size() >= maxPieces)
+            break;
+        auto centre = polygonCentre(part);
+        PhysicsPiece p = source;
+        p.id = nextId_++;
+        for (auto& v : part)
+        {
+            v.x -= centre.x;
+            v.y -= centre.y;
+        }
+        p.outline = std::move(part);
+        p.position = piecePoint(source, centre);
+        p.skinOffset = {source.skinOffset.x + centre.x, source.skinOffset.y + centre.y};
+        const auto direction = rotate(centre, source.angle);
+        p.velocity = {source.velocity.x + impulse.x + direction.x * 5,
+                      source.velocity.y + impulse.y + direction.y * 4 - 20};
+        p.spin = std::clamp(source.spin + (p.id % 2 ? 2.2f : -2.2f), -10.f, 10.f);
+        p.integrity = std::max(8, static_cast<int>(polygonArea(p.outline) / 24));
+        p.revision++;
+        p.sleep = 0;
+        refreshPiece(p);
+        pieces_.push_back(std::move(p));
+    }
 }
 
 void Debris::update(float dt, const Arena& arena, const std::vector<Player>& players)
 {
+    pieces_.erase(
+        std::remove_if(pieces_.begin(), pieces_.end(), [](const auto& p) { return p.outline.empty(); }),
+        pieces_.end());
     for (auto& corpse : corpses_)
-        if (corpse.cells)
-            stepPiece(corpse.body, dt, arena, players);
+        stepPiece(corpse.body, dt, arena, players);
     for (auto& piece : pieces_)
         stepPiece(piece, dt, arena, players);
 }
 
 std::optional<DebrisHit> Debris::trace(Vec2 from, Vec2 to) const
 {
-    std::optional<DebrisHit> result;
+    std::optional<DebrisHit> out;
     float nearest = 2;
     for (std::size_t i = 0; i < corpses_.size(); ++i)
-        for (unsigned cell = 0; cell < 16; ++cell)
-            if (corpses_[i].cells & (1u << cell))
-                if (const auto hit = hitPiece(from, to, corpses_[i].body, corpseCell(cell));
-                    hit && *hit < nearest)
-                {
-                    nearest = *hit;
-                    result = DebrisHit{*hit, false, i, cell};
-                }
-    for (std::size_t i = 0; i < pieces_.size(); ++i)
-        if (const auto hit = hitPiece(from, to, pieces_[i],
-                                      {{-pieces_[i].size.x / 2, -pieces_[i].size.y / 2}, pieces_[i].size});
-            hit && *hit < nearest)
+        if (auto t = hitPiece(from, to, corpses_[i].body); t && *t < nearest)
         {
-            nearest = *hit;
-            result = DebrisHit{*hit, true, i, 0};
+            nearest = *t;
+            out = DebrisHit{*t, false, i};
         }
-    return result;
-}
-
-void Debris::release(Corpse& corpse, unsigned cell, Vec2 impulse)
-{
-    if (!(corpse.cells & (1u << cell)))
-        return;
-    corpse.cells &= ~(1u << cell);
-    if (pieces_.size() >= maxPieces)
-        pieces_.erase(pieces_.begin());
-    const auto local = corpseCell(cell);
-    PhysicsPiece piece;
-    piece.id = nextId_++;
-    piece.owner = corpse.body.owner;
-    piece.position = piecePoint(corpse.body, {local.position.x + 6, local.position.y + 4});
-    piece.velocity = {corpse.body.velocity.x + impulse.x +
-                          static_cast<float>(static_cast<int>(cell % 4) - 2) * 25,
-                      corpse.body.velocity.y + impulse.y - 90 - static_cast<float>(cell / 4) * 12};
-    piece.size = {11, 7};
-    piece.angle = corpse.body.angle;
-    piece.spin = corpse.body.spin + (cell % 2 ? 4.f : -4.f);
-    pieces_.push_back(piece);
+    for (std::size_t i = 0; i < pieces_.size(); ++i)
+        if (auto t = hitPiece(from, to, pieces_[i]); t && *t < nearest)
+        {
+            nearest = *t;
+            out = DebrisHit{*t, true, i};
+        }
+    return out;
 }
 
 bool Debris::hit(const DebrisHit& target, const Bullet& bullet, Vec2 position)
 {
-    const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
-    const float force = std::clamp(static_cast<float>(bullet.damage) * 5, 45.f, 420.f);
-    Vec2 impulse{(speed > .001f ? bullet.velocity.x / speed : 0) * force,
-                 (speed > .001f ? bullet.velocity.y / speed : 0) * force - force * .2f};
+    auto& p = target.fragment ? pieces_[target.index] : corpses_[target.index].body;
+    if (p.outline.empty())
+        return false;
+    const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y),
+                force = std::clamp(bullet.damage * 4.f, 25.f, 360.f);
+    Vec2 impulse{speed > .001f ? bullet.velocity.x / speed * force : 0,
+                 (speed > .001f ? bullet.velocity.y / speed * force : 0) - force * .15f};
+    const float massScale =
+        target.fragment ? std::clamp(std::sqrt(2304.f / std::max(16.f, polygonArea(p.outline))), 1.f, 3.5f)
+                        : 1.f;
+    p.velocity.x += impulse.x * massScale;
+    p.velocity.y += impulse.y * massScale;
+    p.spin = std::clamp(p.spin - (position.y - p.position.y) * impulse.x * .002f, -10.f, 10.f);
+    p.sleep = 0;
     if (target.fragment)
     {
-        auto& piece = pieces_[target.index];
-        piece.velocity.x += impulse.x * 1.7f;
-        piece.velocity.y += impulse.y * 1.7f;
-        piece.spin += impulse.x * .035f;
+        p.integrity -= bullet.damage;
+        if (p.integrity <= 0)
+        {
+            auto source = p;
+            p.outline.clear();
+            p.hull.clear();
+            if (polygonArea(source.outline) > 100 && pieces_.size() + 2 <= maxPieces)
+                split(source, 2, {impulse.x * .2f, impulse.y * .2f});
+            // At the physical-piece limit the last material becomes cosmetic dust;
+            // the cap must never make a zero-integrity fragment bulletproof.
+            return true;
+        }
         return false;
     }
     auto& corpse = corpses_[target.index];
-    corpse.body.velocity.x += impulse.x;
-    corpse.body.velocity.y += impulse.y;
-    corpse.body.spin += (position.y - corpse.body.position.y) * impulse.x * -.003f;
     corpse.integrity = std::max(0, corpse.integrity - bullet.damage);
-    release(corpse, target.cell, impulse);
+    p.integrity = corpse.integrity;
     if (corpse.integrity == 0)
     {
-        for (unsigned cell = 0; cell < 16; ++cell)
-            release(corpse, cell, impulse);
+        auto source = p;
+        p.outline.clear();
+        p.hull.clear();
+        split(source, 4, {impulse.x * .3f, impulse.y * .3f});
         return true;
+    }
+    // Slice a small irregular chip off the struck edge instead of releasing a grid tile.
+    auto local = rotate({position.x - p.position.x, position.y - p.position.y}, -p.angle);
+    const float length = std::hypot(local.x, local.y);
+    if (length > 1 && pieces_.size() < maxPieces)
+    {
+        Vec2 normal{local.x / length, local.y / length};
+        float far = -1e6f;
+        for (auto v : p.outline)
+            far = std::max(far, dot(v, normal));
+        float cut = far - std::clamp(bullet.damage * .18f, 2.f, 6.f);
+        auto kept = clipPolygon(p.outline, normal, cut),
+             chip = clipPolygon(p.outline, {-normal.x, -normal.y}, -cut);
+        if (validPolygon(kept) && validPolygon(chip) && polygonArea(kept) > 300)
+        {
+            auto source = p;
+            source.outline = std::move(chip);
+            p.outline = std::move(kept);
+            ++p.revision;
+            refreshPiece(p);
+            split(source, 1, {impulse.x * .35f, impulse.y * .35f});
+        }
     }
     return false;
 }

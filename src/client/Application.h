@@ -7,6 +7,7 @@
 #include "client/Menu.h"
 #include "client/Profile.h"
 #include "client/SettingsController.h"
+#include "client/VisualAssets.h"
 #include "game/World.h"
 #include <cstdint>
 #include <memory>
@@ -46,6 +47,7 @@ private:
     bool sdlInitialized_ = false;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
+    std::unique_ptr<VisualAssets> visuals_;
     SDL_Cursor* crosshair_ = nullptr;
     World world_;
     BotGameController bots_;

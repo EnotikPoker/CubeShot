@@ -2,6 +2,7 @@
 
 #include "game/Bullet.h"
 #include "game/PlayerInput.h"
+#include "game/Shape.h"
 #include "game/Types.h"
 #include "game/Weapon.h"
 
@@ -18,7 +19,7 @@ struct Player
     static constexpr float defaultSize = 48.0f;
     static constexpr float moveSpeed = 280.0f; // Пикселей в секунду.
     static constexpr float jumpSpeed = 620.0f; // Начальная скорость вверх, пикселей/с.
-    static constexpr float gravity = 1800.0f;  // Пикселей/с².
+    static constexpr float gravity = 1800.0f; // Пикселей/с².
 
     PlayerId id = 0;
     Vec2 position;
@@ -29,10 +30,17 @@ struct Player
     bool grounded = false;
     float burning = 0, burnTick = 0;
     PlayerId burnOwner = 0;
-    std::uint32_t damagedCells = 0;
+    DamageShape surface;
+    PlayerId lastDamageActor = 0;
+    std::uint32_t lastDamageVolley = 0;
+    int lastVolleyDamage = 0;
+    WeaponKind lastDamageWeapon = WeaponKind::Pistol;
     Vec2 aimDirection{1.0f, 0.0f};
 
     Rect bounds() const;
+    Polygon bodyContour() const;
+    Vec2 bodyPoint(Vec2 local) const;
+    Vec2 bodyLocal(Vec2 point) const;
     bool alive() const;
     Vec2 weaponOrigin() const;
     Vec2 muzzlePosition() const;

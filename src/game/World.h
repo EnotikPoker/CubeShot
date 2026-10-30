@@ -62,6 +62,7 @@ private:
     std::vector<Bullet> bullets_;
     BulletId nextBulletId_ = 1;
     std::vector<int> pendingDamage_;
+    std::vector<std::vector<Bullet>> pendingCauses_;
 };
 
 } // namespace cubeshot
