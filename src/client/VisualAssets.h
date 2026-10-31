@@ -2,9 +2,12 @@
 #include "game/Types.h"
 #include <SDL3/SDL.h>
 #include <filesystem>
+#include <memory>
 
 namespace cubeshot::client
 {
+class TextRenderer;
+
 class VisualAssets
 {
 public:
@@ -17,7 +20,7 @@ public:
     std::uint64_t identity = 0;
     SDL_Texture* effects = nullptr;
     SDL_Texture* materials = nullptr;
-    SDL_Texture* font = nullptr;
+    std::unique_ptr<TextRenderer> text;
 
 private:
     SDL_Renderer* renderer_;

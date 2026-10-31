@@ -1,6 +1,6 @@
 #include "client/SettingsRenderer.h"
-#include "client/BitmapFont.h"
 #include "client/SettingsController.h"
+#include "client/UiText.h"
 #include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -11,7 +11,7 @@ namespace
 {
 bool centered(SDL_Renderer* renderer, std::u32string_view text, float y, int scale, SDL_Color color)
 {
-    return drawText(renderer, text, {(960 - textWidth(text, scale)) / 2, y}, scale, color);
+    return drawText(renderer, text, {(960 - textWidth(renderer, text, scale)) / 2, y}, scale, color);
 }
 } // namespace
 
@@ -61,16 +61,16 @@ bool renderSettings(SDL_Renderer* renderer, const SettingsController& settings, 
             return false;
         auto label = item.label;
         const int scale = 2;
-        if (textWidth(label, scale) > box.w - 14)
+        if (textWidth(renderer, label, scale) > box.w - 14)
         {
-            while (label.size() > 1 && textWidth(label + U"…", scale) > box.w - 14)
+            while (label.size() > 1 && textWidth(renderer, label + U"…", scale) > box.w - 14)
                 label.pop_back();
             label += U"…";
         }
-        if (!drawText(
-                renderer, label,
-                {box.x + (box.w - textWidth(label, scale)) / 2, box.y + (box.h - textHeight(scale)) / 2 - 1},
-                scale, item.enabled ? white : muted))
+        if (!drawText(renderer, label,
+                      {box.x + (box.w - textWidth(renderer, label, scale)) / 2,
+                       box.y + (box.h - textHeight(renderer, scale)) / 2 - 1},
+                      scale, item.enabled ? white : muted))
             return false;
     }
     if (!centered(renderer, settings.message(), 489, 2, blue))

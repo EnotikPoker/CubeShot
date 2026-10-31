@@ -18,61 +18,259 @@ float dot(Vec2 a, Vec2 b)
 }
 } // namespace
 
-Polygon damageOutline(const DamageShape& shape)
+namespace
 {
-    const Vec2 starts[]{{0, 0}, {48, 0}, {48, 48}, {0, 48}};
-    const Vec2 axes[]{{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+unsigned hash(unsigned value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+
+Polygon clean(Polygon p)
+{
     Polygon out;
-    out.reserve(4 + shape.count * 3);
-    for (unsigned edge = 0; edge < 4; ++edge)
+    for (auto v : p)
+        if (out.empty() || std::hypot(v.x - out.back().x, v.y - out.back().y) > .005f)
+            out.push_back(v);
+    if (out.size() > 1 && std::hypot(out.front().x - out.back().x, out.front().y - out.back().y) < .005f)
+        out.pop_back();
+    bool changed = true;
+    while (changed && out.size() > 3)
     {
-        const auto s = starts[edge], t = axes[edge];
-        const Vec2 inward{-t.y, t.x};
-        auto point = [&](float along, float depth)
-        { return Vec2{s.x + t.x * along + inward.x * depth, s.y + t.y * along + inward.y * depth}; };
-        out.push_back(s);
-        std::vector<EdgeChip> chips;
-        for (unsigned i = 0; i < std::min(shape.count, 6u); ++i)
-            if (shape.chips[i].edge == edge)
-                chips.push_back(shape.chips[i]);
-        std::sort(chips.begin(), chips.end(), [](auto a, auto b) { return a.along < b.along; });
-        for (auto chip : chips)
-        {
-            out.push_back(point(chip.along - chip.width / 2, 0));
-            out.push_back(point(chip.along, chip.depth));
-            out.push_back(point(chip.along + chip.width / 2, 0));
-        }
+        changed = false;
+        for (std::size_t n = 0; n < out.size(); ++n)
+            if (std::abs(cross(out[(n + out.size() - 1) % out.size()], out[n], out[(n + 1) % out.size()])) <
+                .0001f)
+            {
+                out.erase(out.begin() + static_cast<std::ptrdiff_t>(n));
+                changed = true;
+                break;
+            }
     }
     return out;
 }
+} // namespace
 
-bool addEdgeChip(DamageShape& shape, Vec2 at, unsigned seed)
+Polygon damageOutline(const DamageShape& shape)
 {
-    if (shape.count >= 6)
-        return false;
-    const float distances[]{std::abs(at.y), std::abs(48 - at.x), std::abs(48 - at.y), std::abs(at.x)};
-    const auto preferred = static_cast<unsigned>(std::min_element(distances, distances + 4) - distances);
-    const float alongs[]{at.x, at.y, 48 - at.x, 48 - at.y};
-    for (unsigned attempt = 0; attempt < 4; ++attempt)
+    return shape.outline.empty() ? Polygon{{0, 0}, {48, 0}, {48, 48}, {0, 48}} : shape.outline;
+}
+
+Polygon carveImpact(DamageShape& shape, const ImpactContext& impact)
+{
+    if (incendiaryWeapon(impact.weapon))
     {
-        const auto edge = (preferred + attempt) % 4;
-        const float width = 9 + static_cast<float>((seed + shape.revision * 3) % 4);
-        const float desired = std::clamp(alongs[edge], width / 2 + 1, 47 - width / 2);
-        for (float along : {desired, 12.f, 36.f, 24.f})
+        shape.charred = true;
+        shape.scorch = std::min(1.f, shape.scorch + impact.damage * .035f);
+        auto found = std::find_if(shape.marks.begin(), shape.marks.end(),
+                                  [&](const auto& mark)
+                                  {
+                                      return incendiaryWeapon(mark.weapon) &&
+                                             std::hypot(mark.local.x - impact.local.x,
+                                                        mark.local.y - impact.local.y) < 20;
+                                  });
+        if (found != shape.marks.end())
+            found->width = std::min(40.f, found->width + 2);
+        else
         {
-            bool free = along - width / 2 >= 1 && along + width / 2 <= 47;
-            for (unsigned i = 0; i < shape.count; ++i)
-                if (shape.chips[i].edge == edge &&
-                    std::abs(shape.chips[i].along - along) < (shape.chips[i].width + width) / 2 + 2)
-                    free = false;
-            if (!free)
-                continue;
-            shape.chips[shape.count++] = {edge, along, width, 4 + static_cast<float>(seed % 3)};
-            ++shape.revision;
-            return true;
+            if (shape.marks.size() >= 12)
+                shape.marks.erase(shape.marks.begin());
+            shape.marks.push_back({impact.local, 12, 0, impact.weapon, impact.shooter, impact.volley});
         }
+        ++shape.revision;
+        if (impact.weapon == WeaponKind::Flamethrower)
+            return {};
     }
-    return false;
+    const Polygon original = damageOutline(shape);
+    float width = std::clamp(9.f + impact.damage * .26f, 10.f, 27.f),
+          depth = std::clamp(4.f + impact.damage * .16f, 5.f, 12.f);
+    if (impact.weapon == WeaponKind::Knife)
+    {
+        width = 8;
+        depth = 6;
+    }
+    if (impact.weapon == WeaponKind::Katana)
+    {
+        width = 19;
+        depth = 9;
+    }
+    if (impact.weapon == WeaponKind::Bat)
+    {
+        width = 24;
+        depth = 8;
+    }
+    if (impact.weapon == WeaponKind::Shotgun)
+    {
+        width = 18;
+        depth = 7;
+    }
+    DamageMark* merged = nullptr;
+    for (auto& mark : shape.marks)
+        if (mark.weapon == WeaponKind::Shotgun && impact.weapon == WeaponKind::Shotgun &&
+            mark.volley == impact.volley && mark.shooter == impact.shooter &&
+            std::hypot(mark.local.x - impact.local.x, mark.local.y - impact.local.y) < mark.width * .6f + 8)
+        {
+            width = std::min(30.f, mark.width + 3);
+            depth = std::min(12.f, mark.depth + 1);
+            merged = &mark;
+            break;
+        }
+    std::vector<float> arc{0};
+    float nearest = 1e9f, contactArc = 0;
+    Vec2 normal;
+    for (std::size_t n = 0; n < original.size(); ++n)
+    {
+        auto a = original[n], b = original[(n + 1) % original.size()];
+        Vec2 edge{b.x - a.x, b.y - a.y};
+        float length = std::hypot(edge.x, edge.y);
+        const float t = std::clamp(((impact.local.x - a.x) * edge.x + (impact.local.y - a.y) * edge.y) /
+                                       (length * length),
+                                   0.f, 1.f);
+        const float distance =
+            std::hypot(a.x + edge.x * t - impact.local.x, a.y + edge.y * t - impact.local.y);
+        if (distance < nearest)
+        {
+            nearest = distance;
+            contactArc = arc.back() + length * t;
+            normal = {-edge.y / length, edge.x / length};
+        }
+        arc.push_back(arc.back() + length);
+    }
+    // A clipped-away area may not be moved elsewhere to satisfy an HP threshold.
+    if (nearest > 6)
+        return {};
+    const float perimeter = arc.back();
+    auto at = [&](float distance)
+    {
+        distance = std::fmod(distance + perimeter * 4, perimeter);
+        const auto n = std::min(
+            original.size() - 1,
+            static_cast<std::size_t>(std::upper_bound(arc.begin(), arc.end(), distance) - arc.begin() - 1));
+        float t = (distance - arc[n]) / (arc[n + 1] - arc[n]);
+        auto a = original[n], b = original[(n + 1) % original.size()];
+        return Vec2{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t};
+    };
+    for (unsigned attempt = 0; attempt < 6; ++attempt)
+    {
+        float begin = contactArc - width / 2, end = contactArc + width / 2;
+        while (begin < 0)
+        {
+            begin += perimeter;
+            end += perimeter;
+        }
+        Vec2 first = at(begin), last = at(end);
+        Polygon cut{first};
+        for (unsigned n = 1; n <= 3; ++n)
+        {
+            const float t = n / 4.f;
+            const float noise =
+                impact.weapon == WeaponKind::Katana ? 1.f : .72f + (hash(impact.seed + n * 17) % 100) * .004f;
+            cut.push_back(
+                {first.x + (last.x - first.x) * t + normal.x * depth * std::sin(t * 3.14159265f) * noise,
+                 first.y + (last.y - first.y) * t + normal.y * depth * std::sin(t * 3.14159265f) * noise});
+        }
+        cut.push_back(last);
+        Polygon kept = cut, removed{first};
+        for (std::size_t n = 1; n <= original.size() * 3; ++n)
+        {
+            const auto index = n % original.size();
+            float s = arc[index] + static_cast<float>(n / original.size()) * perimeter;
+            if (s > begin + .001f && s < end - .001f)
+                removed.push_back(original[index]);
+        }
+        removed.push_back(last);
+        for (std::size_t n = cut.size() - 1; n > 0; --n)
+            removed.push_back(cut[n - 1]);
+        for (std::size_t n = 1; n <= original.size() * 4; ++n)
+        {
+            const auto index = n % original.size();
+            float s = arc[index] + static_cast<float>(n / original.size()) * perimeter;
+            if (s > end + .001f && s < begin + perimeter - .001f)
+                kept.push_back(original[index]);
+        }
+        kept = clean(std::move(kept));
+        removed = clean(std::move(removed));
+        bool core = true;
+        for (auto point : {Vec2{12, 12}, Vec2{36, 12}, Vec2{36, 36}, Vec2{12, 36}, Vec2{24, 24}})
+            core = core && containsPoint(kept, point);
+        if (core && validPolygon(kept) && validPolygon(removed) && polygonArea(kept) >= 48 * 48 * .7f &&
+            std::abs(polygonArea(kept) + polygonArea(removed) - polygonArea(original)) < .05f)
+        {
+            shape.outline = std::move(kept);
+            ++shape.revision;
+            if (merged)
+            {
+                merged->local = {(merged->local.x + impact.local.x) / 2,
+                                 (merged->local.y + impact.local.y) / 2};
+                merged->width = width;
+                merged->depth = std::max(merged->depth, depth);
+            }
+            else
+            {
+                if (shape.marks.size() >= 12)
+                    shape.marks.erase(shape.marks.begin());
+                shape.marks.push_back(
+                    {impact.local, width, depth, impact.weapon, impact.shooter, impact.volley});
+            }
+            return removed;
+        }
+        width *= .78f;
+        depth *= .68f;
+    }
+    return {};
+}
+
+std::pair<Polygon, Polygon> fracturePolygon(const Polygon& p, Vec2 normal, float offset, unsigned seed,
+                                            bool straight)
+{
+    auto a = clipPolygon(p, normal, offset), b = clipPolygon(p, {-normal.x, -normal.y}, -offset);
+    if (straight || a.empty() || b.empty())
+        return {a, b};
+    const Vec2 tangent{-normal.y, normal.x};
+    float lo = 1e9f, hi = -1e9f;
+    for (auto v : a)
+        if (std::abs(dot(v, normal) - offset) < .001f)
+        {
+            lo = std::min(lo, dot(v, tangent));
+            hi = std::max(hi, dot(v, tangent));
+        }
+    auto tear = [&](const Polygon& source, float amplitude)
+    {
+        Polygon result;
+        for (std::size_t n = 0; n < source.size(); ++n)
+        {
+            auto from = source[n], to = source[(n + 1) % source.size()];
+            result.push_back(from);
+            if (std::abs(dot(from, normal) - offset) > .001f || std::abs(dot(to, normal) - offset) > .001f)
+                continue;
+            if (std::hypot(to.x - from.x, to.y - from.y) < 6)
+                continue;
+            for (unsigned j = 1; j < 4; ++j)
+            {
+                float t = j / 4.f;
+                Vec2 v{from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t};
+                unsigned slot =
+                    static_cast<unsigned>(std::lround((dot(v, tangent) - lo) / std::max(.01f, hi - lo) * 4));
+                float wobble = (static_cast<int>(hash(seed + slot * 113) % 201) - 100) / 100.f * amplitude;
+                v.x += normal.x * wobble;
+                v.y += normal.y * wobble;
+                result.push_back(v);
+            }
+        }
+        return clean(std::move(result));
+    };
+    for (float scale : {1.f, .5f, .2f})
+    {
+        auto x = tear(a, std::min(4.f, (hi - lo) * .13f) * scale),
+             y = tear(b, std::min(4.f, (hi - lo) * .13f) * scale);
+        if (validPolygon(x) && validPolygon(y) &&
+            std::abs(polygonArea(x) + polygonArea(y) - polygonArea(p)) < .05f)
+            return {x, y};
+    }
+    return {a, b};
 }
 
 float polygonArea(const Polygon& p)

@@ -1,7 +1,7 @@
-#include "client/BitmapFont.h"
 #include "client/Input.h"
 #include "client/Menu.h"
 #include "client/MenuRenderer.h"
+#include "client/UiText.h"
 
 #include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
@@ -250,10 +250,10 @@ void testMenuRendering()
                "Russian menus render without window or font dependencies");
         Uint8 r, g, b, a;
         const Rect button = menu.buttons()[0].bounds;
-        expect(SDL_ReadSurfacePixel(surface.get(), static_cast<int>(button.position.x + 3),
+        expect(SDL_ReadSurfacePixel(surface.get(), static_cast<int>(button.position.x),
                                     static_cast<int>(button.position.y + 5), &r, &g, &b, &a) &&
-                   r == 255 && g == 200 && b == 77,
-               "Selected button has a visible gold accent");
+                   r == 94 && g == 177 && b == 255,
+               "Selected button has a clear blue outline");
         if (screen == 0)
             menu.activate();
         else if (screen == 1)
@@ -290,7 +290,7 @@ void testMenuRendering()
             expect(SDL_SaveBMP(surface.get(), path.string().c_str()), "Save interface preview");
         }
     }
-    expect(textWidth(U"Играть", 3) > 80 && textWidth(U"Играть", 3) < 150,
+    expect(textWidth(renderer.get(), U"Играть", 3) > 80 && textWidth(renderer.get(), U"Играть", 3) < 150,
            "Cyrillic text measures letters, not UTF-8 bytes");
 }
 

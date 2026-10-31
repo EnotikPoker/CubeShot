@@ -65,6 +65,8 @@ public:
     explicit Match(bool voting = false, std::uint32_t seed = 0)
         : voting_(voting), random_(seed ? seed : std::random_device{}())
     {
+        visualSeed_ = seed ? (seed ^ 0xa31b29f7u) : std::random_device{}();
+        world_.setVisualSeed(visualSeed_);
     }
 
     bool selectMap(PlayerId id, MapId map, std::uint64_t revision);
@@ -117,5 +119,6 @@ private:
     float remaining_ = 0;
     PlayerId winner_ = 0;
     std::mt19937 random_;
+    unsigned visualSeed_ = 0;
 };
 } // namespace cubeshot

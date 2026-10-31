@@ -47,6 +47,7 @@ void World::resetPlayers(bool swapSpawns)
     }
     pendingDamage_.assign(players_.size(), 0);
     pendingCauses_.assign(players_.size(), {});
+    pendingContacts_.assign(players_.size(), {});
     pendingImpact_.assign(players_.size(), {});
 }
 
@@ -99,6 +100,8 @@ void World::update(float deltaSeconds, bool damageLiving)
         std::fill(pendingDamage_.begin(), pendingDamage_.end(), 0);
         for (auto& causes : pendingCauses_)
             causes.clear();
+        for (auto& contacts : pendingContacts_)
+            contacts.clear();
         ++tick_;
         simulateBodies(players_, arena_, step);
         debris_.update(step, arena_, players_);
@@ -149,6 +152,27 @@ void World::update(float deltaSeconds, bool damageLiving)
                                                  players_[i].lastDamageWeapon == marker.weapon
                                              ? players_[i].lastVolleyDamage
                                              : marker.damage;
+                ImpactContext cause;
+                float total = 0;
+                Vec2 sum{};
+                unsigned seed = 0;
+                for (const auto& contact : pendingContacts_[i])
+                    if (contact.weapon == marker.weapon && contact.shooter == marker.shooterId &&
+                        contact.volley == marker.volley)
+                    {
+                        cause = contact;
+                        total += contact.damage;
+                        sum.x += contact.local.x * contact.damage;
+                        sum.y += contact.local.y * contact.damage;
+                        seed ^= contact.seed;
+                    }
+                if (total > 0)
+                {
+                    cause.local = {sum.x / total, sum.y / total};
+                    cause.seed = seed;
+                    cause.damage = volleyDamage;
+                    players_[i].lastImpact = cause;
+                }
                 debris_.spawn(players_[i], velocity, deathImpact, marker.weapon, volleyDamage);
                 emit(EventKind::Death, marker, players_[i].position, players_[i].id);
                 events_.back().volleyDamage = volleyDamage;

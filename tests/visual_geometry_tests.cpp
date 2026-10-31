@@ -1,6 +1,7 @@
 #include "game/Arena.h"
 #include "game/Debris.h"
 #include "game/Shape.h"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -14,97 +15,68 @@ void expect(bool b, const char* why)
         throw std::runtime_error(why);
 }
 
+ImpactContext impact(Vec2 at, WeaponKind kind = WeaponKind::Pistol, unsigned seed = 42)
+{
+    return {at, {1, 0}, kind, weaponDefinition(kind).damage, 1, 1, seed};
+}
+
 void contours()
 {
     DamageShape shape;
-    for (unsigned n = 0; n < 6; ++n)
-    {
-        expect(addEdgeChip(shape, {24, 0}, n), "Six chips can occupy different edge locations");
-        const auto p = damageOutline(shape);
-        expect(validPolygon(p) && polygonArea(p) >= 48 * 48 * .85f,
-               "Damaged outline is valid and retains a dense centre");
-        for (auto at : {Vec2{8, 8}, Vec2{40, 8}, Vec2{40, 40}, Vec2{8, 40}, Vec2{24, 24}})
-            expect(containsPoint(p, at), "Centre never becomes perforated");
-    }
-    expect(!addEdgeChip(shape, {0, 0}, 99), "Chip budget is bounded");
-    DamageShape cut;
-    cut.count = 1;
-    cut.revision = 1;
-    cut.chips[0] = {0, 24, 12, 6};
-    const auto p = damageOutline(cut);
-    expect(!hitPolygon({22, -4}, {26, 0}, p, 0),
-           "A ray through removed material does not hit the old rectangle");
-    expect(hitPolygon({5, -20}, {5, 20}, p, 3).has_value(),
-           "Remaining body still blocks a bullet with radius");
-    auto hit = hitPolygon({24, -20}, {24, 20}, p, 3);
-    expect(hit && *hit > .5f, "Radius-aware hit moves inward at the chipped edge");
+    const auto removed = carveImpact(shape, impact({0, 24}));
+    expect(!removed.empty() && shape.marks.size() == 1 && shape.revision == 1,
+           "One impact produces one local injury and actual detached material");
+    auto p = damageOutline(shape);
+    expect(validPolygon(p) && validPolygon(removed), "Carved material and remaining body are valid polygons");
+    expect(std::abs(polygonArea(p) + polygonArea(removed) - 2304) < .05f, "Material is conserved when hit");
+    for (auto v : removed)
+        expect(v.x < 14 && v.y > 8 && v.y < 40,
+               "Removed material stays near the actual contact, never moves to another edge");
+    expect(!hitPolygon({-5, 23}, {0, 25}, p, 0),
+           "A bullet crosses the removed material without hitting the old box");
+    expect(hitPolygon({20, -10}, {20, 20}, p, 3).has_value(), "Remaining body blocks a radius-aware bullet");
     const auto triangles = triangulate(p);
     float area = 0;
-    for (std::size_t i = 0; i < triangles.size(); i += 3)
-        area += polygonArea({p[triangles[i]], p[triangles[i + 1]], p[triangles[i + 2]]});
-    expect(std::abs(area - polygonArea(p)) < .01f, "Rendered triangles cover exactly the collision contour");
+    for (std::size_t n = 0; n < triangles.size(); n += 3)
+        area += polygonArea({p[triangles[n]], p[triangles[n + 1]], p[triangles[n + 2]]});
+    expect(std::abs(area - polygonArea(p)) < .05f, "Render triangulation matches the bullet outline");
+    const auto previous = p;
+    carveImpact(shape, impact({48, 10}, WeaponKind::Flamethrower));
+    expect(shape.charred && shape.scorch > 0 && damageOutline(shape).size() == previous.size(),
+           "Fire chars locally rather than inventing bite marks");
+    DamageShape pellets;
+    carveImpact(pellets, impact({0, 20}, WeaponKind::Shotgun, 5));
+    carveImpact(pellets, impact({0, 25}, WeaponKind::Shotgun, 6));
+    expect(pellets.marks.size() == 1, "Nearby contacts from one shotgun volley merge into one torn region");
+    auto different = impact({48, 24}, WeaponKind::Shotgun, 7);
+    different.volley = 2;
+    carveImpact(pellets, different);
+    expect(pellets.marks.size() == 2, "A distinct volley at another position makes its own local injury");
 }
 
 void malformedAndPose()
 {
-    expect(!validPolygon({{0, 0}, {30, 30}, {0, 30}, {30, 0}}), "Crossed outlines are rejected");
+    expect(!validPolygon({{0, 0}, {30, 30}, {0, 30}, {30, 0}}), "Crossing contours are rejected");
     expect(!validPolygon({{0, 0}, {48, 0}, {48, 48}, {24, 0}, {0, 48}}),
-           "Non-adjacent touching edges are rejected");
+           "Touching nonadjacent edges are rejected");
     expect(!validPolygon({{0, 0}, {48, 0}, {48, 0}, {0, 48}}), "Duplicate vertices are rejected");
     Player p;
     p.velocity = {200, -400};
-    addEdgeChip(p.surface, {0, 24}, 10);
+    p.motionPhase = 1.2f;
+    p.lean = .5f;
     const Vec2 at{14, 17};
     const auto result = p.bodyLocal(p.bodyPoint(at));
-    expect(std::hypot(result.x - at.x, result.y - at.y) < .001f,
-           "Body-local hits survive animated pose transforms");
-    expect(validPolygon(p.bodyContour()), "Animated pose retains a valid common collision/render outline");
-}
-
-void stressFragments()
-{
-    Player player;
-    player.id = 2;
-    player.position = {350, 380};
-    player.health = 0;
-    const auto arena = Arena::createDefault();
-    for (unsigned seed = 0; seed < 80; ++seed)
-    {
-        player.surface = {};
-        for (unsigned chip = 0; chip < 6; ++chip)
-            addEdgeChip(player.surface,
-                        {float((seed * 17 + chip * 7) % 48), float((seed * 11 + chip * 19) % 48)},
-                        seed + chip);
-        Debris debris;
-        debris.spawn(player, {}, {1, 0}, WeaponKind::Rpg, 100);
-        float area = 0;
-        for (const auto& piece : debris.pieces())
-        {
-            expect(validPolygon(piece.outline),
-                   "Seeded chipped-body fracture never produces malformed polygons");
-            area += polygonArea(piece.outline);
-        }
-        expect(std::abs(area - polygonArea(player.bodyContour())) < .1f,
-               "Seeded fractures conserve material, including concave edges");
-    }
-    Debris full;
-    for (int n = 0; n < 12; ++n)
-        full.spawn(player, {}, {1, 0}, WeaponKind::Rpg, 100);
-    expect(full.pieces().size() == Debris::maxPieces,
-           "Debris count reaches but never exceeds physical budget");
-    for (int tick = 0; tick < 360; ++tick)
-        full.update(1.f / 120, arena, {});
-    for (const auto& piece : full.pieces())
-        expect(std::isfinite(piece.position.y) && std::isfinite(piece.angle),
-               "Full-budget physics remains finite");
-    Bullet b;
-    b.damage = 100;
-    b.velocity = {800, 0};
-    for (std::size_t n = 0; n < full.pieces().size(); ++n)
-        expect(full.hit({0, true, n}, b, full.pieces()[n].position),
-               "Even at the budget, depleted pieces must be destructible");
-    full.update(1.f / 120, arena, {});
-    expect(full.pieces().empty(), "Destroyed physical pieces are removed, leaving no invisible blockers");
+    expect(std::hypot(at.x - result.x, at.y - result.y) < .001f,
+           "Pose and local impact coordinates are exact inverse transforms");
+    expect(validPolygon(p.bodyContour()), "Animated body has a valid common collision and visual outline");
+    p.grounded = true;
+    p.velocity = {280, 0};
+    p.motionPhase = 0;
+    const auto first = p.bodyPoint({0, 0});
+    p.motionPhase = 1.57f;
+    expect(std::hypot(first.x - p.bodyPoint({0, 0}).x, first.y - p.bodyPoint({0, 0}).y) > .5f,
+           "Walking visibly animates the body");
+    expect(std::abs(p.bodyPoint({0, 48}).y - 48) < .001f, "Grounded animation keeps the feet on the support");
 }
 
 void fractures()
@@ -113,7 +85,6 @@ void fractures()
     player.id = 2;
     player.position = {300, 392};
     player.health = 0;
-    addEdgeChip(player.surface, {0, 12}, 42);
     for (auto entry : {std::pair<WeaponKind, unsigned>{WeaponKind::Pistol, 0},
                        {WeaponKind::Rpg, 6},
                        {WeaponKind::Sniper, 3},
@@ -122,33 +93,117 @@ void fractures()
                        {WeaponKind::Shotgun, 3}})
     {
         Debris debris;
+        player.lastImpact = impact({0, 20}, entry.first);
         debris.spawn(player, {}, {1, 0}, entry.first, 100);
-        expect(debris.pieces().size() == entry.second, "Weapon produces its own death fracture profile");
-        float area = 0;
-        if (entry.second)
+        const auto parts = std::count_if(debris.pieces().begin(), debris.pieces().end(),
+                                         [](const auto& p) { return p.kind == PieceKind::Corpse; });
+        expect(parts == entry.second, "Weapon-specific profiles retain correct physical material counts");
+        if (parts)
         {
-            expect(debris.corpses()[0].body.outline.empty(), "No ghost main body survives fragmentation");
-            for (const auto& p : debris.pieces())
-            {
-                expect(validPolygon(p.outline) && !p.hull.empty(),
-                       "Fragments have valid irregular physical shapes");
-                area += polygonArea(p.outline);
-            }
-            expect(std::abs(area - polygonArea(damageOutline(player.surface))) < .1f,
-                   "Fracture conserves the visible material area");
+            float area = 0;
+            for (const auto& part : debris.pieces())
+                if (part.kind == PieceKind::Corpse)
+                {
+                    expect(validPolygon(part.outline), "Every torn piece has valid geometry");
+                    expect(!part.hasEye || containsPoint(part.outline, part.eye),
+                           "Attached eye stays inside its actual recentered fragment");
+                    area += polygonArea(part.outline);
+                }
+            expect(std::abs(area - 2304) < .1f, "Body fracture conserves all body material");
         }
-        else
-            expect(debris.corpses()[0].body.size.x == 48, "Ordinary death retains the full cube size");
+        int eyes = 0;
+        for (const auto& c : debris.corpses())
+            eyes += c.body.hasEye && !c.body.outline.empty();
+        for (const auto& p : debris.pieces())
+            eyes += p.kind == PieceKind::Eye || p.hasEye;
+        expect(eyes == 1, "Exactly one attached or detached eye survives fracture");
         auto arena = Arena::createDefault();
-        for (int tick = 0; tick < 600; ++tick)
+        for (int tick = 0; tick < 500; ++tick)
             debris.update(1.f / 120, arena, {});
         for (const auto& p : debris.pieces())
-            expect(std::isfinite(p.position.x) && std::isfinite(p.angle) && p.position.y < 440,
-                   "Fragments settle within arena bounds");
+            expect(std::isfinite(p.position.y) && std::isfinite(p.angle),
+                   "Fragments and eyes remain physically finite");
     }
-    Debris burned;
-    burned.spawn(player, {}, {}, WeaponKind::Flamethrower, 3);
-    expect(burned.corpses()[0].body.charred && burned.pieces().empty(), "Fire leaves an intact charred body");
+    Debris corpse;
+    corpse.spawn(player, {}, {});
+    auto eye = piecePoint(corpse.corpses()[0].body, corpse.corpses()[0].body.eye);
+    Bullet b;
+    b.damage = 20;
+    b.velocity = {800, 0};
+    corpse.hit({0, false, 0}, b, eye);
+    expect(!corpse.corpses()[0].body.hasEye &&
+               std::count_if(corpse.pieces().begin(), corpse.pieces().end(),
+                             [](const auto& p) { return p.kind == PieceKind::Eye; }) == 1,
+           "A hit near the corpse eye detaches it exactly once");
+    corpse.hit({0, false, 0}, b, eye);
+    expect(std::count_if(corpse.pieces().begin(), corpse.pieces().end(),
+                         [](const auto& p) { return p.kind == PieceKind::Eye; }) == 1,
+           "Repeated hits never duplicate an eye");
+}
+
+void stress()
+{
+    Player player;
+    player.id = 2;
+    player.position = {350, 380};
+    player.health = 0;
+    auto arena = Arena::createDefault();
+    Polygon previous;
+    for (unsigned seed = 1; seed <= 80; ++seed)
+    {
+        player.surface = {};
+        for (unsigned n = 0; n < 10; ++n)
+        {
+            auto point = n % 4 == 0   ? Vec2{0, float((seed * 7 + n * 11) % 48)}
+                         : n % 4 == 1 ? Vec2{48, float((seed * 13 + n * 7) % 48)}
+                         : n % 4 == 2 ? Vec2{float((seed + n * 11) % 48), 0}
+                                      : Vec2{float((seed * 3 + n * 7) % 48), 48};
+            carveImpact(player.surface, impact(point, WeaponKind::Revolver, seed + n));
+            auto outline = damageOutline(player.surface);
+            expect(validPolygon(outline) && polygonArea(outline) >= 2304 * .7f,
+                   "Repeated impacts respect area and vertex budgets");
+            for (auto core : {Vec2{12, 12}, Vec2{36, 12}, Vec2{36, 36}, Vec2{12, 36}})
+                expect(containsPoint(outline, core), "A living cube keeps a connected central body");
+        }
+        player.lastImpact = impact({0, 20}, WeaponKind::Rpg, seed);
+        Debris debris;
+        debris.spawn(player, {}, {1, 0}, WeaponKind::Rpg, 100);
+        float area = 0;
+        for (const auto& p : debris.pieces())
+            if (p.kind == PieceKind::Corpse)
+            {
+                expect(validPolygon(p.outline), "Seeded fractures never make invalid polygons");
+                area += polygonArea(p.outline);
+            }
+        expect(std::abs(area - polygonArea(damageOutline(player.surface))) < .15f,
+               "Tearing a damaged cube preserves the remaining material");
+        if (seed == 1)
+            previous = debris.pieces().back().outline;
+        if (seed == 2)
+        {
+            const auto& now = debris.pieces().back().outline;
+            bool different = now.size() != previous.size();
+            for (std::size_t n = 0; !different && n < now.size(); ++n)
+                different = std::hypot(now[n].x - previous[n].x, now[n].y - previous[n].y) > .01f;
+            expect(different, "Different impact seeds change the fracture pattern");
+        }
+    }
+    Debris full;
+    for (int n = 0; n < 14; ++n)
+        full.spawn(player, {}, {1, 0}, WeaponKind::Rpg, 100);
+    expect(full.pieces().size() == Debris::maxPieces, "Physical budget is bounded even with eyes");
+    Bullet bullet;
+    bullet.damage = 100;
+    bullet.velocity = {800, 0};
+    for (std::size_t n = 0; n < full.pieces().size(); ++n)
+        if (full.pieces()[n].kind == PieceKind::Corpse)
+            expect(full.hit({0, true, n}, bullet, full.pieces()[n].position),
+                   "Full-budget chunks remain destructible");
+    for (int tick = 0; tick < 200; ++tick)
+        full.update(1.f / 120, arena, {});
+    for (const auto& p : full.pieces())
+        expect(std::isfinite(p.position.x) && p.kind == PieceKind::Eye,
+               "Destroyed pieces never remain as invisible blockers");
 }
 } // namespace
 
@@ -159,8 +214,8 @@ int main()
         contours();
         malformedAndPose();
         fractures();
-        stressFragments();
-        std::cout << "Visual geometry passed\n";
+        stress();
+        std::cout << "Local damage, pose, irregular fracture and eye tests passed\n";
     }
     catch (const std::exception& e)
     {

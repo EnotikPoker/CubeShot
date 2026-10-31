@@ -107,12 +107,13 @@ class PackagingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "assets" / "fonts").mkdir(parents=True)
-            for name in ("effects.png", "materials.png", "font.png"):
+            for name in ("effects.png", "materials.png"):
                 (root / "assets" / name).write_bytes(b"\x89PNG\r\n\x1a\nfixture")
             (root / "assets" / "fonts" / "OFL.txt").write_text("OFL")
+            (root / "assets" / "fonts" / "Rubik.ttf").write_bytes(b"\x00\x01\x00\x00font")
             check_package.verify_visual_assets(root)
-            (root / "assets" / "font.png").unlink()
-            with self.assertRaisesRegex(RuntimeError, "font.png"):
+            (root / "assets" / "fonts" / "Rubik.ttf").unlink()
+            with self.assertRaisesRegex(RuntimeError, "Rubik.ttf"):
                 check_package.verify_visual_assets(root)
 
     def test_detect_missing_or_damaged_library(self):

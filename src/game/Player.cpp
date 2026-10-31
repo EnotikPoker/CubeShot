@@ -16,16 +16,23 @@ Rect Player::bounds() const
 
 Vec2 Player::bodyPoint(Vec2 local) const
 {
-    const float stretch = std::clamp(-velocity.y / 620.f, -.025f, .025f);
-    const float land = grounded ? std::min(std::abs(velocity.x) / moveSpeed, 1.f) * .012f : 0;
-    return {24 + (local.x - 24) * (1 - stretch + land), 48 + (local.y - 48) * (1 + stretch - land)};
+    const float stride =
+        grounded ? std::sin(motionPhase) * std::min(1.f, std::abs(velocity.x) / moveSpeed) : 0;
+    const float stretch =
+        grounded ? -landing * .1f + stride * .025f : std::clamp(-velocity.y / 620.f, -.04f, .065f);
+    const float shear = lean * .055f;
+    return {24 + (local.x - 24) * (1 - stretch * .65f) + (48 - local.y) * shear,
+            48 + (local.y - 48) * (1 + stretch)};
 }
 
 Vec2 Player::bodyLocal(Vec2 point) const
 {
-    const float stretch = std::clamp(-velocity.y / 620.f, -.025f, .025f);
-    const float land = grounded ? std::min(std::abs(velocity.x) / moveSpeed, 1.f) * .012f : 0;
-    return {24 + (point.x - 24) / (1 - stretch + land), 48 + (point.y - 48) / (1 + stretch - land)};
+    const float stride =
+        grounded ? std::sin(motionPhase) * std::min(1.f, std::abs(velocity.x) / moveSpeed) : 0;
+    const float stretch =
+        grounded ? -landing * .1f + stride * .025f : std::clamp(-velocity.y / 620.f, -.04f, .065f);
+    const float y = 48 + (point.y - 48) / (1 + stretch);
+    return {24 + (point.x - 24 - (48 - y) * lean * .055f) / (1 - stretch * .65f), y};
 }
 
 Polygon Player::bodyContour() const
@@ -43,7 +50,8 @@ bool Player::alive() const
 
 Vec2 Player::weaponOrigin() const
 {
-    return {position.x + size.x * 0.5f, position.y + size.y * 0.55f};
+    const auto local = bodyPoint({size.x * .5f, size.y * .55f});
+    return {position.x + local.x, position.y + local.y};
 }
 
 Vec2 Player::muzzlePosition() const
@@ -182,6 +190,9 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
     {
         const float step = static_cast<float>(std::min(remaining, maxStep));
         remaining -= std::min(remaining, maxStep);
+        const float oldX = position.x;
+        const bool wasGrounded = grounded;
+        const float falling = velocity.y;
         position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, arena.platforms);
         velocity.y += gravity * step;
         const auto movement =
@@ -191,7 +202,13 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         if (movement.blocked)
         {
             velocity.y = 0.0f;
+            if (!wasGrounded && falling > 90)
+                landing = std::min(1.f, falling / 600);
         }
+        if (grounded)
+            motionPhase = std::remainder(motionPhase + std::abs(position.x - oldX) * .16f, 6.2831853f);
+        landing = std::max(0.f, landing - step * 6);
+        lean += (velocity.x / moveSpeed - lean) * std::min(1.f, step * 14);
     }
     weapon.update(deltaSeconds);
 }

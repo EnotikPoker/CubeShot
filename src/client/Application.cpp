@@ -1,9 +1,9 @@
 #include "client/Application.h"
-#include "client/BitmapFont.h"
 #include "client/MenuRenderer.h"
 #include "client/SceneRenderer.h"
 #include "client/SettingsRenderer.h"
 #include "client/SettingsStore.h"
+#include "client/UiText.h"
 #include "client/WorldView.h"
 #include <SDL3/SDL.h>
 #include <algorithm>

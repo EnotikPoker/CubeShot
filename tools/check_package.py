@@ -124,10 +124,12 @@ def package_environment(profile, windows):
 
 
 def verify_visual_assets(package):
-    for name in ("effects.png", "materials.png", "font.png"):
+    for name in ("effects.png", "materials.png"):
         path = package / "assets" / name
         if not path.is_file() or path.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
             raise RuntimeError(f"Missing or invalid visual asset: assets/{name}")
+    if not (package / "assets" / "fonts" / "Rubik.ttf").is_file():
+        raise RuntimeError("Missing font asset: assets/fonts/Rubik.ttf")
     if not (package / "assets" / "fonts" / "OFL.txt").is_file():
         raise RuntimeError("Missing font license: assets/fonts/OFL.txt")
 

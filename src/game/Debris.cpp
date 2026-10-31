@@ -85,7 +85,9 @@ void collide(PhysicsPiece& p, Rect box, float dt)
     }
     if (normal.y < -.5f)
     {
-        p.velocity.x *= std::pow(.84f, dt * 120);
+        p.velocity.x *= std::pow(p.kind == PieceKind::Eye ? .97f : .84f, dt * 120);
+        if (p.kind == PieceKind::Eye)
+            p.spin = std::clamp(p.velocity.x / 3, -10.f, 10.f);
         p.spin *= std::pow(.87f, dt * 120);
         if (std::abs(p.velocity.y) < 18)
             p.velocity.y = 0;
@@ -200,6 +202,73 @@ void Debris::blast(Vec2 at, float radius)
     }
 }
 
+void Debris::chip(const Player& player, const Polygon& material, Vec2 impulse, unsigned seed, bool fatal)
+{
+    if (pieces_.size() >= maxPieces)
+    {
+        auto old = std::find_if(pieces_.begin(), pieces_.end(),
+                                [](const auto& p) { return p.kind == PieceKind::Chip; });
+        if (old == pieces_.end())
+            return;
+        pieces_.erase(old);
+    }
+    PhysicsPiece p;
+    p.id = nextId_++;
+    p.owner = player.id;
+    p.kind = PieceKind::Chip;
+    p.life = 6;
+    p.fractureSeed = seed;
+    p.outline = material;
+    for (auto& point : p.outline)
+        point = player.bodyPoint(point);
+    auto centre = polygonCentre(p.outline);
+    p.position = {player.position.x + centre.x, player.position.y + centre.y};
+    p.skinOffset = centre;
+    for (auto& point : p.outline)
+    {
+        point.x -= centre.x;
+        point.y -= centre.y;
+    }
+    p.velocity = {player.velocity.x * .3f + impulse.x * 170, player.velocity.y * .2f + impulse.y * 90 - 100};
+    p.spin = static_cast<int>(seed % 13) - 6.f;
+    const Vec2 anchor{player.aimDirection.x < 0 ? 11.f : 37.f, 15};
+    if (containsPoint(material, anchor))
+    {
+        const auto point = player.bodyPoint(anchor);
+        p.hasEye = true;
+        p.eye = {point.x - centre.x, point.y - centre.y};
+        p.kind = fatal ? PieceKind::Corpse : PieceKind::Chip;
+        p.life = fatal ? -1.f : 6.f;
+        if (player.lastImpact.weapon == WeaponKind::Rpg || player.lastImpact.weapon == WeaponKind::Sniper ||
+            player.lastImpact.weapon == WeaponKind::Shotgun)
+            detachEye(p, {impulse.x * 120, impulse.y * 90});
+    }
+    refreshPiece(p);
+    if (pieces_.size() < maxPieces)
+        pieces_.push_back(std::move(p));
+}
+
+void Debris::detachEye(PhysicsPiece& source, Vec2 impulse)
+{
+    if (!source.hasEye || pieces_.size() >= maxPieces)
+        return;
+    PhysicsPiece eye;
+    eye.id = nextId_++;
+    eye.owner = source.owner;
+    eye.kind = PieceKind::Eye;
+    eye.position = piecePoint(source, source.eye);
+    eye.velocity = {source.velocity.x + impulse.x * 1.4f, source.velocity.y + impulse.y - 110};
+    eye.spin = impulse.x * .02f;
+    for (int n = 0; n < 10; ++n)
+    {
+        const float angle = n * 6.2831853f / 10;
+        eye.outline.push_back({std::cos(angle) * 3.5f, std::sin(angle) * 3.5f});
+    }
+    refreshPiece(eye);
+    source.hasEye = false;
+    pieces_.push_back(std::move(eye));
+}
+
 void Debris::spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind cause, int volleyDamage)
 {
     Corpse corpse;
@@ -217,10 +286,21 @@ void Debris::spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind 
     }
     p.velocity = {velocity.x * .35f + impact.x * 110, std::min(velocity.y * .2f, 0.f) - 60};
     p.spin = impact.x * 2.4f;
+    p.fractureSeed = player.lastImpact.seed;
+    p.cleanCut = cause == WeaponKind::Katana;
+    p.hasEye = true;
+    const auto anchor = pose.bodyPoint({player.aimDirection.x < 0 ? 11.f : 37.f, 15});
+    p.eye = {anchor.x - 24, anchor.y - 24};
+    p.hasEye = containsPoint(p.outline, p.eye);
+    auto impactPoint = pose.bodyPoint(player.lastImpact.local);
+    p.fractureOrigin = {impactPoint.x - 24, impactPoint.y - 24};
     p.integrity = 100;
     p.charred = incendiaryWeapon(cause) || player.surface.charred;
     corpse.cause = cause;
     refreshPiece(p);
+    if (cause == WeaponKind::Rpg ||
+        ((cause == WeaponKind::Sniper || cause == WeaponKind::Shotgun) && volleyDamage >= 80))
+        detachEye(p, {impact.x * 110, impact.y * 75});
     unsigned count = cause == WeaponKind::Rpg                                              ? 6
                      : cause == WeaponKind::Sniper                                         ? 3
                      : (cause == WeaponKind::Katana || cause == WeaponKind::FireBoomerang) ? 2
@@ -250,8 +330,19 @@ void Debris::split(PhysicsPiece source, unsigned count, Vec2 impulse)
     std::vector<Polygon> parts{source.outline};
     while (parts.size() < count)
     {
-        auto largest = std::max_element(parts.begin(), parts.end(), [](const auto& a, const auto& b)
-                                        { return polygonArea(a) < polygonArea(b); });
+        auto largest = std::max_element(
+            parts.begin(), parts.end(),
+            [&](const auto& a, const auto& b)
+            {
+                auto weight = [&](const auto& poly)
+                {
+                    auto c = polygonCentre(poly);
+                    return polygonArea(poly) /
+                           (1 +
+                            std::hypot(c.x - source.fractureOrigin.x, c.y - source.fractureOrigin.y) * .025f);
+                };
+                return weight(a) < weight(b);
+            });
         if (largest == parts.end() || polygonArea(*largest) < 70)
             break;
         auto centre = polygonCentre(*largest);
@@ -260,14 +351,20 @@ void Debris::split(PhysicsPiece source, unsigned count, Vec2 impulse)
         // cut rather than joining disconnected material with a phantom bridge.
         for (unsigned attempt = 0; attempt < 16; ++attempt)
         {
-            float angle =
-                static_cast<float>(
-                    (source.id * 47 + parts.size() * 71 + source.revision * 19 + attempt * 29) % 180) *
-                .01745329252f;
+            float angle = std::atan2(impulse.y, impulse.x) +
+                          static_cast<float>((source.fractureSeed + source.id * 47 + parts.size() * 71 +
+                                              source.revision * 19 + attempt * 29) %
+                                             180) *
+                              .01745329252f;
             Vec2 normal{std::cos(angle), std::sin(angle)};
-            const float offset = dot(centre, normal);
-            a = clipPolygon(*largest, normal, offset);
-            b = clipPolygon(*largest, {-normal.x, -normal.y}, -offset);
+            const float offset =
+                dot(centre, normal) +
+                static_cast<float>(static_cast<int>((source.fractureSeed + parts.size() * 11) % 9) - 4);
+            auto partition = fracturePolygon(*largest, normal, offset,
+                                             source.fractureSeed + static_cast<unsigned>(parts.size() * 337),
+                                             source.cleanCut);
+            a = std::move(partition.first);
+            b = std::move(partition.second);
             if (validPolygon(a) && validPolygon(b))
                 break;
             a.clear();
@@ -290,6 +387,9 @@ void Debris::split(PhysicsPiece source, unsigned count, Vec2 impulse)
             v.x -= centre.x;
             v.y -= centre.y;
         }
+        p.eye = {source.eye.x - centre.x, source.eye.y - centre.y};
+        p.hasEye = source.hasEye && containsPoint(part, p.eye);
+        p.fractureOrigin = {source.fractureOrigin.x - centre.x, source.fractureOrigin.y - centre.y};
         p.outline = std::move(part);
         p.position = piecePoint(source, centre);
         p.skinOffset = {source.skinOffset.x + centre.x, source.skinOffset.y + centre.y};
@@ -307,6 +407,13 @@ void Debris::split(PhysicsPiece source, unsigned count, Vec2 impulse)
 
 void Debris::update(float dt, const Arena& arena, const std::vector<Player>& players)
 {
+    for (auto& piece : pieces_)
+        if (piece.life > 0)
+        {
+            piece.life = std::max(0.f, piece.life - dt);
+            if (piece.life == 0)
+                piece.outline.clear();
+        }
     pieces_.erase(
         std::remove_if(pieces_.begin(), pieces_.end(), [](const auto& p) { return p.outline.empty(); }),
         pieces_.end());
@@ -327,7 +434,9 @@ std::optional<DebrisHit> Debris::trace(Vec2 from, Vec2 to) const
             out = DebrisHit{*t, false, i};
         }
     for (std::size_t i = 0; i < pieces_.size(); ++i)
-        if (auto t = hitPiece(from, to, pieces_[i]); t && *t < nearest)
+        if (auto t = pieces_[i].kind == PieceKind::Corpse ? hitPiece(from, to, pieces_[i])
+                                                          : std::optional<float>{};
+            t && *t < nearest)
         {
             nearest = *t;
             out = DebrisHit{*t, true, i};
@@ -337,6 +446,8 @@ std::optional<DebrisHit> Debris::trace(Vec2 from, Vec2 to) const
 
 bool Debris::hit(const DebrisHit& target, const Bullet& bullet, Vec2 position)
 {
+    if (target.fragment && pieces_.capacity() < maxPieces)
+        pieces_.reserve(maxPieces);
     auto& p = target.fragment ? pieces_[target.index] : corpses_[target.index].body;
     if (p.outline.empty())
         return false;
@@ -351,6 +462,12 @@ bool Debris::hit(const DebrisHit& target, const Bullet& bullet, Vec2 position)
     p.velocity.y += impulse.y * massScale;
     p.spin = std::clamp(p.spin - (position.y - p.position.y) * impulse.x * .002f, -10.f, 10.f);
     p.sleep = 0;
+    if (p.hasEye)
+    {
+        const auto eye = piecePoint(p, p.eye);
+        if (std::hypot(eye.x - position.x, eye.y - position.y) < 12 || bullet.damage >= 70)
+            detachEye(p, impulse);
+    }
     if (target.fragment)
     {
         p.integrity -= bullet.damage;
@@ -373,6 +490,7 @@ bool Debris::hit(const DebrisHit& target, const Bullet& bullet, Vec2 position)
     if (corpse.integrity == 0)
     {
         auto source = p;
+        p.hasEye = false;
         p.outline.clear();
         p.hull.clear();
         split(source, 4, {impulse.x * .3f, impulse.y * .3f});
@@ -388,12 +506,16 @@ bool Debris::hit(const DebrisHit& target, const Bullet& bullet, Vec2 position)
         for (auto v : p.outline)
             far = std::max(far, dot(v, normal));
         float cut = far - std::clamp(bullet.damage * .18f, 2.f, 6.f);
-        auto kept = clipPolygon(p.outline, normal, cut),
-             chip = clipPolygon(p.outline, {-normal.x, -normal.y}, -cut);
+        auto partition =
+            fracturePolygon(p.outline, normal, cut, p.fractureSeed + p.revision * 193, p.cleanCut);
+        auto kept = std::move(partition.first), chip = std::move(partition.second);
         if (validPolygon(kept) && validPolygon(chip) && polygonArea(kept) > 300)
         {
             auto source = p;
             source.outline = std::move(chip);
+            source.hasEye = p.hasEye && containsPoint(source.outline, p.eye);
+            if (source.hasEye)
+                p.hasEye = false;
             p.outline = std::move(kept);
             ++p.revision;
             refreshPiece(p);

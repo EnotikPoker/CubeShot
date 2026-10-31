@@ -31,6 +31,8 @@ struct Player
     float burning = 0, burnTick = 0;
     PlayerId burnOwner = 0;
     DamageShape surface;
+    float motionPhase = 0, landing = 0, lean = 0;
+    ImpactContext lastImpact;
     PlayerId lastDamageActor = 0;
     std::uint32_t lastDamageVolley = 0;
     int lastVolleyDamage = 0;
