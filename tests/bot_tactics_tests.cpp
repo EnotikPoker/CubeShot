@@ -106,12 +106,13 @@ void enemyMeleeSpacing()
 
 void enemyFirearmSpacing()
 {
-    auto simulate = [](WeaponKind kind, bool overheated)
+    auto simulate =
+        [](WeaponKind kind, bool overheated, WeaponKind own = WeaponKind::Automatic, float x = 370)
     {
-        auto arena = flat(180, 370);
+        auto arena = flat(180, x);
         World world(arena, 2);
         world.equip(1, kind);
-        world.equip(2, WeaponKind::Automatic);
+        world.equip(2, own);
         BotController bot(arena, BotDifficulty::Hard, 77);
         for (int n = 0; n < 70; ++n)
         {
@@ -127,7 +128,8 @@ void enemyFirearmSpacing()
     };
     expect(simulate(WeaponKind::Smg, false) > simulate(WeaponKind::Pistol, false) + 20,
            "Automatic exploits its range advantage against SMG rather than using the pistol matchup");
-    expect(simulate(WeaponKind::Flamethrower, false) > simulate(WeaponKind::Flamethrower, true) + 20,
+    expect(simulate(WeaponKind::Minigun, false, WeaponKind::Revolver, 580) >
+               simulate(WeaponKind::Minigun, true, WeaponKind::Revolver, 580) + 20,
            "A visible enemy overheat opens an approach window instead of preserving unnecessary distance");
 }
 
