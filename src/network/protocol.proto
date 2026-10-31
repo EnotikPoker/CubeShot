@@ -1,11 +1,13 @@
 syntax = "proto3";
 package cubeshot.wire;
 message Vec { float x = 1; float y = 2; }
-message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; float spin = 12; float heat = 13; bool overheated = 14; float burning = 15; uint32 burn_owner = 16; uint32 damaged_cells = 17; }
+message Chip { uint32 edge = 1; float along = 2; float width = 3; float depth = 4; }
+message Surface { repeated Chip chips = 1; uint32 revision = 2; bool charred = 3; }
+message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; float spin = 12; float heat = 13; bool overheated = 14; float burning = 15; uint32 burn_owner = 16; reserved 17; Surface surface = 18; }
 message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; uint32 weapon = 7; uint32 damage = 8; float gravity = 9; uint32 volley = 10; float age = 11; bool returning = 12; uint32 hit_mask = 13; }
-message Piece { uint64 id = 1; uint32 owner = 2; Vec position = 3; Vec velocity = 4; Vec size = 5; float angle = 6; float spin = 7; }
+message Piece { uint64 id = 1; uint32 owner = 2; Vec position = 3; Vec velocity = 4; Vec size = 5; float angle = 6; float spin = 7; repeated Vec outline = 8; Vec skin_offset = 9; uint32 integrity = 10; uint32 revision = 11; bool charred = 12; }
 message Fire { uint64 id = 1; uint32 owner = 2; Vec position = 3; float life = 4; float radius = 5; }
-message Corpse { Piece body = 1; uint32 integrity = 2; uint32 cells = 3; }
+message Corpse { Piece body = 1; uint32 integrity = 2; reserved 3; uint32 cause = 4; }
 message Snapshot {
   uint64 tick = 1; uint32 round = 2; uint32 phase = 3; float remaining = 4;
   repeated uint32 score = 5; repeated bool connected = 6; repeated bool ready = 7;
@@ -23,7 +25,7 @@ message Control { uint64 sequence = 1; uint32 round = 2; float movement = 3; Vec
 message Action { uint64 sequence = 1; uint32 round = 2; bool jump = 3; bool shoot = 4; Vec aim = 5; uint64 input_sequence = 6; }
 message Ready { bool ready = 1; uint64 selection_revision = 2; }
 message MapChoice { uint32 map = 1; bool change = 2; uint64 selection_revision = 3; }
-message GameEvent { uint64 id = 1; uint64 tick = 2; uint64 shot_sequence = 3; uint32 round = 4; uint32 kind = 5; uint32 actor = 6; uint32 target = 7; Vec position = 8; Vec direction = 9; uint32 damage = 10; uint32 weapon = 11; uint32 volley = 12; }
+message GameEvent { uint64 id = 1; uint64 tick = 2; uint64 shot_sequence = 3; uint32 round = 4; uint32 kind = 5; uint32 actor = 6; uint32 target = 7; Vec position = 8; Vec direction = 9; uint32 damage = 10; uint32 weapon = 11; uint32 volley = 12; Vec local = 13; uint32 surface_revision = 14; uint32 volley_damage = 15; }
 message Events { repeated GameEvent events = 1; }
 message WeaponChoice { bool reroll = 1; uint32 round = 2; uint64 selection_revision = 3; }
 message Empty {}

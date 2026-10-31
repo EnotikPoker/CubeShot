@@ -123,6 +123,15 @@ def package_environment(profile, windows):
     return env
 
 
+def verify_visual_assets(package):
+    for name in ("effects.png", "materials.png", "font.png"):
+        path = package / "assets" / name
+        if not path.is_file() or path.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+            raise RuntimeError(f"Missing or invalid visual asset: assets/{name}")
+    if not (package / "assets" / "fonts" / "OFL.txt").is_file():
+        raise RuntimeError("Missing font license: assets/fonts/OFL.txt")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
@@ -134,6 +143,7 @@ def main():
         extract(args.archive.resolve(), root)
         package = root / "CubeShot"
         verify_files(package)
+        verify_visual_assets(package)
         metadata = json.loads((package / "PACKAGE.json").read_text(encoding="utf-8"))
         if metadata["version"] != args.version:
             raise RuntimeError("Package version does not match requested release")

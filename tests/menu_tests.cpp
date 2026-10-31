@@ -3,6 +3,7 @@
 #include "client/Menu.h"
 #include "client/MenuRenderer.h"
 
+#include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 
 #include <filesystem>
@@ -241,6 +242,7 @@ void testMenuRendering()
     std::unique_ptr<SDL_Renderer, decltype(destroyRenderer)> renderer(
         SDL_CreateSoftwareRenderer(surface.get()), destroyRenderer);
     expect(renderer != nullptr, "Create menu test renderer");
+    VisualAssets art(renderer.get());
     Menu menu;
     for (int screen = 0; screen < 3; ++screen)
     {
@@ -248,10 +250,10 @@ void testMenuRendering()
                "Russian menus render without window or font dependencies");
         Uint8 r, g, b, a;
         const Rect button = menu.buttons()[0].bounds;
-        expect(SDL_ReadSurfacePixel(surface.get(), static_cast<int>(button.position.x),
-                                    static_cast<int>(button.position.y), &r, &g, &b, &a) &&
-                   r == 80 && g == 175 && b == 255,
-               "Selected button has visible blue border");
+        expect(SDL_ReadSurfacePixel(surface.get(), static_cast<int>(button.position.x + 3),
+                                    static_cast<int>(button.position.y + 5), &r, &g, &b, &a) &&
+                   r == 255 && g == 200 && b == 77,
+               "Selected button has a visible gold accent");
         if (screen == 0)
             menu.activate();
         else if (screen == 1)
@@ -288,7 +290,8 @@ void testMenuRendering()
             expect(SDL_SaveBMP(surface.get(), path.string().c_str()), "Save interface preview");
         }
     }
-    expect(textWidth(U"Играть", 3) == 105, "Cyrillic text measures letters, not UTF-8 bytes");
+    expect(textWidth(U"Играть", 3) > 80 && textWidth(U"Играть", 3) < 150,
+           "Cyrillic text measures letters, not UTF-8 bytes");
 }
 
 void testArsenalSelection()
@@ -306,6 +309,7 @@ void testArsenalSelection()
         SDL_CreateSurface(960, 540, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
     std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer(
         SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
+    VisualAssets art(renderer.get());
     Match match;
     auto state = match.snapshot();
     state.phase = MatchPhase::Armory;

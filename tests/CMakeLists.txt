@@ -8,7 +8,7 @@ if(CUBESHOT_BUILD_CLIENT)
         ../src/client/SceneRenderer.cpp
         ../src/client/Effects.cpp
     )
-    target_link_libraries(cubeshot_renderer_tests PRIVATE cubeshot_game SDL3::SDL3)
+    target_link_libraries(cubeshot_renderer_tests PRIVATE cubeshot_game SDL3::SDL3 cubeshot_visuals)
     add_test(NAME renderer COMMAND cubeshot_renderer_tests)
 
     add_executable(cubeshot_menu_tests
@@ -122,3 +122,7 @@ add_test(NAME armory COMMAND cubeshot_armory_tests)
 add_executable(cubeshot_arsenal_tests arsenal_tests.cpp)
 target_link_libraries(cubeshot_arsenal_tests PRIVATE cubeshot_network)
 add_test(NAME arsenal COMMAND cubeshot_arsenal_tests)
+
+add_executable(cubeshot_visual_geometry_tests visual_geometry_tests.cpp)
+target_link_libraries(cubeshot_visual_geometry_tests PRIVATE cubeshot_game)
+add_test(NAME visual_geometry COMMAND cubeshot_visual_geometry_tests)

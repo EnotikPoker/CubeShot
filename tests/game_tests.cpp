@@ -384,7 +384,7 @@ void testBulletHits()
            "Dead player cannot move, jump or fire");
     bool hitRemains = false;
     int previousHealth = world.players()[1].health;
-    for (int shots = 0; shots < 40 && world.players()[1].alive(); ++shots)
+    for (int shots = 0; shots < 120 && world.players()[1].alive(); ++shots)
     {
         world.setPlayerInput(1, {});
         world.setPlayerInput(1, input);

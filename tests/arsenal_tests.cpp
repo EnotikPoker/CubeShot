@@ -180,11 +180,45 @@ void damageLocations()
 {
     World w(flat(300), 2);
     w.setPlayerInput(1, {0, false, true, {1, -.07f}});
-    advance(w, 40);
-    const auto mask = w.players()[1].damagedCells;
-    expect(mask != 0 && (mask & 0xff) != 0, "A high hit chips the upper body, not fixed lower corners");
+    bool localHit = false;
+    for (int tick = 0; tick < 40; ++tick)
+    {
+        w.update(dt);
+        for (const auto& event : w.takeEvents())
+            if (event.kind == EventKind::Hit)
+            {
+                const auto local = w.players()[1].bodyPoint(event.local);
+                expect(std::hypot(local.x + w.players()[1].position.x - event.position.x,
+                                  local.y + w.players()[1].position.y - event.position.y) < .01f,
+                       "Hit is attached in body-local coordinates, not an independent world-space sticker");
+                expect(event.surfaceRevision > 0, "Hit carries the authoritative damage-surface revision");
+                localHit = true;
+            }
+    }
+    expect(localHit, "Shot generates a local impact event");
+    const auto& shape = w.players()[1].surface;
+    expect(shape.count > 0 && shape.chips[0].edge != 2,
+           "A high hit chips the upper body, not fixed lower corners");
     w.resetPlayers();
-    expect(w.players()[1].damagedCells == 0, "New round restores the body silhouette");
+    expect(w.players()[1].surface.count == 0, "New round restores the body silhouette");
+    World lethal(flat(300), 2);
+    lethal.equip(1, WeaponKind::Sniper);
+    lethal.setPlayerInput(1, {0, false, true, {1, 0}, true});
+    bool death = false;
+    for (int tick = 0; tick < 100; ++tick)
+    {
+        lethal.update(dt);
+        for (const auto& event : lethal.takeEvents())
+            if (event.kind == EventKind::Death)
+            {
+                death = true;
+                expect(event.weapon == WeaponKind::Sniper && event.actor == 1 && event.volleyDamage == 100,
+                       "Death carries the actual lethal weapon, shooter and complete volley damage");
+            }
+    }
+    expect(death && lethal.debris().corpses()[0].cause == WeaponKind::Sniper &&
+               lethal.debris().pieces().size() == 3,
+           "World chooses the sniper fracture profile from authoritative combat, not a default pistol");
 }
 
 void wireState()
@@ -199,7 +233,7 @@ void wireState()
     s.players[1].weapon.equip(WeaponKind::Flamethrower);
     s.players[1].burning = 2;
     s.players[1].burnOwner = 1;
-    s.players[1].damagedCells = 0x21;
+    addEdgeChip(s.players[1].surface, {0, 14}, 1);
     s.fires.push_back({8, 1, {200, 439}, 2, 25});
     Bullet b;
     b.id = 10;
@@ -212,7 +246,7 @@ void wireState()
     auto encoded = encodeSnapshot(s);
     auto out = decodeSnapshot(encoded);
     expect(out && out->fires.size() == 1 && out->players[0].weapon.overheated &&
-               out->players[1].burning == 2 && out->players[1].damagedCells == 0x21 &&
+               out->players[1].burning == 2 && out->players[1].surface.count == 1 &&
                out->bullets[0].returning,
            "Arsenal state survives network roundtrip");
     encoded.mutable_fires(0)->set_radius(std::numeric_limits<float>::infinity());

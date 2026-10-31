@@ -127,6 +127,7 @@ def windows_libraries(metadata, package):
 def copy_licenses(metadata, package, system_libraries):
     destination = package / "licenses"
     shutil.copytree(ROOT / "packaging" / "licenses", destination)
+    shutil.copy2(ROOT / "assets" / "fonts" / "OFL.txt", destination / "Rubik-OFL.txt")
     shutil.copy2(Path(metadata["gns_source"]) / "LICENSE", destination / "GameNetworkingSockets.txt")
     installed = Path(metadata["vcpkg_installed"])
     for source in sorted((installed / "share").glob("*/copyright")):
@@ -175,6 +176,7 @@ def main():
         server = "cubeshot_server.exe" if windows else "cubeshot_server"
         shutil.copy2(metadata["client"], package / client)
         shutil.copy2(metadata["server"], package / server)
+        shutil.copytree(ROOT / "assets", package / "assets")
         system_libraries = (windows_libraries(metadata, package) if windows else
                             linux_libraries(metadata, package, args.allow_newer_glibc))
         copy_licenses(metadata, package, system_libraries)

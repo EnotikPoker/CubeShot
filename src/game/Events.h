@@ -25,5 +25,8 @@ struct GameEvent
     int damage = 0;
     WeaponKind weapon = WeaponKind::Pistol;
     std::uint32_t volley = 0;
+    Vec2 local;
+    unsigned surfaceRevision = 0;
+    int volleyDamage = 0;
 };
 } // namespace cubeshot

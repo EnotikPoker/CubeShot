@@ -29,7 +29,7 @@ void physical()
     debris.spawn(dead, {}, {1, 0});
     for (int tick = 0; tick < 240; ++tick)
         debris.update(1.f / 120, a, {});
-    expect(debris.corpses().size() == 1 && debris.corpses()[0].cells == 0xffff,
+    expect(debris.corpses().size() == 1 && debris.corpses()[0].body.outline.size() == 4,
            "Death creates one physical body");
     const auto settled = debris.corpses()[0].body;
     expect(settled.position.y > 410 && settled.position.y < 440, "Corpse falls and rests on terrain");
@@ -49,22 +49,19 @@ void physical()
     for (unsigned count = 0; count < 5; ++count)
     {
         const auto& corpse = debris.corpses()[0];
-        unsigned cell = 0;
-        while (cell < 16 && !(corpse.cells & (1u << cell)))
-            ++cell;
-        expect(cell < 16, "Body still contains cells before final hit");
-        const auto r = corpseCell(cell);
-        const auto centre = piecePoint(corpse.body, {r.position.x + 6, r.position.y + 4});
+        expect(!corpse.body.outline.empty(), "Body retains material before final hit");
+        const auto local = corpse.body.outline.front();
+        const auto centre = piecePoint(corpse.body, local);
         auto hit = debris.trace({centre.x - 100, centre.y}, centre);
         if (count == 0)
-            expect(hit && !hit->fragment, "Ray hits a remaining body cell");
-        const bool broken = debris.hit(DebrisHit{.5f, false, 0, cell}, bullet, centre);
+            expect(hit && !hit->fragment, "Ray hits the physical body");
+        const bool broken = debris.hit(DebrisHit{.5f, false, 0}, bullet, centre);
         expect(broken == (count == 4), "Body breaks progressively after accumulated damage");
         expect(debris.corpses()[0].integrity == 100 - static_cast<int>(count + 1) * 20,
                "Corpse integrity follows real bullet damage");
     }
-    expect(debris.corpses()[0].cells == 0 && debris.pieces().size() == 16,
-           "Final hit releases all remaining cells as physical fragments");
+    expect(debris.corpses()[0].body.outline.empty() && debris.pieces().size() >= 4,
+           "Final hit releases irregular physical fragments");
     for (int tick = 0; tick < 600; ++tick)
         debris.update(1.f / 120, a, {});
     for (const auto& piece : debris.pieces())

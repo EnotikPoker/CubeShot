@@ -54,13 +54,16 @@ int main()
         Corpse corpse;
         corpse.body = {10, 2, {300, 420}, {30, -20}, {48, 32}, .4f, 2};
         corpse.integrity = 80;
-        corpse.cells = 0xfffe;
+        corpse.body.outline = {{-24, -24}, {24, -24}, {24, 24}, {-24, 24}};
+        refreshPiece(corpse.body);
         rich.corpses.push_back(corpse);
         rich.pieces.push_back({11, 2, {310, 400}, {80, -60}, {11, 7}, .3f, 4});
+        rich.pieces.back().outline = {{-5.5f, -3.5f}, {5.5f, -3.5f}, {5.5f, 3.5f}, {-5.5f, 3.5f}};
+        refreshPiece(rich.pieces.back());
         auto encodedRich = encodeSnapshot(rich);
         auto decodedRich = decodeSnapshot(encodedRich);
-        expect(decodedRich && decodedRich->corpses[0].cells == 0xfffe && decodedRich->pieces[0].id == 11 &&
-                   decodedRich->players[0].weapon.charging &&
+        expect(decodedRich && decodedRich->corpses[0].body.outline.size() == 4 &&
+                   decodedRich->pieces[0].id == 11 && decodedRich->players[0].weapon.charging &&
                    decodedRich->players[0].weapon.kind == WeaponKind::Sniper &&
                    decodedRich->rolled[0] == WeaponKind::Shotgun,
                "Weapon, roulette and physical remains roundtrip");
@@ -68,8 +71,29 @@ int main()
         badPiece.mutable_pieces(0)->set_id(10);
         expect(!decodeSnapshot(badPiece), "Reject duplicate remains identities");
         badPiece = encodedRich;
-        badPiece.mutable_corpses(0)->set_cells(0x10000);
-        expect(!decodeSnapshot(badPiece), "Reject invalid corpse cell masks");
+        badPiece.mutable_corpses(0)->mutable_body()->mutable_outline(0)->set_x(1000);
+        expect(!decodeSnapshot(badPiece), "Reject invalid corpse contour");
+        badPiece = encodedRich;
+        auto* crossed = badPiece.mutable_pieces(0);
+        crossed->clear_outline();
+        for (auto at : {Vec2{-10, -10}, Vec2{10, 10}, Vec2{-10, 10}, Vec2{10, -10}})
+        {
+            auto* v = crossed->add_outline();
+            v->set_x(at.x);
+            v->set_y(at.y);
+        }
+        expect(!decodeSnapshot(badPiece), "Reject self-intersecting physical outlines from the network");
+        badPiece = encodedRich;
+        auto* surface = badPiece.mutable_players(0)->mutable_surface();
+        for (int n = 0; n < 2; ++n)
+        {
+            auto* c = surface->add_chips();
+            c->set_edge(0);
+            c->set_along(24);
+            c->set_width(12);
+            c->set_depth(6);
+        }
+        expect(!decodeSnapshot(badPiece), "Reject overlapping damage chips from the network");
         badPiece = encodedRich;
         badPiece.mutable_pieces(0)->set_angle(std::numeric_limits<float>::quiet_NaN());
         expect(!decodeSnapshot(badPiece), "Reject non-finite physical remains");
