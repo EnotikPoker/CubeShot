@@ -1,4 +1,5 @@
 #include "game/BotController.h"
+#include "game/BotMatch.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -174,6 +175,44 @@ void sniperAndSplash()
         "Bot reacts to rocket splash near the floor even when the rocket never directly intersects its body");
 }
 
+void liveRoundChange()
+{
+    BotMatch game(MapId::Duel, BotDifficulty::Easy, "Test", 42);
+    const auto arena = Arena::createDuel();
+    bool rolled = false, secondShot = false, secondHit = false, thirdShot = false;
+    for (int tick = 0; tick < 120 * 150 && !thirdShot; ++tick)
+    {
+        const auto state = game.snapshot();
+        if (state.phase == MatchPhase::Armory)
+            game.chooseWeapon(false);
+        game.control({});
+        if (state.phase == MatchPhase::Round && state.round == 1)
+        {
+            const auto& target = state.players[1];
+            BotTarget observed{target.position, target.velocity, target.size, target.grounded,
+                               target.weapon.kind};
+            if (auto aim = botAim(state.players[0], observed, arena);
+                aim && state.players[0].weapon.cooldown <= 0)
+                game.action(false, true, aim->direction);
+        }
+        if (state.phase == MatchPhase::Round && state.round >= 2)
+        {
+            rolled = rolled || state.players[1].weapon.kind != WeaponKind::Pistol;
+            secondHit = secondHit || state.players[0].health < 100;
+        }
+        game.update(dt);
+        for (const auto& event : game.takeEvents())
+            if (event.kind == EventKind::Shot && event.actor == 2 && event.weapon != WeaponKind::Pistol)
+            {
+                secondShot = secondShot || event.round >= 2;
+                thirdShot = thirdShot || event.round >= 3;
+            }
+    }
+    expect(rolled && secondShot && secondHit && thirdShot,
+           "A real bot match loses the pistol round, rolls a new weapon, attacks in round two and correctly "
+           "reuses it after the next reset");
+}
+
 void resetAndSafety()
 {
     auto a = flat(500, 600);
@@ -206,7 +245,9 @@ int main()
         movingMelee();
         sniperAndSplash();
         resetAndSafety();
-        std::cout << "196 weapon matchups, fire, moving melee, spacing and reset passed\n";
+        liveRoundChange();
+        std::cout
+            << "196 weapon matchups, fire, moving melee, splash and live round-two/three roulette passed\n";
     }
     catch (const std::exception& e)
     {

@@ -4,6 +4,7 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #include <map>
 #include <string>
+#include <string_view>
 #include <tuple>
 
 namespace cubeshot::client

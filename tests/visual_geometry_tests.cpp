@@ -77,6 +77,18 @@ void malformedAndPose()
     expect(std::hypot(first.x - p.bodyPoint({0, 0}).x, first.y - p.bodyPoint({0, 0}).y) > .5f,
            "Walking visibly animates the body");
     expect(std::abs(p.bodyPoint({0, 48}).y - 48) < .001f, "Grounded animation keeps the feet on the support");
+    p.grounded = false;
+    p.velocity.y = -600;
+    const auto rising = p.bodyPoint({0, 0});
+    p.velocity.y = -200;
+    expect(std::abs(rising.y - p.bodyPoint({0, 0}).y) > 1,
+           "Jump stretch changes with velocity instead of freezing in one pose throughout ascent");
+    p.grounded = true;
+    p.velocity = {};
+    p.landing = 1;
+    const auto landed = p.bodyPoint({0, 0});
+    p.landing = .4f;
+    expect(landed.y > 0 && p.bodyPoint({0, 0}).y < 0, "Landing has visible compression and a small rebound");
 }
 
 void fractures()
