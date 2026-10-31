@@ -157,6 +157,41 @@ void movingMelee()
     }
 }
 
+void meleePlatformDuel()
+{
+    for (auto kind : {WeaponKind::Bat, WeaponKind::Katana, WeaponKind::Knife})
+        for (bool stacked : {false, true})
+        {
+            auto arena = Arena::create(MapId::NatureSmall);
+            if (stacked)
+                arena.spawnPoints = {{261, 252}, {257, 322}};
+            World world(arena, 2);
+            world.equip(1, kind);
+            world.equip(2, kind);
+            BotController bots[]{BotController(arena, BotDifficulty::Hard, 42),
+                                 BotController(arena, BotDifficulty::Hard, 27)};
+            bool held[]{false, false};
+            for (int n = 0;
+                 n < 120 * 20 && world.players()[0].health == 100 && world.players()[1].health == 100; ++n)
+            {
+                for (int side = 0; side < 2; ++side)
+                {
+                    const PlayerId id = side + 1;
+                    auto input = bots[side].update(observeBot(world, id, 2 - side), dt);
+                    world.setPlayerInput(
+                        id, {input.moveDirection, false, false, input.aimDirection, input.triggerHeld});
+                    if (input.jump || (input.shoot && !held[side]))
+                        world.requestAction(id, input.jump, input.shoot && !held[side], input.aimDirection);
+                    held[side] = input.shoot;
+                }
+                world.update(dt);
+                world.takeEvents();
+            }
+            expect(world.players()[0].health < 100 || world.players()[1].health < 100,
+                   "Melee opponents close and fight even when initially separated by adjacent platforms");
+        }
+}
+
 void sniperAndSplash()
 {
     auto arena = flat(100, 1000);
@@ -273,6 +308,7 @@ int main()
         enemyMeleeSpacing();
         enemyFirearmSpacing();
         movingMelee();
+        meleePlatformDuel();
         sniperAndSplash();
         resetAndSafety();
         liveRoundChange();

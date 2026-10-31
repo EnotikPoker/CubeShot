@@ -496,7 +496,7 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
             return 950.f;
         if (wantsCover)
             return (close ? 400.f : 240.f);
-        if (threatMelee && distanceToEnemy < enemy.maximum + 60)
+        if (threatMelee && !meleeWeapon(self.weapon.kind) && distanceToEnemy < enemy.maximum + 60)
             return 650.f;
         return 0.f;
     };
