@@ -456,7 +456,12 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
     if (threatMelee && !meleeWeapon(self.weapon.kind))
         profile.minimum = std::max(profile.minimum, enemy.maximum + 85);
     const float enemyInterval = weaponDefinition(target->weapon).interval;
-    const bool enemyReady = time_ - enemyShotAt_ > enemyInterval || target->weapon != enemyWeapon_;
+    const bool enemyReady =
+        !target->overheated && (time_ - enemyShotAt_ > enemyInterval || target->weapon != enemyWeapon_);
+    // Use an actual range advantage against short-range firearms as well as melee.
+    // During an observed overheat/recovery window it is safe to keep closing.
+    if (enemyReady && !threatMelee && !meleeWeapon(self.weapon.kind) && profile.maximum > enemy.maximum + 60)
+        profile.minimum = std::max(profile.minimum, std::min(enemy.maximum + 45, profile.maximum - 20));
     const bool lethal = (target->weapon == WeaponKind::Sniper || target->weapon == WeaponKind::Rifle);
     bool covered = false;
     for (const auto& wall : arena_.platforms)

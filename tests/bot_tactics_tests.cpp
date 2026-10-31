@@ -104,6 +104,33 @@ void enemyMeleeSpacing()
     expect(katana > pistol + 5, "Ranged bot creates extra separation from enemy melee weapon");
 }
 
+void enemyFirearmSpacing()
+{
+    auto simulate = [](WeaponKind kind, bool overheated)
+    {
+        auto arena = flat(180, 370);
+        World world(arena, 2);
+        world.equip(1, kind);
+        world.equip(2, WeaponKind::Automatic);
+        BotController bot(arena, BotDifficulty::Hard, 77);
+        for (int n = 0; n < 70; ++n)
+        {
+            auto observation = observeBot(world, 2, 1);
+            observation.target->overheated = overheated;
+            auto input = bot.update(observation, dt);
+            world.setPlayerInput(2, {input.moveDirection, false, false, input.aimDirection, false});
+            if (input.jump)
+                world.requestAction(2, true, false, input.aimDirection);
+            world.update(dt);
+        }
+        return world.players()[1].position.x;
+    };
+    expect(simulate(WeaponKind::Smg, false) > simulate(WeaponKind::Pistol, false) + 20,
+           "Automatic exploits its range advantage against SMG rather than using the pistol matchup");
+    expect(simulate(WeaponKind::Flamethrower, false) > simulate(WeaponKind::Flamethrower, true) + 20,
+           "A visible enemy overheat opens an approach window instead of preserving unnecessary distance");
+}
+
 void movingMelee()
 {
     for (auto kind : {WeaponKind::Bat, WeaponKind::Katana, WeaponKind::Knife})
@@ -242,6 +269,7 @@ int main()
         knowledgeAndMatrix();
         fireEscape();
         enemyMeleeSpacing();
+        enemyFirearmSpacing();
         movingMelee();
         sniperAndSplash();
         resetAndSafety();
