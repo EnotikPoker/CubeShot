@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <string>
 using namespace cubeshot::client;
 
 void expect(bool b, const char* why)
