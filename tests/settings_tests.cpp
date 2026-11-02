@@ -1,10 +1,10 @@
-#include "client/BitmapFont.h"
 #include "client/Input.h"
 #include "client/Menu.h"
 #include "client/Profile.h"
 #include "client/SettingsController.h"
 #include "client/SettingsRenderer.h"
 #include "client/SettingsStore.h"
+#include "client/UiText.h"
 #include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 #include <cmath>

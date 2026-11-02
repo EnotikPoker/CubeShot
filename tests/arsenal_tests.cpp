@@ -197,10 +197,10 @@ void damageLocations()
     }
     expect(localHit, "Shot generates a local impact event");
     const auto& shape = w.players()[1].surface;
-    expect(shape.count > 0 && shape.chips[0].edge != 2,
+    expect(!shape.marks.empty() && shape.marks[0].local.y < 40,
            "A high hit chips the upper body, not fixed lower corners");
     w.resetPlayers();
-    expect(w.players()[1].surface.count == 0, "New round restores the body silhouette");
+    expect(w.players()[1].surface.marks.empty(), "New round restores the body silhouette");
     World lethal(flat(300), 2);
     lethal.equip(1, WeaponKind::Sniper);
     lethal.setPlayerInput(1, {0, false, true, {1, 0}, true});
@@ -217,7 +217,8 @@ void damageLocations()
             }
     }
     expect(death && lethal.debris().corpses()[0].cause == WeaponKind::Sniper &&
-               lethal.debris().pieces().size() == 3,
+               std::count_if(lethal.debris().pieces().begin(), lethal.debris().pieces().end(),
+                             [](const auto& p) { return p.kind == PieceKind::Corpse; }) == 3,
            "World chooses the sniper fracture profile from authoritative combat, not a default pistol");
 }
 
@@ -233,7 +234,7 @@ void wireState()
     s.players[1].weapon.equip(WeaponKind::Flamethrower);
     s.players[1].burning = 2;
     s.players[1].burnOwner = 1;
-    addEdgeChip(s.players[1].surface, {0, 14}, 1);
+    carveImpact(s.players[1].surface, {{0, 14}, {1, 0}, WeaponKind::Pistol, 20, 1, 1, 1});
     s.fires.push_back({8, 1, {200, 439}, 2, 25});
     Bullet b;
     b.id = 10;
@@ -246,7 +247,7 @@ void wireState()
     auto encoded = encodeSnapshot(s);
     auto out = decodeSnapshot(encoded);
     expect(out && out->fires.size() == 1 && out->players[0].weapon.overheated &&
-               out->players[1].burning == 2 && out->players[1].surface.count == 1 &&
+               out->players[1].burning == 2 && out->players[1].surface.marks.size() == 1 &&
                out->bullets[0].returning,
            "Arsenal state survives network roundtrip");
     encoded.mutable_fires(0)->set_radius(std::numeric_limits<float>::infinity());

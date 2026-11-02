@@ -38,7 +38,15 @@ WorldSnapshot SnapshotInterpolation::sample(const WorldSnapshot& latest, Clock::
             auto to = std::find_if(b.second.players.begin(), b.second.players.end(),
                                    [&](const auto& v) { return v.id == p.id; });
             if (from != a.second.players.end() && to != b.second.players.end() && p.alive())
+            {
                 p.position = lerp(from->position, to->position);
+                p.velocity = lerp(from->velocity, to->velocity);
+                p.motionPhase = std::remainder(
+                    from->motionPhase + std::remainder(to->motionPhase - from->motionPhase, 6.2831853f) * t,
+                    6.2831853f);
+                p.landing = from->landing + (to->landing - from->landing) * t;
+                p.lean = from->lean + (to->lean - from->lean) * t;
+            }
         }
         for (auto& bullet : out.bullets)
         {

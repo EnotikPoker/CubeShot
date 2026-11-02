@@ -85,15 +85,10 @@ int main()
         expect(!decodeSnapshot(badPiece), "Reject self-intersecting physical outlines from the network");
         badPiece = encodedRich;
         auto* surface = badPiece.mutable_players(0)->mutable_surface();
-        for (int n = 0; n < 2; ++n)
-        {
-            auto* c = surface->add_chips();
-            c->set_edge(0);
-            c->set_along(24);
-            c->set_width(12);
-            c->set_depth(6);
-        }
-        expect(!decodeSnapshot(badPiece), "Reject overlapping damage chips from the network");
+        auto* mark = surface->add_marks();
+        mark->mutable_local()->set_x(24);
+        mark->set_width(100);
+        expect(!decodeSnapshot(badPiece), "Reject out-of-bounds local damage metadata from the network");
         badPiece = encodedRich;
         badPiece.mutable_pieces(0)->set_angle(std::numeric_limits<float>::quiet_NaN());
         expect(!decodeSnapshot(badPiece), "Reject non-finite physical remains");

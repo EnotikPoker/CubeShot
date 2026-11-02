@@ -40,18 +40,22 @@ void encodePiece(wire::Piece* out, const PhysicsPiece& p)
     out->set_integrity(std::max(0, p.integrity));
     out->set_revision(p.revision);
     out->set_charred(p.charred);
+    out->set_kind(static_cast<unsigned>(p.kind));
+    out->set_eye_attached(p.hasEye);
+    vec(out->mutable_eye(), p.eye);
+    out->set_life(p.life);
 }
 
 std::optional<PhysicsPiece> decodePiece(const wire::Piece& p, bool allowEmpty = false)
 {
     if (!p.id() || p.owner() < 1 || p.owner() > 2 || !finite(p.position()) || !finite(p.velocity()) ||
-        !finite(p.size()) || p.size().x() <= 0 || p.size().y() <= 0 || p.size().x() > 64 ||
-        p.size().y() > 64 || !std::isfinite(p.angle()) || std::abs(p.angle()) > 3.15f ||
+        !finite(p.size()) || p.size().x() <= 0 || p.size().y() <= 0 || p.size().x() > 128 ||
+        p.size().y() > 128 || !std::isfinite(p.angle()) || std::abs(p.angle()) > 3.15f ||
         !std::isfinite(p.spin()) || std::abs(p.spin()) > 40)
         return {};
     PhysicsPiece out{p.id(),        p.owner(), vec(p.position()), vec(p.velocity()),
                      vec(p.size()), p.angle(), p.spin()};
-    if (p.outline_size() > 32 || !finite(p.skin_offset()) || std::abs(p.skin_offset().x()) > 96 ||
+    if (p.outline_size() > 64 || !finite(p.skin_offset()) || std::abs(p.skin_offset().x()) > 96 ||
         std::abs(p.skin_offset().y()) > 96 || p.integrity() > 100)
         return {};
     for (const auto& v : p.outline())
@@ -61,6 +65,17 @@ std::optional<PhysicsPiece> decodePiece(const wire::Piece& p, bool allowEmpty = 
         out.outline.push_back(vec(v));
     }
     if (!(allowEmpty && out.outline.empty()) && !validPolygon(out.outline))
+        return {};
+    if (p.kind() > 2 || !finite(p.eye()) || std::abs(p.eye().x()) > 64 || std::abs(p.eye().y()) > 64 ||
+        !std::isfinite(p.life()) || p.life() < -1 || p.life() > 6)
+        return {};
+    out.kind = static_cast<PieceKind>(p.kind());
+    out.hasEye = p.eye_attached();
+    out.eye = vec(p.eye());
+    out.life = p.life();
+    if (out.kind == PieceKind::Eye && (out.hasEye || polygonArea(out.outline) > 80))
+        return {};
+    if (out.hasEye && !out.outline.empty() && !containsPoint(out.outline, out.eye))
         return {};
     out.skinOffset = vec(p.skin_offset());
     out.integrity = p.integrity();
@@ -164,15 +179,22 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         auto* surface = v->mutable_surface();
         surface->set_revision(p.surface.revision);
         surface->set_charred(p.surface.charred);
-        for (unsigned i = 0; i < p.surface.count; ++i)
+        surface->set_scorch(p.surface.scorch);
+        for (auto point : damageOutline(p.surface))
+            vec(surface->add_outline(), point);
+        for (const auto& mark : p.surface.marks)
         {
-            auto* c = surface->add_chips();
-            const auto& chip = p.surface.chips[i];
-            c->set_edge(chip.edge);
-            c->set_along(chip.along);
-            c->set_width(chip.width);
-            c->set_depth(chip.depth);
+            auto* m = surface->add_marks();
+            vec(m->mutable_local(), mark.local);
+            m->set_width(mark.width);
+            m->set_depth(mark.depth);
+            m->set_weapon(static_cast<unsigned>(mark.weapon));
+            m->set_shooter(mark.shooter);
+            m->set_volley(mark.volley);
         }
+        v->set_motion_phase(p.motionPhase);
+        v->set_landing(p.landing);
+        v->set_lean(p.lean);
     }
     for (const auto& b : s.bullets)
     {
@@ -265,7 +287,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         if (!std::isfinite(v.spin()) || v.spin() < 0 || v.spin() > 1 || !std::isfinite(v.heat()) ||
             v.heat() < 0 || v.heat() > 1 || !std::isfinite(v.burning()) || v.burning() < 0 ||
-            v.burning() > 2.51f || v.burn_owner() > 2 || v.surface().chips_size() > 6)
+            v.burning() > 2.51f || v.burn_owner() > 2 || v.surface().marks_size() > 12 ||
+            v.surface().outline_size() > 64)
             return {};
         Player p;
         p.id = v.id();
@@ -286,20 +309,38 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         p.burnOwner = v.burn_owner();
         p.surface.revision = v.surface().revision();
         p.surface.charred = v.surface().charred();
-        for (const auto& c : v.surface().chips())
-        {
-            if (c.edge() > 3 || !std::isfinite(c.along()) || !std::isfinite(c.width()) ||
-                !std::isfinite(c.depth()) || c.width() < 8 || c.width() > 14 || c.depth() < 0 ||
-                c.depth() > 6 || c.along() - c.width() / 2 < 0 || c.along() + c.width() / 2 > 48)
-                return {};
-            for (unsigned i = 0; i < p.surface.count; ++i)
-                if (p.surface.chips[i].edge == c.edge() && std::abs(p.surface.chips[i].along - c.along()) <
-                                                               (p.surface.chips[i].width + c.width()) / 2)
-                    return {};
-            p.surface.chips[p.surface.count++] = {c.edge(), c.along(), c.width(), c.depth()};
-        }
-        if (!validPolygon(damageOutline(p.surface)) || polygonArea(damageOutline(p.surface)) < 48 * 48 * .85f)
+        p.surface.scorch = v.surface().scorch();
+        if (!std::isfinite(p.surface.scorch) || p.surface.scorch < 0 || p.surface.scorch > 1)
             return {};
+        for (const auto& point : v.surface().outline())
+        {
+            if (!finite(point) || point.x() < -.01f || point.x() > 48.01f || point.y() < -.01f ||
+                point.y() > 48.01f)
+                return {};
+            p.surface.outline.push_back(vec(point));
+        }
+        if (!validPolygon(p.surface.outline) || polygonArea(p.surface.outline) < 48 * 48 * .7f)
+            return {};
+        for (auto core : {Vec2{12, 12}, Vec2{36, 12}, Vec2{36, 36}, Vec2{12, 36}, Vec2{24, 24}})
+            if (!containsPoint(p.surface.outline, core))
+                return {};
+        for (const auto& m : v.surface().marks())
+        {
+            if (!finite(m.local()) || m.local().x() < -6 || m.local().x() > 54 || m.local().y() < -6 ||
+                m.local().y() > 54 || !std::isfinite(m.width()) || m.width() < 0 || m.width() > 48 ||
+                !std::isfinite(m.depth()) || m.depth() < 0 || m.depth() > 16 || m.weapon() >= weaponCount ||
+                m.shooter() > 2)
+                return {};
+            p.surface.marks.push_back({vec(m.local()), m.width(), m.depth(),
+                                       static_cast<WeaponKind>(m.weapon()), m.shooter(), m.volley()});
+        }
+        if (!std::isfinite(v.motion_phase()) || std::abs(v.motion_phase()) > 3.15f ||
+            !std::isfinite(v.landing()) || v.landing() < 0 || v.landing() > 1 || !std::isfinite(v.lean()) ||
+            std::abs(v.lean()) > 1.01f)
+            return {};
+        p.motionPhase = v.motion_phase();
+        p.landing = v.landing();
+        p.lean = v.lean();
         s.players.push_back(p);
     }
     std::set<BulletId> bullets;

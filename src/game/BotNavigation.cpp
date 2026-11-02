@@ -172,7 +172,8 @@ std::size_t BotNavigation::nearest(Vec2 at) const
     return best;
 }
 
-std::vector<BotTraversal> BotNavigation::route(Vec2 from, Vec2 goal, int avoidFrom, int avoidTo) const
+std::vector<BotTraversal> BotNavigation::route(Vec2 from, Vec2 goal, int avoidFrom, int avoidTo,
+                                               const std::vector<float>& hazards) const
 {
     if (nodes_.empty())
         return {};
@@ -200,8 +201,9 @@ std::vector<BotTraversal> BotNavigation::route(Vec2 from, Vec2 goal, int avoidFr
                                               edge.direction * Player::moveSpeed * step *
                                                   std::min(edge.holdTicks, edge.durationTicks));
             const bool airborne = edge.jump || nodes_[edge.from].surface != nodes_[edge.to].surface;
-            const float next =
-                cost + edge.durationTicks + (airborne ? 12 + correction / Player::moveSpeed / step : 0);
+            const float next = cost + edge.durationTicks +
+                               (airborne ? 12 + correction / Player::moveSpeed / step : 0) +
+                               (edge.to < hazards.size() ? hazards[edge.to] * edge.durationTicks : 0);
             if (next < costs[edge.to])
             {
                 costs[edge.to] = next;

@@ -134,6 +134,34 @@ struct Painter
         return true;
     }
 
+    void body(const Polygon& shape, Vec2 origin, SDL_FColor color, const Player* player = nullptr) const
+    {
+        auto vertex = [&](Vec2 local)
+        {
+            auto tint = color;
+            if (player)
+            {
+                const auto point = player->bodyLocal(local);
+                float scorch = 0;
+                for (const auto& mark : player->surface.marks)
+                    if (incendiaryWeapon(mark.weapon))
+                        scorch = std::max(scorch, std::clamp(1 - std::hypot(point.x - mark.local.x,
+                                                                            point.y - mark.local.y) /
+                                                                     std::max(8.f, mark.width * 1.4f),
+                                                             0.f, 1.f) *
+                                                      player->surface.scorch);
+                tint.r *= 1 - scorch * .75f;
+                tint.g *= 1 - scorch * .78f;
+                tint.b *= 1 - scorch * .7f;
+            }
+            const auto point = view.toScreen({origin.x + local.x, origin.y + local.y});
+            return SDL_Vertex{{point.x, point.y}, tint, {}};
+        };
+        auto indices = triangulate(shape);
+        for (std::size_t n = 0; n + 2 < indices.size(); n += 3)
+            triangle(vertex(shape[indices[n]]), vertex(shape[indices[n + 1]]), vertex(shape[indices[n + 2]]));
+    }
+
     bool material(unsigned index, const Polygon& shape, Vec2 origin, float angle, SDL_FColor color,
                   Vec2 uvOffset = {}) const
     {
@@ -298,10 +326,12 @@ void staticScene(const Painter& p, const Arena& arena)
     for (const auto& box : arena.platforms)
     {
         p.rect({{box.position.x + 3, box.position.y + 5}, box.size}, {12, 22, 33, 130});
-        p.rect(box, {9, 19, 28, 255});
+        p.rect(box, {45, 61, 75, 255});
         const unsigned tile = theme == MapTheme::Nature ? 3 : theme == MapTheme::Ruins ? 1 : 0;
-        p.tile(tile, {{box.position.x + 2, box.position.y + 2},
-                      {std::max(0.f, box.size.x - 4), std::max(0.f, box.size.y - 4)}});
+        p.tile(tile,
+               {{box.position.x + 2, box.position.y + 2},
+                {std::max(0.f, box.size.x - 4), std::max(0.f, box.size.y - 4)}},
+               {1, 1, 1, .23f});
         if (theme == MapTheme::Nature)
             p.tile(2, {box.position, {box.size.x, 7}});
         else
@@ -319,6 +349,15 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
 {
     if (piece.outline.empty())
         return;
+    if (piece.kind == PieceKind::Eye)
+    {
+        p.ellipse(piece.position, 4, 4, {16, 22, 29, 255});
+        p.ellipse(piece.position, 3.2f, 3.2f, {240, 242, 233, 255});
+        p.ellipse({piece.position.x + std::cos(piece.angle) * 1.2f,
+                   piece.position.y + std::sin(piece.angle) * 1.2f},
+                  1.4f, 1.8f, {32, 49, 57, 255});
+        return;
+    }
     const auto color = ownerColor(piece.owner, own);
     p.ellipse({piece.position.x, piece.position.y + piece.size.y * .4f}, piece.size.x * .6f, 3,
               {7, 15, 25, 85});
@@ -343,8 +382,8 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
                 p.line(piecePoint(piece, a), piecePoint(piece, b), 4, color);
         }
     }
-    const Vec2 eye{36 - piece.skinOffset.x, 14 - piece.skinOffset.y};
-    if (containsPoint(piece.outline, eye))
+    const auto eye = piece.eye;
+    if (piece.hasEye && containsPoint(piece.outline, eye))
     {
         const Vec2 direction{std::cos(piece.angle), std::sin(piece.angle)};
         p.part(piece.position, direction, eye.x - 3, eye.y - 3, 7, 7, {.95f, .95f, .9f, 1});
@@ -465,30 +504,33 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         color.r += (1 - color.r) * hit;
         color.g += (1 - color.g) * hit;
         color.b += (1 - color.b) * hit;
-        if (player.surface.charred)
-        {
-            color.r *= .55f;
-            color.g *= .55f;
-            color.b *= .55f;
-        }
         const auto shape = player.bodyContour();
         p.ellipse({player.position.x + 24, player.position.y + 49}, 24, 3, {7, 17, 26, 90});
-        p.material(4, shape, player.position, 0, color);
-        p.outline(shape, player.position, 0, 1.7f, {.025f, .045f, .07f, 1});
+        p.body(shape, player.position, color, &player);
+        p.outline(shape, player.position, 0, 1.f, {.025f, .045f, .07f, 1});
         // Irregular exposed flesh belongs to the cut edges, never to an independent floating decal.
         if (blood)
             for (std::size_t i = 0; i < shape.size(); ++i)
             {
                 auto a = shape[i], b = shape[(i + 1) % shape.size()];
-                if (std::abs(a.x - b.x) > .1f && std::abs(a.y - b.y) > .1f)
+                const auto la = player.bodyLocal(a), lb = player.bodyLocal(b);
+                const bool shell = (std::abs(la.x) < .02f && std::abs(lb.x) < .02f) ||
+                                   (std::abs(la.x - 48) < .02f && std::abs(lb.x - 48) < .02f) ||
+                                   (std::abs(la.y) < .02f && std::abs(lb.y) < .02f) ||
+                                   (std::abs(la.y - 48) < .02f && std::abs(lb.y - 48) < .02f);
+                if (!shell)
                     p.line({player.position.x + a.x, player.position.y + a.y},
-                           {player.position.x + b.x, player.position.y + b.y}, 1.2f, {.6f, .015f, .045f, 1});
+                           {player.position.x + b.x, player.position.y + b.y}, 2.f,
+                           {.63f + static_cast<float>(player.surface.revision % 3) * .04f, .035f, .075f, 1});
             }
-        const float eyeX = player.position.x + (player.aimDirection.x < 0 ? 7.f : 33.f),
-                    eyeY = player.position.y + 11;
-        p.rect({{eyeX - 1, eyeY - 1}, {10, 11}}, {12, 22, 32, 255});
-        p.rect({{eyeX, eyeY}, {8, 9}}, {245, 247, 236, 255});
-        p.rect({{eyeX + (player.aimDirection.x < 0 ? 0.f : 5.f), eyeY + 2}, {3, 6}}, {18, 29, 41, 255});
+        const auto anchor = player.bodyPoint({player.aimDirection.x < 0 ? 11.f : 37.f, 15});
+        if (containsPoint(shape, anchor))
+        {
+            const float eyeX = player.position.x + anchor.x - 4, eyeY = player.position.y + anchor.y - 4;
+            p.rect({{eyeX - 1, eyeY - 1}, {10, 11}}, {20, 29, 38, 255});
+            p.rect({{eyeX, eyeY}, {8, 9}}, {245, 247, 236, 255});
+            p.rect({{eyeX + (player.aimDirection.x < 0 ? 0.f : 5.f), eyeY + 2}, {3, 6}}, {18, 29, 41, 255});
+        }
         weapon(p, player, pose);
         if (pose.shot > .055f &&
             (player.weapon.kind == WeaponKind::Minigun || player.weapon.kind == WeaponKind::Rpg))

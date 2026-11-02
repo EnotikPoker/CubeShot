@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.15.0 LANGUAGES C CXX)
+project(CubeShot VERSION 0.16.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -49,10 +49,11 @@ target_link_libraries(cubeshot_directory PUBLIC cubeshot_network PRIVATE httplib
 
 if(CUBESHOT_BUILD_CLIENT)
     find_package(SDL3 3.4 REQUIRED CONFIG)
+    find_package(SDL3_ttf 3.2.2 REQUIRED CONFIG)
     add_custom_target(cubeshot_assets
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:cubeshot_client>/assets")
-    add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/BitmapFont.cpp)
-    target_link_libraries(cubeshot_visuals PUBLIC cubeshot_game SDL3::SDL3)
+    add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/TextRenderer.cpp src/client/UiText.cpp)
+    target_link_libraries(cubeshot_visuals PUBLIC cubeshot_game SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     add_dependencies(cubeshot_visuals cubeshot_assets)
     add_library(cubeshot_preferences STATIC
         src/client/Settings.cpp src/client/SettingsStore.cpp src/client/Profile.cpp

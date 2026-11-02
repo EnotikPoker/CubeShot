@@ -114,6 +114,7 @@ void Match::beginCountdown()
     lastAction_ = {};
     aborted_ = AbortReason::None;
     winner_ = 0;
+    world_.setVisualSeed(visualSeed_ ^ round_ * 2654435761u);
     world_.resetPlayers(roundsPlayed_ % 2 != 0);
     world_.equip(1, loadout_[0]);
     world_.equip(2, loadout_[1]);

@@ -1,6 +1,6 @@
 #include "client/MenuRenderer.h"
-#include "client/BitmapFont.h"
 #include "client/Menu.h"
+#include "client/UiText.h"
 #include "client/VisualAssets.h"
 #include "network/Identity.h"
 
@@ -27,7 +27,7 @@ bool rectangle(SDL_Renderer* renderer, const Rect& bounds, SDL_Color color)
 
 bool centeredText(SDL_Renderer* renderer, std::u32string_view text, float y, int scale, SDL_Color color)
 {
-    return drawText(renderer, text, {(960 - textWidth(text, scale)) / 2, y}, scale, color);
+    return drawText(renderer, text, {(960 - textWidth(renderer, text, scale)) / 2, y}, scale, color);
 }
 
 bool weaponCard(SDL_Renderer* renderer, WeaponKind kind, float x)
@@ -149,9 +149,6 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     const float destination = weaponCount * 4.f + static_cast<unsigned>(result);
     const float position = destination - std::pow(1 - progress, 3.f) * weaponCount * 4;
     constexpr float width = 154;
-    const SDL_Color colors[]{{75, 130, 175, 255}, {170, 100, 50, 255}, {75, 150, 95, 255},
-                             {140, 85, 175, 255}, {180, 150, 60, 255}, {65, 150, 160, 255},
-                             {185, 70, 95, 255}};
     if (!rectangle(renderer, {{166, 197}, {628, 152}}, {12, 18, 29, 255}))
         return false;
     const SDL_Rect clip{174, 205, 612, 136};
@@ -165,7 +162,7 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
         const auto kind = static_cast<WeaponKind>(index);
         const float x = 480 + (i - position) * width;
         const bool selected = std::abs(x - 480) < width / 2;
-        const auto color = colors[index % 7];
+        const auto color = selected ? SDL_Color{94, 177, 255, 255} : SDL_Color{54, 72, 89, 255};
         ok =
             ok &&
             rectangle(renderer, {{x - 70, 211}, {140, 124}}, selected ? color : SDL_Color{40, 50, 66, 255}) &&
@@ -173,7 +170,15 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
             rectangle(renderer, {{x - 67, 323}, {134, 9}}, color);
         ok = ok && weaponCard(renderer, kind, x);
         const auto name = weaponDefinition(kind).name;
-        ok = ok && drawText(renderer, name, {x - textWidth(name, 1) / 2, 299}, 1, white);
+        if (textWidth(renderer, name, 1) > 128 && name.find(U' ') != std::u32string_view::npos)
+        {
+            auto space = name.find(U' ');
+            auto first = name.substr(0, space), second = name.substr(space + 1);
+            ok = ok && drawText(renderer, first, {x - textWidth(renderer, first, 1) / 2, 286}, 1, white) &&
+                 drawText(renderer, second, {x - textWidth(renderer, second, 1) / 2, 304}, 1, white);
+        }
+        else
+            ok = ok && drawText(renderer, name, {x - textWidth(renderer, name, 1) / 2, 299}, 1, white);
     }
     SDL_SetRenderClipRect(renderer, nullptr);
     const auto shown =
@@ -181,7 +186,7 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
             ? static_cast<WeaponKind>((static_cast<unsigned>(std::lround(position))) % weaponCount)
             : result;
     const auto name = weaponDefinition(shown).name;
-    const int scale = textWidth(name, 2) > 620 ? 1 : 2;
+    const int scale = textWidth(renderer, name, 2) > 620 ? 1 : 2;
     return ok && rectangle(renderer, {{477, 189}, {6, 17}}, {255, 209, 90, 255}) &&
            rectangle(renderer, {{466, 185}, {28, 8}}, {255, 226, 140, 255}) &&
            centeredText(renderer, name, 363, scale, progress >= 1 ? SDL_Color{255, 220, 125, 255} : white);
@@ -238,12 +243,8 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             return false;
         if (menu.screen() == Screen::Main)
         {
-            const auto logoWidth = textWidth(U"CubeShot", 8);
-            const float x = (960 - logoWidth) / 2;
-            if (!drawText(renderer, U"CubeShot", {x + 3, 57}, 8, {8, 16, 26, 255}) ||
-                !drawText(renderer, U"Cube", {x, 54}, 8, {72, 179, 248, 255}) ||
-                !drawText(renderer, U"Shot", {x + textWidth(U"Cube", 8), 54}, 8, {245, 76, 80, 255}) ||
-                !centeredText(renderer, U"Главное меню", 137, 2, muted))
+            if (!centeredText(renderer, U"CubeShot", 54, 8, {237, 242, 248, 255}) ||
+                !centeredText(renderer, asciiText(CUBESHOT_VERSION), 139, 1, muted))
                 return false;
         }
         else
@@ -398,7 +399,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
         const SDL_Color face = selected ? SDL_Color{54, 103, 147, 255} : SDL_Color{41, 62, 86, 255};
         if (!uiPanel(renderer, bounds, face, selected, button.placeholder) ||
             !centeredText(renderer, button.label,
-                          bounds.position.y + (bounds.size.y - textHeight(scale)) / 2 - 1, scale,
+                          bounds.position.y + (bounds.size.y - textHeight(renderer, scale)) / 2 - 1, scale,
                           button.placeholder ? muted : white))
             return false;
         if (button.placeholder && menu.screen() != Screen::Armory && menu.screen() != Screen::Lobby &&
@@ -424,7 +425,7 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
     auto score = network::nicknameText(s.names[0]) + U" " + asciiText(std::to_string(s.score[0])) + U" : " +
                  asciiText(std::to_string(s.score[1])) + U" " + network::nicknameText(s.names[1]);
     if (!uiPanel(renderer, {{235, 8}, {490, 69}}, {30, 46, 66, 255}) ||
-        !centeredText(renderer, score, 14, textWidth(score, 2) > 466 ? 1 : 2, white) ||
+        !centeredText(renderer, score, 14, textWidth(renderer, score, 2) > 466 ? 1 : 2, white) ||
         !centeredText(renderer, U"Вы — игрок " + asciiText(std::to_string(own)) + U". До 5 побед", 45, 1,
                       muted))
         return false;
@@ -433,7 +434,7 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
     if (player != s.players.end())
     {
         const auto label = weaponDefinition(player->weapon.kind).name;
-        if (!drawText(renderer, label, {948 - textWidth(label, 2), 500}, 2, white))
+        if (!drawText(renderer, label, {948 - textWidth(renderer, label, 2), 500}, 2, white))
             return false;
         if (player->weapon.kind == WeaponKind::Sniper &&
             !drawText(renderer, U"Удерживайте огонь 0.3 с", {690, 522}, 1, muted))
