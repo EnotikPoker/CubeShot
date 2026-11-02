@@ -1,28 +1,45 @@
 #pragma once
 #include "game/Types.h"
+#include "game/Weapon.h"
 #include <array>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace cubeshot
 {
 using Polygon = std::vector<Vec2>;
 
-struct EdgeChip
+struct DamageMark
 {
-    unsigned edge = 0;
-    float along = 24, width = 10, depth = 5;
+    Vec2 local;
+    float width = 0, depth = 0;
+    WeaponKind weapon = WeaponKind::Pistol;
+    std::uint32_t shooter = 0, volley = 0;
 };
 
 struct DamageShape
 {
-    std::array<EdgeChip, 6> chips{};
-    unsigned count = 0, revision = 0;
+    Polygon outline;
+    std::vector<DamageMark> marks;
+    unsigned revision = 0;
     bool charred = false;
+    float scorch = 0;
+};
+
+struct ImpactContext
+{
+    Vec2 local, direction{1, 0};
+    WeaponKind weapon = WeaponKind::Pistol;
+    int damage = 20;
+    std::uint32_t shooter = 0, volley = 0, seed = 0;
 };
 
 Polygon damageOutline(const DamageShape& shape);
-bool addEdgeChip(DamageShape& shape, Vec2 localHit, unsigned seed);
+Polygon carveImpact(DamageShape& shape, const ImpactContext& impact);
+// Splits matching jagged boundaries; both returned polygons share the exact seam.
+std::pair<Polygon, Polygon> fracturePolygon(const Polygon& polygon, Vec2 normal, float offset, unsigned seed,
+                                            bool clean = false);
 float polygonArea(const Polygon& polygon);
 Vec2 polygonCentre(const Polygon& polygon);
 bool containsPoint(const Polygon& polygon, Vec2 at);
@@ -30,5 +47,5 @@ std::optional<float> hitPolygon(Vec2 from, Vec2 to, const Polygon& polygon, floa
 std::vector<unsigned> triangulate(const Polygon& polygon);
 Polygon clipPolygon(const Polygon& polygon, Vec2 normal, float distance);
 Polygon convexHull(Polygon points);
-bool validPolygon(const Polygon& polygon, unsigned maximum = 32);
+bool validPolygon(const Polygon& polygon, unsigned maximum = 64);
 } // namespace cubeshot

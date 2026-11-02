@@ -63,20 +63,19 @@ void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
         player.lastVolleyDamage = 0;
     }
     player.lastVolleyDamage += amount;
-    if (incendiaryWeapon(bullet.weapon))
-        player.surface.charred = true;
-    else
-    {
-        const auto wanted =
-            std::min(6u, static_cast<unsigned>(Player::maxHealth -
-                                               std::max(0, player.health - pendingDamage_[index])) /
-                             15);
-        while (player.surface.count < wanted)
-            if (!addEdgeChip(player.surface,
-                             player.bodyLocal({at.x - player.position.x, at.y - player.position.y}),
-                             bullet.volley + bullet.shooterId * 17 + player.surface.count))
-                break;
-    }
+    const ImpactContext context{player.bodyLocal({at.x - player.position.x, at.y - player.position.y}),
+                                pendingImpact_[index],
+                                bullet.weapon,
+                                amount,
+                                bullet.shooterId,
+                                bullet.volley,
+                                static_cast<unsigned>(visualRandom_())};
+    player.lastImpact = context;
+    pendingContacts_[index].push_back(context);
+    const auto material = carveImpact(player.surface, context);
+    if (!material.empty())
+        debris_.chip(player, material, context.direction, context.seed,
+                     pendingDamage_[index] >= player.health);
     // Marks and particles use body-local coordinates, never the later interpolated world position.
     events_.back().surfaceRevision = player.surface.revision;
 }
@@ -196,7 +195,26 @@ void World::melee(const Bullet& attack)
     {
         if (!player.alive() || player.id == attack.shooterId)
             continue;
-        const auto at = nearestPoint(attack.position, player.bounds());
+        auto at = player.weaponOrigin();
+        float nearest = 1e9f;
+        const auto outline = player.bodyContour();
+        for (std::size_t n = 0; n < outline.size(); ++n)
+        {
+            Vec2 a{outline[n].x + player.position.x, outline[n].y + player.position.y},
+                b{outline[(n + 1) % outline.size()].x + player.position.x,
+                  outline[(n + 1) % outline.size()].y + player.position.y};
+            const float dx = b.x - a.x, dy = b.y - a.y;
+            const float t = std::clamp(((attack.position.x - a.x) * dx + (attack.position.y - a.y) * dy) /
+                                           (dx * dx + dy * dy),
+                                       0.f, 1.f);
+            Vec2 point{a.x + dx * t, a.y + dy * t};
+            float distance = std::hypot(point.x - attack.position.x, point.y - attack.position.y);
+            if (distance < nearest)
+            {
+                nearest = distance;
+                at = point;
+            }
+        }
         const Vec2 delta{at.x - attack.position.x, at.y - attack.position.y};
         const float distance = std::hypot(delta.x, delta.y);
         if (distance <= reach &&

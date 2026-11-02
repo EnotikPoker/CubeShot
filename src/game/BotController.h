@@ -18,7 +18,7 @@ std::u32string_view botDifficultyName(BotDifficulty difficulty);
 
 struct BotTuning
 {
-    float reaction, aimErrorDegrees, shotInterval, rangeMin, rangeMax, dodgeHorizon;
+    float reaction, aimErrorDegrees, shotInterval, dodgeHorizon;
 };
 
 BotTuning botTuning(BotDifficulty difficulty);
@@ -27,6 +27,11 @@ struct BotTarget
 {
     Vec2 position, velocity, size;
     bool grounded;
+    WeaponKind weapon = WeaponKind::Pistol;
+    Vec2 aim{1, 0};
+    int health = 100;
+    bool charging = false, overheated = false;
+    std::uint32_t shots = 0;
 };
 
 struct BotObservation
@@ -34,9 +39,17 @@ struct BotObservation
     Player self;
     std::optional<BotTarget> target;
     std::vector<Bullet> bullets;
+    std::vector<FirePatch> fires;
 };
 
 BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent);
+
+struct BotWeaponProfile
+{
+    float minimum, maximum;
+};
+
+BotWeaponProfile botWeaponProfile(WeaponKind weapon);
 
 struct BotAim
 {
@@ -60,6 +73,12 @@ private:
     PlayerInput navigate(const Player& self, Vec2 goal, float dt);
     void avoidBullets(const BotObservation& observation, PlayerInput& input);
     void cancelRoute(bool failed);
+    float hazardCost(Vec2 position) const;
+    bool hard_ = false, enemyCharging_ = false;
+    WeaponKind lastWeapon_ = WeaponKind::Pistol, enemyWeapon_ = WeaponKind::Pistol;
+    std::uint32_t enemyShots_ = 0;
+    float enemyShotAt_ = -100, coverSince_ = -1, attackUntil_ = 0;
+    std::vector<float> routeHazards_;
     Arena arena_;
     BotTuning tuning_;
     std::mt19937 random_;
@@ -70,6 +89,7 @@ private:
         float time;
         std::optional<BotTarget> target;
         std::vector<Bullet> bullets;
+        std::vector<FirePatch> fires;
     };
 
     std::deque<Perception> history_;

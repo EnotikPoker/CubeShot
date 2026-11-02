@@ -7,6 +7,13 @@
 
 namespace cubeshot
 {
+enum class PieceKind
+{
+    Corpse,
+    Chip,
+    Eye
+};
+
 struct PhysicsPiece
 {
     std::uint64_t id = 0;
@@ -19,6 +26,13 @@ struct PhysicsPiece
     unsigned revision = 0;
     bool charred = false;
     float sleep = 0;
+    PieceKind kind = PieceKind::Corpse;
+    bool hasEye = false;
+    Vec2 eye{};
+    float life = -1;
+    unsigned fractureSeed = 0;
+    Vec2 fractureOrigin{};
+    bool cleanCut = false;
 };
 
 struct Corpse
@@ -44,6 +58,7 @@ class Debris
 public:
     static constexpr std::size_t maxPieces = 64;
     void clear();
+    void chip(const Player& player, const Polygon& material, Vec2 impulse, unsigned seed, bool fatal = false);
     void blast(Vec2 at, float radius);
     void spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind cause = WeaponKind::Pistol,
                int volleyDamage = 0);
@@ -55,6 +70,7 @@ public:
 
 private:
     void split(PhysicsPiece source, unsigned count, Vec2 impulse);
+    void detachEye(PhysicsPiece& source, Vec2 impulse);
     std::vector<Corpse> corpses_;
     std::vector<PhysicsPiece> pieces_;
     std::uint64_t nextId_ = 1;

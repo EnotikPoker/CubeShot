@@ -132,7 +132,7 @@ jobs:
             build/CMakeFiles/CMakeConfigureLog.yaml
             build/vcpkg-manifest-install.log
             build/Testing/Temporary/
-            ${{ runner.temp }}/cubeshot-vcpkg/buildtrees/**/*.log
+            ${{ runner.temp }}/cubeshot-vcpkg/buildtrees/*/*.log
 
   release:
     name: Publish verified release

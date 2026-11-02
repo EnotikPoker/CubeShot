@@ -7,6 +7,7 @@
 #include "game/Events.h"
 #include "game/Player.h"
 
+#include <random>
 #include <vector>
 
 namespace cubeshot
@@ -26,6 +27,12 @@ public:
     void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0);
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
+
+    void setVisualSeed(unsigned seed)
+    {
+        visualRandom_.seed(seed);
+    }
+
     void update(float deltaSeconds, bool damageLiving = true);
 
     std::vector<GameEvent> takeEvents();
@@ -51,6 +58,7 @@ private:
     void updateBullets(float deltaSeconds);
 
     void emit(EventKind kind, const Bullet& bullet, Vec2 position, PlayerId target = 0);
+    std::mt19937 visualRandom_{std::random_device{}()};
     Arena arena_;
     Debris debris_;
     bool damageLiving_ = true;
@@ -63,6 +71,7 @@ private:
     BulletId nextBulletId_ = 1;
     std::vector<int> pendingDamage_;
     std::vector<std::vector<Bullet>> pendingCauses_;
+    std::vector<std::vector<ImpactContext>> pendingContacts_;
 };
 
 } // namespace cubeshot
