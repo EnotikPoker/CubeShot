@@ -126,8 +126,9 @@ void enemyFirearmSpacing()
         }
         return world.players()[1].position.x;
     };
-    expect(simulate(WeaponKind::Smg, false) > simulate(WeaponKind::Pistol, false) + 20,
-           "Automatic exploits its range advantage against SMG rather than using the pistol matchup");
+    expect(simulate(WeaponKind::Smg, false) > simulate(WeaponKind::Revolver, false) + 20,
+           "Automatic exploits its range advantage against SMG rather than using the long-range firearm "
+           "matchup");
     expect(simulate(WeaponKind::Minigun, false, WeaponKind::Revolver, 580) >
                simulate(WeaponKind::Minigun, true, WeaponKind::Revolver, 580) + 20,
            "A visible enemy overheat opens an approach window instead of preserving unnecessary distance");

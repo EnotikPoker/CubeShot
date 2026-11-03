@@ -10,7 +10,7 @@ class BotMatch
 public:
     BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed);
     void control(const PlayerInput& input);
-    void action(bool jump, bool shoot, Vec2 aim);
+    void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
     void clearInput();
     bool chooseWeapon(bool reroll);
     void update(float dt);

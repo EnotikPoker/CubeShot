@@ -155,8 +155,7 @@ struct Server::Impl
                 return;
             }
             PlayerId id = 0;
-            const auto occupied = [&](PlayerId n)
-            {
+            const auto occupied = [&](PlayerId n) {
                 return std::any_of(peers.begin(), peers.end(),
                                    [n](const auto& p) { return p.second.id == n; });
             };
@@ -229,7 +228,8 @@ struct Server::Impl
         else if (e.has_action())
         {
             const auto& a = e.action();
-            if (!validAim(a.aim()) || (!a.jump() && !a.shoot()) || (a.jump() && a.shoot()) || !a.sequence())
+            if (!validAim(a.aim()) || (int(a.jump()) + int(a.shoot()) + int(a.reload()) != 1) ||
+                !a.sequence())
             {
                 remove(c, "Invalid action");
                 return;
@@ -343,7 +343,7 @@ void Server::step(float dt)
             const auto action = peer.actions.front();
             peer.actions.pop_front();
             impl_->match.action(peer.id, action.round(), action.sequence(), action.jump(), action.shoot(),
-                                {action.aim().x(), action.aim().y()});
+                                {action.aim().x(), action.aim().y()}, action.reload());
             peer.actionSequence = action.sequence();
         }
     }

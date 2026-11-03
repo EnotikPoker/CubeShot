@@ -74,12 +74,14 @@ Vec2 Player::muzzlePosition() const
 
 std::optional<Bullet> Player::takeShot()
 {
-    weapon.driven = triggerHeld_;
+    weapon.driven = triggerHeld_ && !weapon.reloading;
     bool requested = shootRequested_ || (weapon.automatic() && triggerHeld_);
     shootRequested_ = false;
     if (!alive())
         return {};
     const auto& definition = weaponDefinition(weapon.kind);
+    if (weapon.reloading && weapon.kind != WeaponKind::Shotgun)
+        return {};
     if (weapon.charging)
     {
         if (!triggerHeld_)
@@ -118,7 +120,20 @@ std::optional<Bullet> Player::takeShot()
     bullet.volley = weapon.shots;
     bullet.lifetime = definition.lifetime;
     bullet.acceleration = definition.gravity;
+    applyImpulse({-shotAim_.x * definition.recoil, -shotAim_.y * definition.recoil});
     return bullet;
+}
+
+void Player::applyImpulse(Vec2 impulse)
+{
+    if (!alive())
+        return;
+    const float old = pushX;
+    pushX = std::clamp(pushX + impulse.x, -900.f, 900.f);
+    velocity.x += pushX - old;
+    velocity.y = std::max(-1100.f, velocity.y + impulse.y);
+    if (velocity.y < 0)
+        grounded = false;
 }
 
 void Player::takeDamage(int damage)
@@ -127,6 +142,8 @@ void Player::takeDamage(int damage)
     if (!alive())
     {
         velocity = {};
+        pushX = 0;
+        weapon.cancelReload();
         jumpRequested_ = false;
         shootRequested_ = false;
     }
@@ -138,7 +155,9 @@ void Player::applyInput(const PlayerInput& input)
     {
         return;
     }
-    velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * moveSpeed;
+    velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * moveSpeed + pushX;
+    if (input.reload)
+        weapon.startReload();
     jumpRequested_ = jumpRequested_ || (input.jump && !jumpHeld_);
     jumpHeld_ = input.jump;
     const bool shot = input.shoot && !shootHeld_ && !shootRequested_;
@@ -154,10 +173,12 @@ void Player::applyInput(const PlayerInput& input)
         shotAim_ = aimDirection;
 }
 
-void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence)
+void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload)
 {
     if (!alive())
         return;
+    if (reload)
+        weapon.startReload();
     jumpRequested_ = jumpRequested_ || jump;
     if (shoot && !shootRequested_)
     {
@@ -172,7 +193,7 @@ void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequen
 
 void Player::clearInput()
 {
-    velocity.x = 0;
+    velocity.x = pushX;
     weapon.driven = false;
     jumpHeld_ = jumpRequested_ = false;
     shootHeld_ = shootRequested_ = triggerHeld_ = false;
@@ -202,6 +223,9 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
     {
         const float step = static_cast<float>(std::min(remaining, maxStep));
         remaining -= std::min(remaining, maxStep);
+        const float oldPush = pushX;
+        pushX *= std::exp(-(grounded ? 10.f : 3.f) * step);
+        velocity.x += pushX - oldPush;
         const float oldX = position.x;
         const bool wasGrounded = grounded;
         const float falling = velocity.y;
@@ -220,7 +244,7 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         if (grounded)
             motionPhase = std::remainder(motionPhase + std::abs(position.x - oldX) * .16f, 6.2831853f);
         landing = std::max(0.f, landing - step * 6);
-        lean += (velocity.x / moveSpeed - lean) * std::min(1.f, step * 14);
+        lean += (std::clamp(velocity.x / moveSpeed, -1.f, 1.f) - lean) * std::min(1.f, step * 14);
     }
     weapon.update(deltaSeconds);
 }

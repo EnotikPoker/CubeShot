@@ -211,8 +211,7 @@ void impairedCombat()
     r.host.ready(true);
     r.guest.ready(true);
     r.until(
-        [&]
-        {
+        [&] {
             return r.host.snapshot()->phase == MatchPhase::Round &&
                    r.guest.snapshot()->phase == MatchPhase::Round;
         },
@@ -236,6 +235,30 @@ void impairedCombat()
                        r.guest.snapshot()->players[1].health == target;
             },
             3, "Reliable shot reaches both clients under packet loss");
+        if (i == 0)
+        {
+            r.host.action(false, false, {1, 0}, true);
+            r.until(
+                [&] {
+                    return r.host.snapshot()->players[0].weapon.reloading &&
+                           r.guest.snapshot()->players[0].weapon.reloading;
+                },
+                2, "Reliable reload reaches both clients under packet loss");
+            const auto remaining = r.server.match().world().players()[0].weapon.reloadRemaining;
+            r.host.action(false, false, {1, 0}, true);
+            r.run(.3);
+            expect(r.server.match().world().players()[0].weapon.reloadRemaining < remaining,
+                   "Repeated reload does not reset its timer over the network");
+            r.until(
+                [&]
+                {
+                    return !r.host.snapshot()->players[0].weapon.reloading &&
+                           !r.guest.snapshot()->players[0].weapon.reloading &&
+                           r.host.snapshot()->players[0].weapon.ammo == 12 &&
+                           r.guest.snapshot()->players[0].weapon.ammo == 12;
+                },
+                2, "Both remote clients see a refilled authoritative magazine");
+        }
         r.run(.3); // Следующий клик после подтверждённого попадания и кулдауна.
     }
     r.until([&] { return r.host.snapshot()->score[0] == 1 && r.guest.snapshot()->score[0] == 1; }, 2,
@@ -263,8 +286,7 @@ void impairedCombat()
     expect(!r.host.snapshot()->pieces.empty() && r.host.snapshot()->pieces[0].owner == 2,
            "Shot-off fragment is authoritative and transmitted");
     r.until(
-        [&]
-        {
+        [&] {
             return r.host.snapshot()->phase == MatchPhase::Armory &&
                    r.guest.snapshot()->phase == MatchPhase::Armory;
         },

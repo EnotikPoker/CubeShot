@@ -1,4 +1,5 @@
 #pragma once
+#include "game/BotMobility.h"
 #include "game/BotNavigation.h"
 #include "game/World.h"
 #include <deque>
@@ -32,6 +33,8 @@ struct BotTarget
     int health = 100;
     bool charging = false, overheated = false;
     std::uint32_t shots = 0;
+    bool reloading = false;
+    float pushX = 0;
 };
 
 struct BotObservation
@@ -74,6 +77,8 @@ private:
     void avoidBullets(const BotObservation& observation, PlayerInput& input);
     void cancelRoute(bool failed);
     float hazardCost(Vec2 position) const;
+    BotMobility mobility_;
+    bool mobile_ = false;
     bool hard_ = false, enemyCharging_ = false;
     WeaponKind lastWeapon_ = WeaponKind::Pistol, enemyWeapon_ = WeaponKind::Pistol;
     std::uint32_t enemyShots_ = 0;

@@ -24,7 +24,8 @@ public:
 
     void setPlayerInput(PlayerId id, const PlayerInput& input);
     void clearPlayerInput(PlayerId id);
-    void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0);
+    void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0,
+                       bool reload = false);
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
 
@@ -48,7 +49,7 @@ public:
 
 private:
     void damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite = false);
-    void explode(const Bullet& bullet, Vec2 at);
+    void explode(const Bullet& bullet, Vec2 at, PlayerId direct = 0);
     void igniteSurface(Vec2 at, PlayerId owner);
     void updateFire(float dt);
     void melee(const Bullet& attack);

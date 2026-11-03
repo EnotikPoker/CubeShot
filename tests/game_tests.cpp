@@ -1,3 +1,4 @@
+#include "game/BotController.h"
 #include "game/Collision.h"
 #include "game/World.h"
 
@@ -387,6 +388,11 @@ void testBulletHits()
     for (int shots = 0; shots < 120 && world.players()[1].alive(); ++shots)
     {
         world.setPlayerInput(1, {});
+        const auto& target = world.players()[1];
+        if (auto aim =
+                botAim(world.players()[0], {target.position, target.velocity, target.size, target.grounded},
+                       world.arena()))
+            input.aimDirection = aim->direction;
         world.setPlayerInput(1, input);
         world.update(.4f);
         const int health = world.players()[1].health;

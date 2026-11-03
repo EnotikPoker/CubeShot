@@ -30,6 +30,7 @@ bool clearShot(const Player& self, Vec2 direction, float time, const Arena& aren
             return false;
     Bullet b;
     b.position = muzzle;
+    b.weapon = self.weapon.kind;
     b.velocity = {direction.x * self.weapon.bulletSpeed, direction.y * self.weapon.bulletSpeed};
     b.acceleration = weaponDefinition(self.weapon.kind).gravity;
     b.lifetime = weaponDefinition(self.weapon.kind).lifetime;
@@ -103,6 +104,7 @@ struct FlightStep
 {
     Vec2 from, to;
     float barrier;
+    int damage;
 };
 
 struct Threat
@@ -147,7 +149,7 @@ Threat predictThreat(Bullet bullet, float horizon, const Arena& arena, Vec2 owne
         if (bullet.lifetime <= 0)
             break;
         const float barrier = terrainHit(from, bullet.position, arena);
-        out.path[out.count++] = {from, bullet.position, barrier};
+        out.path[out.count++] = {from, bullet.position, barrier, bullet.impactDamage()};
         if (barrier <= 1 && bullet.weapon == WeaponKind::FireBoomerang)
         {
             bullet.position = from;
@@ -187,7 +189,7 @@ float expectedDamage(const Threat& threat, const BodyPath& body, const Arena& ar
                                   {flight.to.x - body.points[n + 1].x, flight.to.y - body.points[n + 1].y},
                                   {{0, 0}, body.size}, Bullet::radius);
         if (hit && *hit < flight.barrier)
-            return static_cast<float>(threat.damage) + (incendiaryWeapon(threat.weapon) ? 12.f : 0.f);
+            return static_cast<float>(flight.damage) + (incendiaryWeapon(threat.weapon) ? 12.f : 0.f);
         if (threat.weapon == WeaponKind::Rpg && flight.barrier <= 1)
         {
             const Vec2 blast{flight.from.x + (flight.to.x - flight.from.x) * flight.barrier,
@@ -202,8 +204,7 @@ float expectedDamage(const Threat& threat, const BodyPath& body, const Arena& ar
                     break;
                 }
             if (!shielded)
-                damage =
-                    std::max(damage, 100.f * std::max(0.f, 1 - distance(blast, nearest) / explosionRadius));
+                damage = std::max(damage, static_cast<float>(explosionDamage(distance(blast, nearest))));
         }
     }
     return damage;
@@ -234,6 +235,7 @@ std::optional<BotAim> rocketAim(const Player& self, const BotTarget& target, con
         {
             future.position = target.position;
             future.velocity = target.velocity;
+            future.pushX = target.pushX;
             future.update(flight, arena);
             delta = {future.position.x + target.size.x / 2 + offset.x - origin.x,
                      future.position.y + target.size.y + offset.y - origin.y - 25 * flight * flight / 2};
@@ -247,9 +249,10 @@ std::optional<BotAim> rocketAim(const Player& self, const BotTarget& target, con
         Bullet rocket;
         rocket.position = {origin.x + direction.x * self.weapon.barrel(),
                            origin.y + direction.y * self.weapon.barrel()};
-        rocket.velocity = {direction.x * 300, direction.y * 300};
+        rocket.velocity = {direction.x * self.weapon.bulletSpeed, direction.y * self.weapon.bulletSpeed};
         rocket.acceleration = 25;
-        rocket.lifetime = 4;
+        rocket.lifetime = weaponDefinition(WeaponKind::Rpg).lifetime;
+        rocket.weapon = WeaponKind::Rpg;
         if (terrainHit(origin, rocket.position, arena) <= 1)
             continue;
         for (float elapsed = 0; elapsed < flight + .2f; elapsed += 1.f / 60)
@@ -272,7 +275,7 @@ std::optional<BotAim> rocketAim(const Player& self, const BotTarget& target, con
                     blocked = true;
                     break;
                 }
-            const float damage = 100 * std::max(0.f, 1 - distance(blast, victim) / explosionRadius);
+            const float damage = static_cast<float>(explosionDamage(distance(blast, victim)));
             const Rect predictedSelf{
                 {self.position.x + self.velocity.x * (elapsed + 1.f / 60), self.position.y}, self.size};
             if (!blocked && damage > bestDamage && damage >= 12 &&
@@ -326,9 +329,10 @@ BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent)
         if (p.id == self)
             result.self = p;
         if (p.id == opponent && p.alive())
-            result.target = BotTarget{p.position,          p.velocity,     p.size,   p.grounded,
-                                      p.weapon.kind,       p.aimDirection, p.health, p.weapon.charging,
-                                      p.weapon.overheated, p.weapon.shots};
+            result.target = BotTarget{p.position,     p.velocity,         p.size,
+                                      p.grounded,     p.weapon.kind,      p.aimDirection,
+                                      p.health,       p.weapon.charging,  p.weapon.overheated,
+                                      p.weapon.shots, p.weapon.reloading, p.pushX};
     }
     for (const auto& b : world.bullets())
         if (b.shooterId != self || b.weapon == WeaponKind::Rpg)
@@ -364,6 +368,7 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
         Player predicted;
         predicted.position = target.position;
         predicted.velocity = target.velocity;
+        predicted.pushX = target.pushX;
         predicted.size = target.size;
         predicted.update(flight, arena);
         delta = {predicted.position.x + target.size.x / 2 - origin.x,
@@ -382,7 +387,8 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
 }
 
 BotController::BotController(Arena arena, BotDifficulty difficulty, std::uint32_t seed)
-    : hard_(difficulty == BotDifficulty::Hard), arena_(std::move(arena)), tuning_(botTuning(difficulty)),
+    : mobility_(arena, difficulty == BotDifficulty::Hard), mobile_(difficulty != BotDifficulty::Easy),
+      hard_(difficulty == BotDifficulty::Hard), arena_(std::move(arena)), tuning_(botTuning(difficulty)),
       random_(seed), navigation_(BotNavigation::forArena(arena_))
 {
     reset();
@@ -390,6 +396,7 @@ BotController::BotController(Arena arena, BotDifficulty difficulty, std::uint32_
 
 void BotController::reset()
 {
+    mobility_.reset();
     history_.clear();
     perceived_ = {};
     time_ = nextShot_ = nextAim_ = replan_ = stuck_ = avoidedUntil_ = nextGoal_ = 0;
@@ -413,16 +420,16 @@ void BotController::reset()
 
 BotWeaponProfile botWeaponProfile(WeaponKind weapon)
 {
-    static constexpr std::array<BotWeaponProfile, weaponCount> profiles{{{220, 420},
+    static constexpr std::array<BotWeaponProfile, weaponCount> profiles{{{220, 480},
                                                                          {65, 180},
-                                                                         {180, 370},
+                                                                         {230, 650},
                                                                          {100, 270},
                                                                          {300, 680},
                                                                          {400, 1050},
                                                                          {500, 1500},
                                                                          {170, 390},
                                                                          {240, 650},
-                                                                         {75, 170},
+                                                                         {120, 330},
                                                                          {35, 84},
                                                                          {35, 92},
                                                                          {22, 53},
@@ -483,7 +490,8 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
     }
     else
         coverSince_ = -1;
-    const bool wantsCover = ((lethal && enemyReady) || self.weapon.overheated) && time_ >= attackUntil_;
+    const bool wantsCover =
+        ((lethal && enemyReady) || self.weapon.overheated || self.weapon.reloading) && time_ >= attackUntil_;
     auto exposure = [&](Vec2 at)
     {
         const auto start = center(*target);
@@ -544,10 +552,11 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
         if (candidate.weapon.kind == WeaponKind::Rpg)
         {
             const auto origin = candidate.weaponOrigin(), at = center(*target);
-            const float flight = std::max(.01f, (distance(origin, at) - candidate.weapon.barrel()) / 300);
+            const float flight =
+                std::max(.01f, (distance(origin, at) - candidate.weapon.barrel()) / self.weapon.bulletSpeed);
             const float angle = std::atan2(at.y - origin.y - 12.5f * flight * flight, at.x - origin.x);
-            canAttack =
-                flight <= 4 && clearShot(candidate, {std::cos(angle), std::sin(angle)}, flight, arena_);
+            canAttack = flight <= weaponDefinition(WeaponKind::Rpg).lifetime &&
+                        clearShot(candidate, {std::cos(angle), std::sin(angle)}, flight, arena_);
         }
         else
             canAttack = botAim(candidate, *target, arena_).has_value();
@@ -556,7 +565,17 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
             continue;
         if (navigation_->nearest(self.position) != item.index &&
             navigation_->route(self.position, candidate.position, -1, -1, routeHazards_).empty())
-            continue;
+        {
+            const bool boost =
+                mobile_ && (self.weapon.kind == WeaponKind::Shotgun ||
+                            self.weapon.kind == WeaponKind::Minigun || self.weapon.kind == WeaponKind::Rpg);
+            float rise = self.weapon.kind == WeaponKind::Minigun   ? 650.f
+                         : self.weapon.kind == WeaponKind::Shotgun ? 320.f
+                                                                   : 230.f;
+            if (!boost || candidate.position.y < self.position.y - rise ||
+                distance(candidate.position, self.position) > 800)
+                continue;
+        }
         best = cost;
         goal = candidate.position;
     }
@@ -819,6 +838,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
         Player predicted;
         predicted.position = estimate.position;
         predicted.velocity = estimate.velocity;
+        predicted.pushX = estimate.pushX;
         predicted.size = estimate.size;
         predicted.update(std::max(0.f, time_ - perceived_.time), arena_);
         estimate.position = predicted.position;
@@ -855,6 +875,42 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
         input.shoot = alignedFire && observation.target.has_value();
     input.triggerHeld = input.shoot;
     input.aimDirection = aim_;
+    const auto& d = weaponDefinition(observation.self.weapon.kind);
+    if (observation.self.weapon.reloading)
+        input.shoot = input.triggerHeld = false;
+    if (d.capacity && observation.self.weapon.ammo > 0 &&
+        observation.self.weapon.ammo <= std::max(1, d.capacity / 4) && perceived_.target &&
+        !botAim(observation.self, *perceived_.target, arena_) && !observation.self.weapon.reloading)
+        input.reload = true;
+    if (observation.self.weapon.kind == WeaponKind::Minigun && observation.self.weapon.heat > .9f)
+        input.shoot = input.triggerHeld = false;
+    input.moveDirection =
+        std::clamp(input.moveDirection - observation.self.pushX *
+                                             std::exp(-(observation.self.grounded ? 10.f : 3.f) * dt) /
+                                             Player::moveSpeed,
+                   -1.f, 1.f);
+    if (mobile_ && perceived_.target)
+    {
+        auto known = perceived_.bullets;
+        known.erase(std::remove_if(known.begin(), known.end(),
+                                   [&](Bullet& b)
+                                   {
+                                       return !advanceKnownBullet(b, std::max(0.f, time_ - perceived_.time),
+                                                                  arena_, center(*perceived_.target));
+                                   }),
+                    known.end());
+        Player opponent;
+        opponent.id = observation.self.id == 1 ? 2 : 1;
+        opponent.position = perceived_.target->position;
+        opponent.velocity = perceived_.target->velocity;
+        opponent.pushX = perceived_.target->pushX;
+        opponent.update(std::max(0.f, time_ - perceived_.time), arena_);
+        if (mobility_.control(observation.self, goal_, known, perceived_.fires, input, dt, &opponent))
+        {
+            aim_ = input.aimDirection;
+            cancelRoute(false);
+        }
+    }
     return input;
 }
 } // namespace cubeshot

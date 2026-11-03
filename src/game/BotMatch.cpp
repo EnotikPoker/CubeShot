@@ -29,9 +29,9 @@ void BotMatch::control(const PlayerInput& input)
     match_.setInput(1, input);
 }
 
-void BotMatch::action(bool jump, bool shoot, Vec2 aim)
+void BotMatch::action(bool jump, bool shoot, Vec2 aim, bool reload)
 {
-    match_.action(1, match_.round(), ++humanSequence_, jump, shoot, aim);
+    match_.action(1, match_.round(), ++humanSequence_, jump, shoot, aim, reload);
 }
 
 bool BotMatch::chooseWeapon(bool reroll)
@@ -64,6 +64,8 @@ void BotMatch::update(float dt)
         {
             const auto input = bot_.update(observeBot(match_.world(), 2, 1), delta);
             match_.setInput(2, input);
+            if (input.reload)
+                match_.action(2, match_.round(), ++botSequence_, false, false, input.aimDirection, true);
             if (input.jump || (input.shoot && !botHeld_))
                 match_.action(2, match_.round(), ++botSequence_, input.jump, input.shoot && !botHeld_,
                               input.aimDirection);

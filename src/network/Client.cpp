@@ -256,7 +256,7 @@ void Client::control(PlayerInput input)
     send(impl_->connection, e, false);
 }
 
-void Client::action(bool jump, bool shoot, Vec2 aim)
+void Client::action(bool jump, bool shoot, Vec2 aim, bool reload)
 {
     if (!connected() || !impl_->latest ||
         (impl_->latest->phase != MatchPhase::Round && impl_->latest->phase != MatchPhase::RoundEnd) ||
@@ -266,7 +266,7 @@ void Client::action(bool jump, bool shoot, Vec2 aim)
     auto* a = e.mutable_action();
     a->set_sequence(++impl_->actionSequence);
     a->set_input_sequence(impl_->prediction.sequence() + 1);
-    if (auto event = impl_->prediction.action(impl_->actionSequence, jump, shoot, aim))
+    if (auto event = impl_->prediction.action(impl_->actionSequence, jump, shoot, aim, reload))
     {
         if (impl_->events.size() < 256)
             impl_->events.push_back(*event);
@@ -274,6 +274,7 @@ void Client::action(bool jump, bool shoot, Vec2 aim)
     a->set_round(impl_->latest->round);
     a->set_jump(jump);
     a->set_shoot(shoot);
+    a->set_reload(reload);
     a->mutable_aim()->set_x(aim.x);
     a->mutable_aim()->set_y(aim.y);
     send(impl_->connection, e, true);

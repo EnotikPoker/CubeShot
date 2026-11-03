@@ -24,6 +24,8 @@ struct Player
     PlayerId id = 0;
     Vec2 position;
     Vec2 velocity;
+    float pushX = 0;
+    void applyImpulse(Vec2 impulse);
     Vec2 size{defaultSize, defaultSize};
     int health = maxHealth;
     Weapon weapon;
@@ -49,7 +51,7 @@ struct Player
     std::optional<Bullet> takeShot();
     void takeDamage(int damage);
     void applyInput(const PlayerInput& input);
-    void requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0);
+    void requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0, bool reload = false);
     void clearInput();
     void update(float deltaSeconds, const Arena& arena, bool playerSupport = false);
 

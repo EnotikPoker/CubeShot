@@ -43,7 +43,7 @@ void minigun()
     const auto ramp = advance(w, 108), full = advance(w, 120);
     expect(full > ramp && full >= 20, "Minigun gradually accelerates to a high fire rate");
     bool overheated = false;
-    for (int n = 0; n < 600; ++n)
+    for (int n = 0; n < 1440; ++n)
     {
         advance(w, 1);
         if (w.players()[0].weapon.overheated)

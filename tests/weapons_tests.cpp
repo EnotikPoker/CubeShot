@@ -60,10 +60,12 @@ void weapons()
     shotgun.update(dt);
     expect(shotgun.bullets().size() == 6, "Shotgun creates six separate pellets");
     for (const auto& b : shotgun.bullets())
-        expect(b.damage == 18 && b.lifetime < .4f && b.volley == 1,
+        expect(b.damage == 18 && b.lifetime > 7.f && b.volley == 1,
                "Shotgun damage, range and volley identity");
     expect(advance(shotgun, 60) == 1, "Shotgun produces one shot event per blast");
-    expect(shotgun.bullets().empty(), "Pellets expire at short range");
+    expect(!shotgun.bullets().empty(), "Airborne pellets survive beyond the old short timer");
+    advance(shotgun, 240);
+    expect(shotgun.bullets().empty(), "Spent pellets eventually land or leave the map");
     World sniper(arena(), 2);
     sniper.equip(1, WeaponKind::Sniper);
     sniper.setPlayerInput(1, {0, false, true, {1, 0}, true});

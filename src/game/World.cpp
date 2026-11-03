@@ -51,12 +51,12 @@ void World::resetPlayers(bool swapSpawns)
     pendingImpact_.assign(players_.size(), {});
 }
 
-void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence)
+void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload)
 {
     for (auto& player : players_)
     {
         if (player.id == id)
-            player.requestAction(jump, shoot, aim, sequence);
+            player.requestAction(jump, shoot, aim, sequence, reload);
     }
 }
 
@@ -111,7 +111,10 @@ void World::update(float deltaSeconds, bool damageLiving)
         {
             if (auto bullet = player.takeShot())
             {
-                emit(EventKind::Shot, *bullet, player.muzzlePosition());
+                const float shotSpeed = std::hypot(bullet->velocity.x, bullet->velocity.y);
+                emit(EventKind::Shot, *bullet,
+                     {bullet->position.x + bullet->velocity.x / shotSpeed * player.weapon.barrel(),
+                      bullet->position.y + bullet->velocity.y / shotSpeed * player.weapon.barrel()});
                 if (meleeWeapon(bullet->weapon))
                 {
                     melee(*bullet);
@@ -223,11 +226,14 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     {
         Vec2 at{bullet.position.x + (destination.x - bullet.position.x) * nearest,
                 bullet.position.y + (destination.y - bullet.position.y) * nearest};
+        bullet.travelled =
+            std::max(0.f, bullet.travelled - std::hypot(destination.x - at.x, destination.y - at.y));
         if (bullet.weapon == WeaponKind::Rpg)
         {
-            explode(bullet, at);
+            explode(bullet, at, victim ? victim->id : 0);
             return false;
         }
+        bullet.damage = bullet.impactDamage();
         if (incendiaryWeapon(bullet.weapon))
             igniteSurface(at, bullet.shooterId);
         if (remains)

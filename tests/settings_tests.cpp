@@ -159,6 +159,33 @@ void storage()
         std::ifstream input(file);
         input >> data;
     }
+    const auto saved = data;
+    auto writeLegacy = [&]
+    {
+        std::ofstream output(file);
+        output << data;
+    };
+    data["bindings"].erase(data["bindings"].end() - 1);
+    data["bindings"][4][0]["code"] = SDL_SCANCODE_R;
+    writeLegacy();
+    auto migrated = loadSettings(file);
+    expect(migrated.bindings[4][0].code == SDL_SCANCODE_F5 &&
+               migrated.bindings[5][0].code == SDL_SCANCODE_R &&
+               migrated.bindings[3][0] == desired.bindings[3][0],
+           "Five-action profile moves old restart to F5, adds reload R, preserves custom fire");
+    data["bindings"][2][1] = {{"device", 1}, {"code", SDL_SCANCODE_F5}};
+    writeLegacy();
+    migrated = loadSettings(file);
+    expect(migrated.bindings[4][0].code == SDL_SCANCODE_F6 && migrated.bindings[2][1].code == SDL_SCANCODE_F5,
+           "Migration preserves occupied F5 and finds a free restart key");
+    data["bindings"][4][0]["code"] = SDL_SCANCODE_T;
+    data["bindings"][3][0]["code"] = SDL_SCANCODE_R;
+    writeLegacy();
+    migrated = loadSettings(file);
+    expect(migrated.bindings[4][0].code == SDL_SCANCODE_T && migrated.bindings[3][0].code == SDL_SCANCODE_R &&
+               migrated.bindings[5][0].code == SDL_SCANCODE_E && validBindings(migrated.bindings),
+           "Custom restart and fire R survive migration with a free reload key");
+    data = saved;
     data["bindings"][0][0] = data["bindings"][1][0];
     {
         std::ofstream output(file);

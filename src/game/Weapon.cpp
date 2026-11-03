@@ -22,16 +22,16 @@ bool incendiaryWeapon(WeaponKind kind)
 const WeaponDefinition& weaponDefinition(WeaponKind kind)
 {
     static const std::array<WeaponDefinition, weaponCount> definitions{
-        {{U"Пистолет", 20, 1, .25f, 800, 3, 0, 240, 36, 0, false},
-         {U"Дробовик", 18, 6, .9f, 850, .38f, 12, 240, 44, 0, false},
-         {U"Автомат", 12, 1, .18f, 900, .65f, 4.f, 160, 48, 0, true},
-         {U"SMG", 10, 1, .075f, 850, .6f, 7, 220, 32, 0, true},
-         {U"Револьвер", 35, 1, .65f, 1250, 1.8f, .25f, 100, 40, 0, false},
-         {U"Винтовка", 70, 1, 1.2f, 1500, 1.8f, .12f, 70, 54, 0, false},
-         {U"Снайперская винтовка", 100, 1, 2.f, 1800, 2.f, .04f, 40, 60, .3f, false},
-         {U"Миниган", 5, 1, .04f, 950, .7f, 8, 160, 54, 0, true},
-         {U"РПГ", 100, 1, 2.2f, 300, 4, 0, 25, 56, 0, false},
-         {U"Огнемёт", 3, 1, .075f, 480, .42f, 9, -35, 40, 0, true},
+        {{U"Пистолет", 20, 1, .25f, 800, 8, 0, 240, 36, 0, false, 12, 1.25f, 1100, 30},
+         {U"Дробовик", 18, 6, .9f, 850, 8, 12, 240, 44, 0, false, 6, .5f, 260, 450},
+         {U"Автомат", 12, 1, .18f, 900, 8, 4, 50, 48, 0, true, 30, 1.8f, 750, 20},
+         {U"SMG", 10, 1, .075f, 850, 8, 7, 220, 32, 0, true, 35, 1.6f, 450, 14},
+         {U"Револьвер", 35, 1, .65f, 1250, 8, .25f, 100, 40, 0, false, 6, 2.2f, 1600, 90},
+         {U"Винтовка", 70, 1, 1.2f, 1500, 8, .12f, 70, 54, 0, false, 5, 2.2f, 2000, 130},
+         {U"Снайперская винтовка", 100, 1, 2, 1800, 8, .04f, 40, 60, .3f, false, 3, 2.8f, 3000, 200},
+         {U"Миниган", 5, 1, .04f, 950, 8, 8, 160, 54, 0, true, 300, 4, 550, 90},
+         {U"РПГ", 100, 1, 2.2f, 650, 5, 0, 25, 56, 0, false, 1, 2.8f, 0, 120},
+         {U"Огнемёт", 5, 1, .075f, 600, .7f, 9, -35, 40, 0, true, 100, 3, 350, 0},
          {U"Бита", 25, 1, .55f, 1000, .1f, 0, 0, 82, 0, false},
          {U"Катана", 30, 1, .32f, 1000, .1f, 0, 0, 90, 0, false},
          {U"Нож", 15, 1, .18f, 1000, .1f, 0, 0, 52, 0, false},
@@ -49,6 +49,8 @@ void Weapon::equip(WeaponKind value)
     cooldown = preparation = 0;
     charging = driven = overheated = false;
     spin = heat = 0;
+    ammo = d.capacity;
+    cancelReload();
 }
 
 float Weapon::barrel() const
@@ -61,39 +63,85 @@ bool Weapon::automatic() const
     return weaponDefinition(kind).automatic;
 }
 
+bool Weapon::startReload()
+{
+    const auto& d = weaponDefinition(kind);
+    if (!d.capacity || ammo >= d.capacity || reloading)
+        return false;
+    reloading = true;
+    reloadRemaining = d.reloadTime + (kind == WeaponKind::Shotgun ? .35f : 0.f);
+    charging = driven = false;
+    preparation = 0;
+    return true;
+}
+
+void Weapon::cancelReload()
+{
+    reloading = false;
+    reloadRemaining = 0;
+}
+
 bool Weapon::tryFire()
 {
     if (cooldown > 0)
         return false;
+    if (reloading)
+    {
+        if (kind != WeaponKind::Shotgun || ammo <= 0)
+            return false;
+        cancelReload();
+    }
+    const auto& d = weaponDefinition(kind);
+    if (d.capacity && ammo <= 0)
+    {
+        startReload();
+        return false;
+    }
     if (kind == WeaponKind::Minigun)
     {
         if (overheated || spin < .15f)
             return false;
-        heat = std::min(1.f, heat + .022f);
-        overheated = heat >= 1;
+        heat = std::min(1.f, heat + .004f);
+        overheated = heat >= .99999f;
         cooldown = .14f + (.04f - .14f) * spin;
     }
     else
         cooldown = shotInterval;
     ++shots;
+    if (d.capacity && --ammo == 0)
+        startReload();
     return true;
 }
 
 void Weapon::update(float dt)
 {
-    if (dt > 0)
+    if (!(dt > 0))
+        return;
+    if (reloading)
     {
-        if (kind == WeaponKind::Minigun)
+        reloadRemaining -= dt;
+        const auto& d = weaponDefinition(kind);
+        while (reloading && reloadRemaining <= 0)
         {
-            spin = std::clamp(spin + dt * (driven && !overheated ? 1.f / 1.2f : -2.5f), 0.f, 1.f);
-            if (!driven || overheated)
-                heat = std::max(0.f, heat - dt * .3f);
-            if (overheated && heat <= .25f)
-                overheated = false;
+            if (kind == WeaponKind::Shotgun && ++ammo < d.capacity)
+                reloadRemaining += d.reloadTime;
+            else
+            {
+                ammo = d.capacity;
+                cancelReload();
+            }
         }
-        cooldown = std::max(0.f, cooldown - dt);
-        if (charging)
-            preparation = std::max(0.f, preparation - dt);
     }
+    if (kind == WeaponKind::Minigun)
+    {
+        spin = std::clamp(spin + dt * (driven && !overheated && !reloading ? 1.f / 1.2f : -2.5f), 0.f, 1.f);
+        if (!driven || overheated || reloading)
+            heat = std::max(0.f, heat - dt * .3f);
+        if (overheated && heat <= .25f)
+            overheated = false;
+    }
+    cooldown = std::max(0.f, cooldown - dt);
+    if (charging)
+        preparation = std::max(0.f, preparation - dt);
 }
 } // namespace cubeshot

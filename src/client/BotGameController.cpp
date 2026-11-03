@@ -29,10 +29,10 @@ void BotGameController::control(const PlayerInput& input)
         match_->control(input);
 }
 
-void BotGameController::action(bool jump, bool shoot, Vec2 aim)
+void BotGameController::action(bool jump, bool shoot, Vec2 aim, bool reload)
 {
     if (match_)
-        match_->action(jump, shoot, aim);
+        match_->action(jump, shoot, aim, reload);
 }
 
 void BotGameController::clearInput()
