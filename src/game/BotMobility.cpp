@@ -300,7 +300,7 @@ bool BotMobility::advance(Simulation& s)
     if (airborneTick > 0 && s.airborne && p.grounded && s.shots && s.rockets.empty() &&
         (!mini || poweredDone))
         s.landed = true;
-    return (!s.program.baseline && s.landed) || s.tick >= 480 || p.health < 40 ||
+    return (!s.program.baseline && (s.landed || p.weapon.overheated)) || s.tick >= 480 || p.health < 40 ||
            !std::isfinite(p.position.x) || !std::isfinite(p.position.y);
 }
 
@@ -367,8 +367,8 @@ bool BotMobility::control(const Player& self, Vec2 goal, const std::vector<Bulle
         auto& s = *current_;
         if (s.program.baseline)
             baselineHealth_ = s.player.health;
-        bool safe = !s.program.baseline && s.landed && s.player.health >= 40 && s.player.weapon.heat < .95f &&
-                    (self.weapon.kind != WeaponKind::Rpg || s.blasted);
+        bool safe = !s.program.baseline && s.landed && s.player.health >= 40 && !s.player.weapon.overheated &&
+                    s.player.weapon.heat < .95f && (self.weapon.kind != WeaponKind::Rpg || s.blasted);
         for (const auto& f : fires_)
             if (distance(s.player.position, {f.position.x - 24, f.position.y - 48}) < f.radius + 36 &&
                 f.life > s.tick * step)

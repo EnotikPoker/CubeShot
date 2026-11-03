@@ -316,6 +316,8 @@ void mobility()
             p.position = {500, 852};
             p.grounded = true;
             p.weapon.equip(kind);
+            if (kind == WeaponKind::Minigun)
+                p.weapon.heat = .94f;
             BotMobility planner(a, hard);
             bool moved = false, arrived = false;
             int startHp = p.health;
