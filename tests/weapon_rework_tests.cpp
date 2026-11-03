@@ -194,7 +194,7 @@ void replay()
     expect(network::decodeSnapshot(wire).has_value(), "Valid new weapon states roundtrip");
 }
 
-void reloadAndRocketPrediction()
+void reloadAndRocketPrediction(MatchPhase phase = MatchPhase::Round)
 {
     const auto a = Arena::createDuel();
     World world(a, 2);
@@ -207,6 +207,7 @@ void reloadAndRocketPrediction()
     for (int i = 0; i < 361; ++i)
         match.update(dt);
     auto snapshot = match.snapshot();
+    snapshot.phase = phase;
     snapshot.players = world.players();
     snapshot.bullets.clear();
     Prediction prediction;
@@ -224,7 +225,7 @@ void reloadAndRocketPrediction()
             prediction.action(2, false, true, input.aimDirection);
         }
         world.setPlayerInput(1, input);
-        world.update(dt);
+        world.update(dt, phase == MatchPhase::Round);
         prediction.advance(input);
         const auto& actual = world.players()[0];
         const auto& predicted = *prediction.player();
@@ -235,7 +236,8 @@ void reloadAndRocketPrediction()
                "Client predicts its own surviving rocket blast at the authority's contact and tick");
         expect(predicted.health == 100, "Prediction leaves HP to the server");
     }
-    expect(hurt, "Rocket prediction fixture includes a real self-damaging explosion");
+    expect(hurt == (phase == MatchPhase::Round),
+           "Aftermath immunity agrees with authoritative rocket physics");
     Player p;
     p.position = {300, 392};
     p.grounded = true;
@@ -402,6 +404,7 @@ int main()
         rockets();
         replay();
         reloadAndRocketPrediction();
+        reloadAndRocketPrediction(MatchPhase::RoundEnd);
         minigunSnapshotPrediction();
         mobility();
         std::cout << "Magazines, ballistic energy, recoil, blast, replay and weapon mobility passed\n";

@@ -63,7 +63,7 @@ void Prediction::simulate(const PredictedCommand& command, bool visuals)
                 auto e = blastEffect({b.position.x + (end.x - b.position.x) * fraction,
                                       b.position.y + (end.y - b.position.y) * fraction},
                                      *player_, arena_);
-                if (e.damage < player_->health)
+                if (phase_ == MatchPhase::Round && e.damage < player_->health)
                     player_->applyImpulse(e.impulse);
             }
             else
@@ -106,7 +106,7 @@ void Prediction::advanceRockets()
                                Vec2 at{from.x + (b.position.x - from.x) * std::min(1.f, fraction),
                                        from.y + (b.position.y - from.y) * std::min(1.f, fraction)};
                                auto effect = blastEffect(at, *player_, arena_);
-                               if (effect.damage < player_->health)
+                               if (phase_ == MatchPhase::Round && effect.damage < player_->health)
                                    player_->applyImpulse(effect.impulse);
                                return true;
                            }
