@@ -178,6 +178,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_spin(p.weapon.spin);
         v->set_heat(p.weapon.heat);
         v->set_overheated(p.weapon.overheated);
+        v->set_driven(p.weapon.driven);
         v->set_burning(p.burning);
         v->set_burn_owner(p.burnOwner);
         auto* surface = v->mutable_surface();
@@ -323,6 +324,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         p.weapon.spin = v.spin();
         p.weapon.heat = v.heat();
         p.weapon.overheated = v.overheated();
+        p.weapon.driven = v.driven();
         p.burning = v.burning();
         p.burnOwner = v.burn_owner();
         p.surface.revision = v.surface().revision();

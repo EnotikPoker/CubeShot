@@ -92,7 +92,9 @@ void World::update(float deltaSeconds, bool damageLiving)
     }
     damageLiving_ = damageLiving;
     double remaining = deltaSeconds;
-    constexpr double maxStep = 1.0 / 120.0;
+    // Match and prediction pass a float tick. A double 1/120 otherwise leaves
+    // a tiny second tick that can cancel recoil against a ceiling after firing.
+    constexpr double maxStep = static_cast<double>(1.0f / 120.0f);
     while (remaining > 0.0)
     {
         const float step = static_cast<float>(std::min(remaining, maxStep));

@@ -247,6 +247,62 @@ void reloadAndRocketPrediction()
            "Reload preserves simultaneous movement, jump and aim");
 }
 
+void minigunSnapshotPrediction()
+{
+    World world(Arena::createDuel(), 2);
+    world.equip(1, WeaponKind::Minigun);
+    Match match(false, 42);
+    match.connect(1);
+    match.connect(2);
+    match.setReady(1, true);
+    match.setReady(2, true);
+    for (int i = 0; i < 361; ++i)
+        match.update(dt);
+    auto snapshot = match.snapshot();
+    Prediction prediction;
+    PlayerInput held;
+    held.aimDirection = {0, 1};
+    held.triggerHeld = true;
+    bool overheated = false, reloaded = false;
+    for (int tick = 0; tick < 120 * 30; ++tick)
+    {
+        snapshot.players = world.players();
+        snapshot.bullets = world.bullets();
+        snapshot.inputAck[0] = prediction.sequence();
+        snapshot.actionAck[0] = tick > 2800 ? 1 : 0;
+        auto decoded = network::decodeSnapshot(network::encodeSnapshot(snapshot));
+        expect(decoded.has_value(), "Live minigun state roundtrips through the wire");
+        prediction.reconcile(*decoded, 1);
+        held.triggerHeld = tick < 120 * 29;
+        if (tick == 2800)
+        {
+            world.requestAction(1, false, false, held.aimDirection, 1, true);
+            prediction.action(1, false, false, held.aimDirection, true);
+        }
+        world.setPlayerInput(1, held);
+        world.update(dt);
+        prediction.advance(held);
+        const auto& authority = world.players()[0];
+        overheated = overheated || authority.weapon.overheated;
+        reloaded = reloaded || authority.weapon.reloading;
+        const auto& local = *prediction.player();
+        if (std::abs(authority.weapon.spin - local.weapon.spin) >= .0001f ||
+            authority.weapon.ammo != local.weapon.ammo ||
+            std::abs(authority.velocity.y - local.velocity.y) >= .001f)
+            std::cerr << "Mini tick " << tick << " spin " << authority.weapon.spin << "/" << local.weapon.spin
+                      << " ammo " << authority.weapon.ammo << "/" << local.weapon.ammo << " vy "
+                      << authority.velocity.y << "/" << local.velocity.y << " cd "
+                      << authority.weapon.cooldown << "/" << local.weapon.cooldown << " driven "
+                      << authority.weapon.driven << "/" << local.weapon.driven << "\n";
+        expect(std::abs(authority.weapon.spin - local.weapon.spin) < .0001f &&
+                   authority.weapon.ammo == local.weapon.ammo &&
+                   std::abs(authority.velocity.y - local.velocity.y) < .001f,
+               "Frequent wire snapshots preserve minigun drive, ammo and flight impulse");
+    }
+    expect(overheated && reloaded,
+           "Wire prediction covers overheat, cooling, belt replacement and trigger release");
+}
+
 void mobility()
 {
     auto a = arena();
@@ -344,6 +400,7 @@ int main()
         rockets();
         replay();
         reloadAndRocketPrediction();
+        minigunSnapshotPrediction();
         mobility();
         std::cout << "Magazines, ballistic energy, recoil, blast, replay and weapon mobility passed\n";
     }
