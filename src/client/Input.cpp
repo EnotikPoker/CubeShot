@@ -66,6 +66,7 @@ PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Pl
     const bool right = actionHeld(InputAction::Right, bindings, keys, count, buttons);
     input.moveDirection = static_cast<float>(right) - static_cast<float>(left);
     input.jump = actionHeld(InputAction::Jump, bindings, keys, count, buttons);
+    input.jetpackHeld = input.jump;
     input.shoot = actionHeld(InputAction::Shoot, bindings, keys, count, buttons);
     return input;
 }
@@ -122,6 +123,7 @@ PlayerInput GameplayInputGate::filter(PlayerInput input)
         blockShoot_ = false;
     input.jump = input.jump && !blockJump_;
     input.shoot = input.shoot && !blockShoot_;
+    input.jetpackHeld = input.jump;
     input.triggerHeld = input.shoot;
     return input;
 }

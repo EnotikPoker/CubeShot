@@ -33,6 +33,7 @@ struct PhysicsPiece
     unsigned fractureSeed = 0;
     Vec2 fractureOrigin{};
     bool cleanCut = false;
+    float visualScale = 1;
 };
 
 struct Corpse
@@ -63,7 +64,7 @@ public:
     void spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind cause = WeaponKind::Pistol,
                int volleyDamage = 0);
     void update(float dt, const Arena& arena, const std::vector<Player>& players);
-    std::optional<DebrisHit> trace(Vec2 from, Vec2 to) const;
+    std::optional<DebrisHit> trace(Vec2 from, Vec2 to, float radius = Bullet::radius) const;
     bool hit(const DebrisHit& target, const Bullet& bullet, Vec2 position);
     const std::vector<Corpse>& corpses() const;
     const std::vector<PhysicsPiece>& pieces() const;

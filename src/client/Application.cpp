@@ -355,9 +355,11 @@ int Application::run()
                             SDL_free(text);
                         }
                     }
-                    if (key == SDL_SCANCODE_UP || (key == SDL_SCANCODE_W && before != Screen::Address))
+                    if ((menu_.screen() == Screen::Armory && key == SDL_SCANCODE_LEFT) ||
+                        key == SDL_SCANCODE_UP || (key == SDL_SCANCODE_W && before != Screen::Address))
                         menu_.moveSelection(-1);
-                    if (key == SDL_SCANCODE_DOWN || (key == SDL_SCANCODE_S && before != Screen::Address))
+                    if ((menu_.screen() == Screen::Armory && key == SDL_SCANCODE_RIGHT) ||
+                        key == SDL_SCANCODE_DOWN || (key == SDL_SCANCODE_S && before != Screen::Address))
                         menu_.moveSelection(1);
                     if (key == SDL_SCANCODE_RETURN || key == SDL_SCANCODE_KP_ENTER)
                         action = menu_.activate();

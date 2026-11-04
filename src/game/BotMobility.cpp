@@ -16,11 +16,11 @@ float distance(Vec2 a, Vec2 b)
     return std::hypot(a.x - b.x, a.y - b.y);
 }
 
-float barrier(Vec2 from, Vec2 to, const Arena& arena)
+float barrier(Vec2 from, Vec2 to, const Arena& arena, float radius = Bullet::radius)
 {
     float t = 2;
     for (const auto& wall : arena.platforms)
-        if (auto hit = collision::segmentHit(from, to, wall, Bullet::radius))
+        if (auto hit = collision::segmentHit(from, to, wall, radius))
             t = std::min(t, *hit);
     return t;
 }
@@ -53,7 +53,7 @@ float BotMobility::routeTime(Vec2 from, Vec2 to) const
     float ticks = 0;
     for (const auto& edge : path)
         ticks += edge.durationTicks;
-    return std::max(ticks / 120, distance(from, to) / Player::moveSpeed);
+    return std::max(ticks / 120, distance(from, to) / root_.movementSpeed());
 }
 
 BotMobility::Simulation BotMobility::simulateProgram(const Player& self, Program program) const
@@ -74,6 +74,7 @@ BotMobility::Simulation BotMobility::simulateProgram(const Player& self, Program
 void BotMobility::begin(const Player& self, Vec2 goal, const std::vector<Bullet>& threats,
                         const std::vector<FirePatch>& fires, const PlayerInput& baseline)
 {
+    navigation_ = BotNavigation::forArena(arena_, self.abilities);
     root_ = self;
     goal_ = goal;
     threats_ = threats;
@@ -149,8 +150,8 @@ bool BotMobility::advance(Simulation& s)
         s.cleared = s.cleared || p.position.y <= goal_.y - 8 || goal_.y >= root_.position.y - 48;
         const float target = s.cleared ? goal_.x : root_.position.x;
         input.moveDirection =
-            std::clamp((target - p.position.x) / (Player::moveSpeed * .15f) -
-                           p.pushX * std::exp(-(p.grounded ? 10.f : 3.f) * step) / Player::moveSpeed,
+            std::clamp((target - p.position.x) / (p.movementSpeed() * .15f) -
+                           p.pushX * std::exp(-(p.grounded ? 10.f : 3.f) * step) / p.movementSpeed(),
                        -1.f, 1.f);
     }
     s.positions.push_back(p.position);
@@ -191,20 +192,20 @@ bool BotMobility::advance(Simulation& s)
                         }
                     }
                     b.update(step);
-                    float hit = barrier(from, b.position, arena_);
+                    float hit = barrier(from, b.position, arena_, b.collisionRadius);
                     bool direct = false;
                     if (owned && s.opponent && s.opponent->alive())
                         if (auto t =
                                 hitPolygon({from.x - s.opponent->position.x, from.y - s.opponent->position.y},
                                            {b.position.x - s.opponent->position.x,
                                             b.position.y - s.opponent->position.y},
-                                           s.opponent->bodyContour(), Bullet::radius))
+                                           s.opponent->bodyContour(), b.collisionRadius))
                             hit = std::min(hit, *t);
                     if (!owned && b.shooterId != p.id)
                     {
                         if (auto t = hitPolygon({from.x - p.position.x, from.y - p.position.y},
                                                 {b.position.x - p.position.x, b.position.y - p.position.y},
-                                                p.bodyContour(), Bullet::radius))
+                                                p.bodyContour(), b.collisionRadius))
                             if (*t < hit &&
                                 (b.weapon != WeaponKind::FireBoomerang || !(b.hitMask & (1u << p.id))))
                             {
@@ -224,15 +225,23 @@ bool BotMobility::advance(Simulation& s)
                         {
                             auto effect = blastEffect(at, p, arena_, direct ? p.id : 0);
                             p.applyImpulse(effect.impulse);
-                            p.health -= effect.damage;
+                            if (effect.damage > 0 && !p.absorb(b))
+                            {
+                                p.health -= effect.damage;
+                                if (b.ignites && b.shooterId != p.id)
+                                    s.burning = 2.5f;
+                            }
                             if (owned && effect.damage > 0)
                                 s.blasted = true;
                         }
                         else if (direct)
                         {
-                            p.health -= b.impactDamage();
-                            if (incendiaryWeapon(b.weapon))
-                                s.burning = 2.5f;
+                            if (!p.absorb(b))
+                            {
+                                p.health -= b.impactDamage();
+                                if (incendiaryWeapon(b.weapon) || b.ignites)
+                                    s.burning = 2.5f;
+                            }
                         }
                         if (b.weapon == WeaponKind::FireBoomerang && b.lifetime > 0)
                         {
@@ -261,7 +270,7 @@ bool BotMobility::advance(Simulation& s)
         {
             Vec2 from = bullet->position,
                  to{from.x + aim.x * p.weapon.barrel(), from.y + aim.y * p.weapon.barrel()};
-            float t = barrier(from, to, arena_);
+            float t = barrier(from, to, arena_, bullet->collisionRadius);
             if (t <= 1)
             {
                 Vec2 at{from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t};
@@ -280,8 +289,8 @@ bool BotMobility::advance(Simulation& s)
     s.burning = std::max(0.f, s.burning - step);
     for (const auto& f : fires_)
     {
-        Vec2 at{std::clamp(f.position.x, p.position.x, p.position.x + 48),
-                std::clamp(f.position.y, p.position.y, p.position.y + 48)};
+        Vec2 at{std::clamp(f.position.x, p.position.x, p.position.x + p.size.x),
+                std::clamp(f.position.y, p.position.y, p.position.y + p.size.y)};
         if (f.life > tick * step && distance(at, f.position) < f.radius + 8)
             s.burning = 2.5f;
     }

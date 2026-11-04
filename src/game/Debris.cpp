@@ -216,6 +216,7 @@ void Debris::chip(const Player& player, const Polygon& material, Vec2 impulse, u
     p.id = nextId_++;
     p.owner = player.id;
     p.kind = PieceKind::Chip;
+    p.visualScale = player.bodyScale();
     p.life = 6;
     p.fractureSeed = seed;
     p.outline = material;
@@ -256,13 +257,15 @@ void Debris::detachEye(PhysicsPiece& source, Vec2 impulse)
     eye.id = nextId_++;
     eye.owner = source.owner;
     eye.kind = PieceKind::Eye;
+    eye.visualScale = source.visualScale;
     eye.position = piecePoint(source, source.eye);
     eye.velocity = {source.velocity.x + impulse.x * 1.4f, source.velocity.y + impulse.y - 110};
     eye.spin = impulse.x * .02f;
     for (int n = 0; n < 10; ++n)
     {
         const float angle = n * 6.2831853f / 10;
-        eye.outline.push_back({std::cos(angle) * 3.5f, std::sin(angle) * 3.5f});
+        eye.outline.push_back(
+            {std::cos(angle) * 3.5f * source.visualScale, std::sin(angle) * 3.5f * source.visualScale});
     }
     refreshPiece(eye);
     source.hasEye = false;
@@ -275,14 +278,15 @@ void Debris::spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind 
     auto& p = corpse.body;
     p.id = nextId_++;
     p.owner = player.id;
-    p.position = {player.position.x + 24, player.position.y + 24};
+    p.visualScale = player.bodyScale();
+    p.position = {player.position.x + player.size.x / 2, player.position.y + player.size.y / 2};
     auto pose = player;
     pose.velocity = velocity;
     p.outline = pose.bodyContour();
     for (auto& v : p.outline)
     {
-        v.x -= 24;
-        v.y -= 24;
+        v.x -= player.size.x / 2;
+        v.y -= player.size.y / 2;
     }
     p.velocity = {velocity.x * .35f + impact.x * 110, std::min(velocity.y * .2f, 0.f) - 60};
     p.spin = impact.x * 2.4f;
@@ -290,10 +294,11 @@ void Debris::spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind 
     p.cleanCut = cause == WeaponKind::Katana;
     p.hasEye = true;
     const auto anchor = pose.bodyPoint({player.aimDirection.x < 0 ? 11.f : 37.f, 15});
-    p.eye = {anchor.x - 24, anchor.y - 24};
+    p.eye = {anchor.x - player.size.x / 2, anchor.y - player.size.y / 2};
     p.hasEye = containsPoint(p.outline, p.eye);
     auto impactPoint = pose.bodyPoint(player.lastImpact.local);
-    p.fractureOrigin = {impactPoint.x - 24, impactPoint.y - 24};
+    p.fractureOrigin = {impactPoint.x - player.size.x / 2, impactPoint.y - player.size.y / 2};
+    p.skinOffset = {player.size.x / 2, player.size.y / 2};
     p.integrity = 100;
     p.charred = incendiaryWeapon(cause) || player.surface.charred;
     corpse.cause = cause;
@@ -387,6 +392,7 @@ void Debris::split(PhysicsPiece source, unsigned count, Vec2 impulse)
             v.x -= centre.x;
             v.y -= centre.y;
         }
+        p.visualScale = source.visualScale;
         p.eye = {source.eye.x - centre.x, source.eye.y - centre.y};
         p.hasEye = source.hasEye && containsPoint(part, p.eye);
         p.fractureOrigin = {source.fractureOrigin.x - centre.x, source.fractureOrigin.y - centre.y};
@@ -423,18 +429,18 @@ void Debris::update(float dt, const Arena& arena, const std::vector<Player>& pla
         stepPiece(piece, dt, arena, players);
 }
 
-std::optional<DebrisHit> Debris::trace(Vec2 from, Vec2 to) const
+std::optional<DebrisHit> Debris::trace(Vec2 from, Vec2 to, float radius) const
 {
     std::optional<DebrisHit> out;
     float nearest = 2;
     for (std::size_t i = 0; i < corpses_.size(); ++i)
-        if (auto t = hitPiece(from, to, corpses_[i].body); t && *t < nearest)
+        if (auto t = hitPiece(from, to, corpses_[i].body, radius); t && *t < nearest)
         {
             nearest = *t;
             out = DebrisHit{*t, false, i};
         }
     for (std::size_t i = 0; i < pieces_.size(); ++i)
-        if (auto t = pieces_[i].kind == PieceKind::Corpse ? hitPiece(from, to, pieces_[i])
+        if (auto t = pieces_[i].kind == PieceKind::Corpse ? hitPiece(from, to, pieces_[i], radius)
                                                           : std::optional<float>{};
             t && *t < nearest)
         {

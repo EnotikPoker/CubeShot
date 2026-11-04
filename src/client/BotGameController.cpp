@@ -10,8 +10,11 @@ void BotGameController::handle(MenuAction action, Menu& menu, const std::string&
             std::make_unique<BotMatch>(menu.botMap(), menu.botDifficulty(), nickname, std::random_device{}());
     if (action == MenuAction::BotRematch && match_)
         match_->rematch(nickname);
-    if (match_ && (action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon))
-        match_->chooseWeapon(action == MenuAction::RollWeapon);
+    if (match_ && (action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon ||
+                   action == MenuAction::RollAbility))
+        match_->chooseUpgrade(action == MenuAction::RollWeapon    ? UpgradeKind::Weapon
+                              : action == MenuAction::RollAbility ? UpgradeKind::Ability
+                                                                  : UpgradeKind::Continue);
     synchronize(menu);
 }
 

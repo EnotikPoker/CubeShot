@@ -1,6 +1,7 @@
 #pragma once
 #include "game/BotController.h"
 #include "game/Match.h"
+#include <random>
 #include <string>
 
 namespace cubeshot
@@ -13,6 +14,7 @@ public:
     void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
     void clearInput();
     bool chooseWeapon(bool reroll);
+    bool chooseUpgrade(UpgradeKind kind);
     void update(float dt);
     void rematch(const std::string& nickname = {});
     WorldSnapshot snapshot() const;
@@ -20,6 +22,7 @@ public:
     const Match& match() const;
 
 private:
+    std::mt19937 upgradeRandom_;
     Match match_;
     BotController bot_;
     std::string nickname_;

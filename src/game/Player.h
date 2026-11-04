@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/Abilities.h"
 #include "game/Bullet.h"
 #include "game/PlayerInput.h"
 #include "game/Shape.h"
@@ -7,6 +8,7 @@
 #include "game/Weapon.h"
 
 #include <optional>
+#include <vector>
 
 namespace cubeshot
 {
@@ -28,6 +30,33 @@ struct Player
     void applyImpulse(Vec2 impulse);
     Vec2 size{defaultSize, defaultSize};
     int health = maxHealth;
+    Abilities abilities;
+    unsigned shields = 0;
+    float jetpackFuel = 2;
+    bool jetpackActive = false;
+
+    int healthLimit() const
+    {
+        return abilities.health();
+    }
+
+    float movementSpeed() const
+    {
+        return moveSpeed * abilities.speed();
+    }
+
+    float jumpVelocity() const
+    {
+        return jumpSpeed * abilities.jump();
+    }
+
+    float bodyScale() const
+    {
+        return abilities.scale();
+    }
+
+    void setAbilities(const Abilities& value, bool refill = true);
+    bool absorb(const Bullet& bullet);
     Weapon weapon;
     bool grounded = false;
     float burning = 0, burnTick = 0;
@@ -63,6 +92,15 @@ private:
     bool shootRequested_ = false;
     Vec2 shotAim_{1, 0};
     std::uint64_t shotSequence_ = 0;
+    bool jetpackHeld_ = false;
+
+    struct BlockedShot
+    {
+        PlayerId shooter;
+        std::uint32_t volley;
+    };
+
+    std::vector<BlockedShot> blockedShots_;
 };
 
 } // namespace cubeshot

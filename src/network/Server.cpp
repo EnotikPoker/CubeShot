@@ -221,7 +221,9 @@ struct Server::Impl
                                                                       false,
                                                                       false,
                                                                       {command.aim().x(), command.aim().y()},
-                                                                      command.fire_held()});
+                                                                      command.fire_held(),
+                                                                      false,
+                                                                      command.jump_held()});
             }
             peer.input = Clock::now();
         }
@@ -249,7 +251,13 @@ struct Server::Impl
         else if (e.has_weapon_choice())
         {
             const auto& choice = e.weapon_choice();
-            match.chooseWeapon(peer.id, choice.reroll(), choice.round(), choice.selection_revision());
+            if (choice.upgrade() > 2)
+            {
+                remove(c, "Invalid upgrade");
+                return;
+            }
+            match.chooseUpgrade(peer.id, static_cast<UpgradeKind>(choice.upgrade()), choice.round(),
+                                choice.selection_revision());
             broadcast(true);
         }
         else if (e.has_ready())

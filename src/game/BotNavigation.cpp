@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <queue>
+#include <tuple>
 
 namespace cubeshot
 {
@@ -20,22 +21,23 @@ float distance(Vec2 a, Vec2 b)
 }
 } // namespace
 
-BotNavigation::BotNavigation(const Arena& arena)
+BotNavigation::BotNavigation(const Arena& arena, Abilities abilities)
 {
+    const float bodySize = Player::defaultSize * abilities.scale();
+    speed_ = Player::moveSpeed * abilities.speed();
     for (std::size_t surface = 0; surface < arena.platforms.size(); ++surface)
     {
         const auto& r = arena.platforms[surface];
-        const float left = std::max(r.position.x - Player::defaultSize + 8, arena.bounds.position.x);
-        const float right = std::min(r.position.x + r.size.x - 8,
-                                     arena.bounds.position.x + arena.bounds.size.x - Player::defaultSize);
+        const float left = std::max(r.position.x - bodySize + 8, arena.bounds.position.x);
+        const float right =
+            std::min(r.position.x + r.size.x - 8, arena.bounds.position.x + arena.bounds.size.x - bodySize);
         std::vector<float> samples;
         for (float x = left; x <= right; x += 32)
             samples.push_back(x);
         if (right >= left)
             samples.push_back(right);
         for (const auto& spawn : arena.spawnPoints)
-            if (std::abs(spawn.y + Player::defaultSize - r.position.y) < .1f && spawn.x >= left &&
-                spawn.x <= right)
+            if (std::abs(spawn.y + bodySize - r.position.y) < .1f && spawn.x >= left && spawn.x <= right)
                 samples.push_back(spawn.x);
         std::sort(samples.begin(), samples.end());
         samples.erase(
@@ -43,7 +45,7 @@ BotNavigation::BotNavigation(const Arena& arena)
             samples.end());
         for (float x : samples)
         {
-            Rect body{{x, r.position.y - Player::defaultSize}, {Player::defaultSize, Player::defaultSize}};
+            Rect body{{x, r.position.y - bodySize}, {bodySize, bodySize}};
             if (body.position.y < arena.bounds.position.y)
                 continue;
             if (std::none_of(arena.platforms.begin(), arena.platforms.end(),
@@ -57,7 +59,7 @@ BotNavigation::BotNavigation(const Arena& arena)
         for (auto index : outgoing_[edge.from])
         {
             auto& old = edges_[index];
-            if (old.to == edge.to && old.jump == edge.jump)
+            if (old.to == edge.to && old.jump == edge.jump && old.jetpack == edge.jetpack)
             {
                 if (edge.durationTicks < old.durationTicks)
                     old = edge;
@@ -76,48 +78,55 @@ BotNavigation::BotNavigation(const Arena& arena)
             if (to < 0 || to >= static_cast<int>(nodes_.size()) || nodes_[from].surface != nodes_[to].surface)
                 continue;
             Player p;
+            p.setAbilities(abilities);
             p.position = nodes_[from].position;
             const float dx = nodes_[to].position.x - p.position.x;
             const float end = collision::moveHorizontally(p.bounds(), dx, arena.bounds, arena.platforms);
             if (std::abs(end - nodes_[to].position.x) < .1f)
                 add({from, static_cast<std::size_t>(to), false, dx > 0 ? 1 : -1, 0,
-                     std::max(1, static_cast<int>(std::ceil(std::abs(dx) / Player::moveSpeed / step)))});
+                     std::max(1, static_cast<int>(std::ceil(std::abs(dx) / speed_ / step)))});
         }
-        for (bool jump : {true, false})
-            for (int direction : {-1, 0, 1})
-                for (int hold : {18, 36, 60, 90, 120})
-                {
-                    if ((!jump && direction == 0) || (direction == 0 && hold != 18))
-                        continue;
-                    Player p;
-                    p.position = nodes_[from].position;
-                    bool airborne = false;
-                    for (int tick = 0; tick < 180; ++tick)
+        for (bool jet : {false, true})
+            for (bool jump : {true, false})
+                for (int direction : {-1, 0, 1})
+                    for (int hold : {18, 36, 60, 90, 120})
                     {
-                        p.applyInput({tick < hold ? static_cast<float>(direction) : 0.f, jump && tick == 0});
-                        p.update(step, arena);
-                        airborne = airborne || !p.grounded;
-                        if (!airborne || !p.grounded)
+                        if (jet && (!abilities.level(AbilityKind::Jetpack) || !jump))
                             continue;
-                        auto to = nearest(p.position);
-                        if (std::abs(nodes_[to].position.y - p.position.y) < .1f &&
-                            std::abs(nodes_[to].position.x - p.position.x) <= 17 && to != from)
+                        if ((!jump && direction == 0) || (direction == 0 && hold != 18 && !jet))
+                            continue;
+                        Player p;
+                        p.setAbilities(abilities);
+                        p.position = nodes_[from].position;
+                        bool airborne = false;
+                        for (int tick = 0; tick < (jet ? 360 : 180); ++tick)
                         {
-                            // A jump must solve an obstacle/height change, not exploit rounded
-                            // landing samples to appear faster than walking on the same surface.
-                            const float dx = nodes_[to].position.x - nodes_[from].position.x;
-                            const Rect body{nodes_[from].position,
-                                            {Player::defaultSize, Player::defaultSize}};
-                            const bool walkable = nodes_[from].surface == nodes_[to].surface &&
-                                                  std::abs(collision::moveHorizontally(body, dx, arena.bounds,
-                                                                                       arena.platforms) -
-                                                           nodes_[to].position.x) < .1f;
-                            if (!jump || !walkable)
-                                add({from, to, jump, direction, hold, tick + 1});
+                            PlayerInput input{tick < hold ? static_cast<float>(direction) : 0.f,
+                                              jump && tick == 0};
+                            input.jetpackHeld = jet && tick < hold;
+                            p.applyInput(input);
+                            p.update(step, arena);
+                            airborne = airborne || !p.grounded;
+                            if (!airborne || !p.grounded)
+                                continue;
+                            auto to = nearest(p.position);
+                            if (std::abs(nodes_[to].position.y - p.position.y) < .1f &&
+                                std::abs(nodes_[to].position.x - p.position.x) <= 17 && to != from)
+                            {
+                                // A jump must solve an obstacle/height change, not exploit rounded
+                                // landing samples to appear faster than walking on the same surface.
+                                const float dx = nodes_[to].position.x - nodes_[from].position.x;
+                                const Rect body{nodes_[from].position, {bodySize, bodySize}};
+                                const bool walkable = nodes_[from].surface == nodes_[to].surface &&
+                                                      std::abs(collision::moveHorizontally(
+                                                                   body, dx, arena.bounds, arena.platforms) -
+                                                               nodes_[to].position.x) < .1f;
+                                if (!jump || !walkable)
+                                    add({from, to, jump, direction, hold, tick + 1, jet});
+                            }
+                            break;
                         }
-                        break;
                     }
-                }
     }
 }
 
@@ -131,7 +140,7 @@ std::shared_ptr<const BotNavigation> BotNavigation::forMap(MapId map)
     return graph;
 }
 
-std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena)
+std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena, Abilities abilities)
 {
     const auto original = Arena::create(arena.map, arena.map == MapId::Test);
     auto same = [](const Rect& a, const Rect& b)
@@ -141,9 +150,22 @@ std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena)
     };
     if (same(arena.bounds, original.bounds) && arena.platforms.size() == original.platforms.size() &&
         std::equal(arena.platforms.begin(), arena.platforms.end(), original.platforms.begin(), same))
-        return forMap(arena.map);
+    {
+        if (!abilities.level(AbilityKind::SmallBody) && !abilities.level(AbilityKind::Speed) &&
+            !abilities.level(AbilityKind::Jump) && !abilities.level(AbilityKind::Jetpack))
+            return forMap(arena.map);
+        using Key = std::tuple<MapId, unsigned, unsigned, unsigned, unsigned>;
+        static std::map<Key, std::weak_ptr<const BotNavigation>> cache;
+        Key key{arena.map, abilities.level(AbilityKind::SmallBody), abilities.level(AbilityKind::Speed),
+                abilities.level(AbilityKind::Jump), abilities.level(AbilityKind::Jetpack)};
+        if (auto graph = cache[key].lock())
+            return graph;
+        auto graph = std::make_shared<const BotNavigation>(arena, abilities);
+        cache[key] = graph;
+        return graph;
+    }
     // Custom geometry must never silently use the stock map's routes.
-    return std::make_shared<const BotNavigation>(arena);
+    return std::make_shared<const BotNavigation>(arena, abilities);
 }
 
 const std::vector<BotWaypoint>& BotNavigation::nodes() const
@@ -197,12 +219,11 @@ std::vector<BotTraversal> BotNavigation::route(Vec2 from, Vec2 goal, int avoidFr
             const auto& edge = edges_[index];
             if (static_cast<int>(edge.from) == avoidFrom && static_cast<int>(edge.to) == avoidTo)
                 continue;
-            const float correction = std::abs(nodes_[edge.to].position.x - nodes_[edge.from].position.x -
-                                              edge.direction * Player::moveSpeed * step *
-                                                  std::min(edge.holdTicks, edge.durationTicks));
+            const float correction =
+                std::abs(nodes_[edge.to].position.x - nodes_[edge.from].position.x -
+                         edge.direction * speed_ * step * std::min(edge.holdTicks, edge.durationTicks));
             const bool airborne = edge.jump || nodes_[edge.from].surface != nodes_[edge.to].surface;
-            const float next = cost + edge.durationTicks +
-                               (airborne ? 12 + correction / Player::moveSpeed / step : 0) +
+            const float next = cost + edge.durationTicks + (airborne ? 12 + correction / speed_ / step : 0) +
                                (edge.to < hazards.size() ? hazards[edge.to] * edge.durationTicks : 0);
             if (next < costs[edge.to])
             {

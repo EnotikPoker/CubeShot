@@ -1,4 +1,5 @@
 #include "client/MenuRenderer.h"
+#include "client/AbilityUI.h"
 #include "client/Menu.h"
 #include "client/UiText.h"
 #include "client/VisualAssets.h"
@@ -143,11 +144,15 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
         return true;
     const auto slot = own - 1;
     const bool spinning = state.weaponChoice[slot] == WeaponChoice::Spinning;
-    const auto result = spinning ? state.rolled[slot] : state.loadout[slot];
+    const bool ability = state.upgrade[slot] == UpgradeKind::Ability;
+    const unsigned count = ability ? abilityCount : weaponCount;
+    const unsigned result = ability
+                                ? static_cast<unsigned>(state.rolledAbility[slot])
+                                : static_cast<unsigned>(spinning ? state.rolled[slot] : state.loadout[slot]);
     const float elapsed = Match::spinSeconds - state.spinRemaining[slot];
     const float progress = spinning ? std::clamp(elapsed / Match::wheelSeconds, 0.f, 1.f) : 1.f;
-    const float destination = weaponCount * 4.f + static_cast<unsigned>(result);
-    const float position = destination - std::pow(1 - progress, 3.f) * weaponCount * 4;
+    const float destination = count * 4.f + result;
+    const float position = destination - std::pow(1 - progress, 3.f) * count * 4;
     constexpr float width = 154;
     if (!rectangle(renderer, {{166, 197}, {628, 152}}, {12, 18, 29, 255}))
         return false;
@@ -157,8 +162,7 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     const int middle = static_cast<int>(std::floor(position));
     for (int i = middle - 3; i <= middle + 3; ++i)
     {
-        const unsigned index =
-            static_cast<unsigned>((i % static_cast<int>(weaponCount) + weaponCount) % weaponCount);
+        const unsigned index = static_cast<unsigned>((i % static_cast<int>(count) + count) % count);
         const auto kind = static_cast<WeaponKind>(index);
         const float x = 480 + (i - position) * width;
         const bool selected = std::abs(x - 480) < width / 2;
@@ -168,8 +172,11 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
             rectangle(renderer, {{x - 70, 211}, {140, 124}}, selected ? color : SDL_Color{40, 50, 66, 255}) &&
             rectangle(renderer, {{x - 67, 214}, {134, 118}}, {23, 31, 45, 255}) &&
             rectangle(renderer, {{x - 67, 323}, {134, 9}}, color);
-        ok = ok && weaponCard(renderer, kind, x);
-        const auto name = weaponDefinition(kind).name;
+        ok = ok &&
+             (ability ? drawAbilityIcon(renderer, static_cast<AbilityKind>(index), {{x - 27, 228}, {54, 54}})
+                      : weaponCard(renderer, kind, x));
+        const auto name =
+            ability ? abilityDefinition(static_cast<AbilityKind>(index)).name : weaponDefinition(kind).name;
         if (textWidth(renderer, name, 1) > 128 && name.find(U' ') != std::u32string_view::npos)
         {
             auto space = name.find(U' ');
@@ -182,10 +189,17 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     }
     SDL_SetRenderClipRect(renderer, nullptr);
     const auto shown =
-        spinning && progress < 1
-            ? static_cast<WeaponKind>((static_cast<unsigned>(std::lround(position))) % weaponCount)
-            : result;
-    const auto name = weaponDefinition(shown).name;
+        spinning && progress < 1 ? static_cast<unsigned>(std::lround(position)) % count : result;
+    const auto name = ability ? abilityDefinition(static_cast<AbilityKind>(shown)).name
+                              : weaponDefinition(static_cast<WeaponKind>(shown)).name;
+    if (ability)
+    {
+        const auto text = abilityDefinition(static_cast<AbilityKind>(shown)).description;
+        if (!centeredText(renderer, text, 397, textWidth(renderer, text, 1) > 800 ? 1 : 1, muted))
+            return false;
+    }
+    if (!drawAbilityRow(renderer, state.abilities[slot], {166, 157}, 20))
+        return false;
     const int scale = textWidth(renderer, name, 2) > 620 ? 1 : 2;
     return ok && rectangle(renderer, {{477, 189}, {6, 17}}, {255, 209, 90, 255}) &&
            rectangle(renderer, {{466, 185}, {28, 8}}, {255, 226, 140, 255}) &&
@@ -317,7 +331,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 const auto choice = menu.networkSnapshot().weaponChoice[other];
                 if (!centeredText(renderer,
                                   choice == WeaponChoice::Ready ? U"Соперник готов"
-                                  : choice == WeaponChoice::Spinning ? U"Соперник меняет оружие"
+                                  : choice == WeaponChoice::Spinning ? U"Соперник крутит рулетку"
                                                                      : U"Соперник выбирает",
                                   140, 1, muted))
                     return false;
@@ -398,9 +412,10 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                               : 2;
         const SDL_Color face = selected ? SDL_Color{54, 103, 147, 255} : SDL_Color{41, 62, 86, 255};
         if (!uiPanel(renderer, bounds, face, selected, button.placeholder) ||
-            !centeredText(renderer, button.label,
-                          bounds.position.y + (bounds.size.y - textHeight(renderer, scale)) / 2 - 1, scale,
-                          button.placeholder ? muted : white))
+            !drawText(renderer, button.label,
+                      {bounds.position.x + (bounds.size.x - textWidth(renderer, button.label, scale)) / 2,
+                       bounds.position.y + (bounds.size.y - textHeight(renderer, scale)) / 2 - 1},
+                      scale, button.placeholder ? muted : white))
             return false;
         if (button.placeholder && menu.screen() != Screen::Armory && menu.screen() != Screen::Lobby &&
             menu.screen() != Screen::Result && menu.screen() != Screen::Browser &&

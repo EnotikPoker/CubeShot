@@ -96,8 +96,12 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
             }
         }
     }
-    if ((action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon) && client_)
-        client_->chooseWeapon(action == MenuAction::RollWeapon);
+    if ((action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon ||
+         action == MenuAction::RollAbility) &&
+        client_)
+        client_->chooseUpgrade(action == MenuAction::RollWeapon    ? UpgradeKind::Weapon
+                               : action == MenuAction::RollAbility ? UpgradeKind::Ability
+                                                                   : UpgradeKind::Continue);
     if (action == MenuAction::SelectMap && client_)
         client_->selectMap(menu.selectedMap());
     if (action == MenuAction::ChangeMap && client_)
@@ -152,11 +156,11 @@ void ConnectionController::updateDirectory(Menu& menu)
             if (menu.screen() == Screen::OnlineBrowser || menu.screen() == Screen::Online)
             {
                 const auto& error = result->error;
-                menu.setMessage(error == "not_configured"    ? U"Интернет-сервис ещё не настроен"
+                menu.setMessage(error == "not_configured" ? U"Интернет-сервис ещё не настроен"
                                 : error == "no_free_servers" ? U"Нет свободных мест. Повторите поиск позже"
                                 : error == "incompatible_protocol" ? U"Несовместимая версия. Обновите игру"
-                                : error == "rate_limited"          ? U"Слишком много запросов. Подождите"
-                                                                   : U"Сервис недоступен. Повторите попытку");
+                                : error == "rate_limited" ? U"Слишком много запросов. Подождите"
+                                                          : U"Сервис недоступен. Повторите попытку");
             }
         }
         else if (result->kind == network::DirectoryResult::Kind::Rooms &&

@@ -1,6 +1,7 @@
 #include "game/Weapon.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace cubeshot
 {
@@ -49,13 +50,13 @@ void Weapon::equip(WeaponKind value)
     cooldown = preparation = 0;
     charging = driven = overheated = false;
     spin = heat = 0;
-    ammo = d.capacity;
+    ammo = capacity();
     cancelReload();
 }
 
 float Weapon::barrel() const
 {
-    return weaponDefinition(kind).barrel;
+    return weaponDefinition(kind).barrel * bodyScale;
 }
 
 bool Weapon::automatic() const
@@ -63,13 +64,29 @@ bool Weapon::automatic() const
     return weaponDefinition(kind).automatic;
 }
 
+int Weapon::capacity() const
+{
+    const int base = weaponDefinition(kind).capacity;
+    return base ? base + static_cast<int>(std::ceil(base * .25f)) * static_cast<int>(magazineLevel) : 0;
+}
+
+float Weapon::reloadDuration() const
+{
+    return weaponDefinition(kind).reloadTime / (1 + .25f * reloadLevel);
+}
+
+float Weapon::reloadSetup() const
+{
+    return kind == WeaponKind::Shotgun ? .35f / (1 + .25f * reloadLevel) : 0;
+}
+
 bool Weapon::startReload()
 {
     const auto& d = weaponDefinition(kind);
-    if (!d.capacity || ammo >= d.capacity || reloading)
+    if (!d.capacity || ammo >= capacity() || reloading)
         return false;
     reloading = true;
-    reloadRemaining = d.reloadTime + (kind == WeaponKind::Shotgun ? .35f : 0.f);
+    reloadRemaining = reloadDuration() + reloadSetup();
     charging = driven = false;
     preparation = 0;
     return true;
@@ -123,11 +140,11 @@ void Weapon::update(float dt)
         const auto& d = weaponDefinition(kind);
         while (reloading && reloadRemaining <= 0)
         {
-            if (kind == WeaponKind::Shotgun && ++ammo < d.capacity)
-                reloadRemaining += d.reloadTime;
+            if (kind == WeaponKind::Shotgun && ++ammo < capacity())
+                reloadRemaining += reloadDuration();
             else
             {
-                ammo = d.capacity;
+                ammo = capacity();
                 cancelReload();
             }
         }

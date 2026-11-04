@@ -51,10 +51,17 @@ BlastEffect blastEffect(Vec2 at, const Player& p, const Arena& arena, PlayerId d
     return effect;
 }
 
-void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite)
+bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite, bool periodic)
 {
     if (!damageLiving_ || amount <= 0 || !player.alive())
-        return;
+        return false;
+    const auto shields = player.shields;
+    if (!periodic && player.absorb(bullet))
+    {
+        if (player.shields != shields)
+            emit(EventKind::ShieldBlock, bullet, at, player.id);
+        return false;
+    }
     auto event = bullet;
     event.damage = amount;
     emit(EventKind::Hit, event, at, player.id);
@@ -63,7 +70,7 @@ void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
     const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
     pendingImpact_[index] =
         speed > .001f ? Vec2{bullet.velocity.x / speed, bullet.velocity.y / speed} : Vec2{1, 0};
-    if (ignite)
+    if (ignite || (!periodic && bullet.ignites && bullet.shooterId != player.id))
     {
         player.burning = 2.5f;
         player.burnOwner = bullet.shooterId;
@@ -106,6 +113,7 @@ void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
                      pendingDamage_[index] >= player.health);
     // Marks and particles use body-local coordinates, never the later interpolated world position.
     events_.back().surfaceRevision = player.surface.revision;
+    return true;
 }
 
 void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
@@ -211,7 +219,7 @@ void World::updateFire(float dt)
             flame.shooterId = player.burnOwner;
             flame.weapon = WeaponKind::Flamethrower;
             flame.velocity = {0, -1};
-            damage(player, flame, player.weaponOrigin(), 3);
+            damage(player, flame, player.weaponOrigin(), 3, false, true);
         }
     }
 }

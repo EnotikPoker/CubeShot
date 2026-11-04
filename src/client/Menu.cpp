@@ -96,7 +96,8 @@ std::vector<MenuButton> Menu::buttons() const
         {
             const auto choice = own_ ? snapshot_.weaponChoice[own_ - 1] : WeaponChoice::Pending;
             result = {{U"Сменить оружие", {}, choice != WeaponChoice::Pending},
-                      {choice == WeaponChoice::Ready ? U"Ожидание соперника" : U"Продолжить",
+                      {U"Способность", {}, choice != WeaponChoice::Pending},
+                      {choice == WeaponChoice::Ready ? U"Готов" : U"Продолжить",
                        {},
                        choice != WeaponChoice::Pending}};
             break;
@@ -159,6 +160,9 @@ std::vector<MenuButton> Menu::buttons() const
                      screen_ == Screen::Lobby || screen_ == Screen::Maps)
                       ? 42.f
                       : 52.f}};
+    if (screen_ == Screen::Armory)
+        for (unsigned i = 0; i < result.size(); ++i)
+            result[i].bounds = {{166.f + i * 214, 432}, {200, 48}};
     return result;
 }
 
@@ -240,11 +244,11 @@ MenuAction Menu::activate()
         return MenuAction::None;
     if (items[selection_].placeholder)
     {
-        message_ = screen_ == Screen::Armory          ? U"Ожидаем завершения выбора оружия"
+        message_ = screen_ == Screen::Armory ? U"Ожидаем завершения выбора"
                    : screen_ == Screen::OnlineBrowser ? U"Сервер занят или матч уже начался"
-                   : screen_ == Screen::Browser       ? U"Комната недоступна. Можно ввести IP"
-                   : screen_ == Screen::Modes         ? U"Этот режим пока недоступен"
-                                                      : U"Настройки пока недоступны";
+                   : screen_ == Screen::Browser ? U"Комната недоступна. Можно ввести IP"
+                   : screen_ == Screen::Modes ? U"Этот режим пока недоступен"
+                                              : U"Настройки пока недоступны";
     }
     else if (screen_ == Screen::Main)
     {
@@ -374,7 +378,9 @@ MenuAction Menu::activate()
             open(Screen::Modes);
     }
     else if (screen_ == Screen::Armory)
-        return selection_ == 0 ? MenuAction::RollWeapon : MenuAction::KeepWeapon;
+        return selection_ == 0   ? MenuAction::RollWeapon
+               : selection_ == 1 ? MenuAction::RollAbility
+                                 : MenuAction::KeepWeapon;
     else if (screen_ == Screen::BotSetup)
     {
         if (selection_ <= 1)
