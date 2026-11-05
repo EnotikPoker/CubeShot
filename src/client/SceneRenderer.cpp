@@ -1,5 +1,6 @@
 #include "client/SceneRenderer.h"
 #include "client/Effects.h"
+#include "client/UiText.h"
 #include "client/VisualAssets.h"
 #include "client/WorldView.h"
 #include "game/Collision.h"
@@ -10,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 namespace cubeshot::client
 {
@@ -164,7 +166,7 @@ struct Painter
     }
 
     bool material(unsigned index, const Polygon& shape, Vec2 origin, float angle, SDL_FColor color,
-                  Vec2 uvOffset = {}) const
+                  Vec2 uvOffset = {}, float materialScale = 1) const
     {
         const auto indices = triangulate(shape);
         float c = std::cos(angle), s = std::sin(angle);
@@ -172,8 +174,12 @@ struct Painter
         {
             auto at =
                 view.toScreen({origin.x + local.x * c - local.y * s, origin.y + local.x * s + local.y * c});
-            const float u = (index % 4 + .01f + std::clamp((local.x + uvOffset.x) / 48, 0.f, 1.f) * .98f) / 4;
-            const float v = (index / 4 + .01f + std::clamp((local.y + uvOffset.y) / 48, 0.f, 1.f) * .98f) / 2;
+            const float u = (index % 4 + .01f +
+                             std::clamp((local.x + uvOffset.x) / (48 * materialScale), 0.f, 1.f) * .98f) /
+                            4;
+            const float v = (index / 4 + .01f +
+                             std::clamp((local.y + uvOffset.y) / (48 * materialScale), 0.f, 1.f) * .98f) /
+                            2;
             return SDL_Vertex{{at.x, at.y}, color, {u, v}};
         };
         for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
@@ -225,9 +231,12 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
     origin.y -= aim.y * recoil * 6;
     const bool mirror = aim.x < 0;
     const auto kind = player.weapon.kind;
-    const float length = player.weapon.barrel();
+    const float length = weaponDefinition(player.weapon.kind).barrel;
+    const float scale = player.bodyScale();
+    auto part = [&](float x, float y, float w, float h, SDL_FColor c, bool mirror)
+    { return p.part(origin, aim, x * scale, y * scale, w * scale, h * scale, c, mirror); };
     if (!meleeWeapon(kind) && kind != WeaponKind::FireBoomerang && kind != WeaponKind::Rpg &&
-        !p.part(origin, aim, 8, -7, length - 7, 14, {.04f, .07f, .11f, 1}, mirror))
+        !part(8, -7, length - 7, 14, {.04f, .07f, .11f, 1}, mirror))
         return false;
     if (meleeWeapon(kind))
     {
@@ -235,59 +244,57 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
         const float angle = std::atan2(aim.y, aim.x) + (mirror ? -swing : swing);
         aim = {std::cos(angle), std::sin(angle)};
         const float drawn = kind == WeaponKind::Knife ? 26 : kind == WeaponKind::Katana ? 64 : 51;
-        if (!p.part(origin, aim, -1, -5, 18, 10, {.04f, .06f, .08f, 1}, mirror) ||
-            !p.part(origin, aim, 13, kind == WeaponKind::Bat ? -8.f : -4.f, drawn - 12,
-                    kind == WeaponKind::Bat ? 16.f : 8.f, {.04f, .06f, .08f, 1}, mirror))
+        if (!part(-1, -5, 18, 10, {.04f, .06f, .08f, 1}, mirror) ||
+            !part(13, kind == WeaponKind::Bat ? -8.f : -4.f, drawn - 12, kind == WeaponKind::Bat ? 16.f : 8.f,
+                  {.04f, .06f, .08f, 1}, mirror))
             return false;
-        return p.part(origin, aim, 0, -4, 16, 8, {.5f, .3f, .15f, 1}, mirror) &&
-               p.part(origin, aim, 14, kind == WeaponKind::Bat ? -7.f : -3.f, drawn - 14,
-                      kind == WeaponKind::Bat ? 14.f : 6.f,
-                      kind == WeaponKind::Bat ? SDL_FColor{.7f, .46f, .2f, 1} : SDL_FColor{.85f, .92f, 1, 1},
-                      mirror);
+        return part(0, -4, 16, 8, {.5f, .3f, .15f, 1}, mirror) &&
+               part(14, kind == WeaponKind::Bat ? -7.f : -3.f, drawn - 14,
+                    kind == WeaponKind::Bat ? 14.f : 6.f,
+                    kind == WeaponKind::Bat ? SDL_FColor{.7f, .46f, .2f, 1} : SDL_FColor{.85f, .92f, 1, 1},
+                    mirror);
     }
     if (kind == WeaponKind::FireBoomerang)
-        return p.part(origin, aim, 8, -4, 23, 7, {1, .36f, .05f, 1}, mirror) &&
-               p.part(origin, aim, 24, -19, 7, 22, {1, .7f, .15f, 1}, mirror);
+        return part(8, -4, 23, 7, {1, .36f, .05f, 1}, mirror) &&
+               part(24, -19, 7, 22, {1, .7f, .15f, 1}, mirror);
     if (kind == WeaponKind::Rpg)
-        return p.part(origin, aim, 0, -10, length, 20, {.3f, .42f, .2f, 1}, mirror) &&
-               p.part(origin, aim, 16, 8, 10, 15, {.3f, .24f, .16f, 1}, mirror) &&
-               p.part(origin, aim, length - 13, -13, 18, 26, {.54f, .6f, .28f, 1}, mirror);
+        return part(0, -10, length, 20, {.3f, .42f, .2f, 1}, mirror) &&
+               part(16, 8, 10, 15, {.3f, .24f, .16f, 1}, mirror) &&
+               part(length - 13, -13, 18, 26, {.54f, .6f, .28f, 1}, mirror);
     if (kind == WeaponKind::Minigun)
     {
         const float spin = player.weapon.shots * 2.f + player.weapon.spin * 12;
         for (int n = 0; n < 3; ++n)
-            if (!p.part(origin, aim, 13, -8 + n * 6.f + std::sin(spin + n * 2.1f) * 2, length - 13, 4,
-                        player.weapon.overheated ? SDL_FColor{1, .3f, .1f, 1}
-                                                 : SDL_FColor{.5f, .56f, .64f, 1},
-                        mirror))
+            if (!part(13, -8 + n * 6.f + std::sin(spin + n * 2.1f) * 2, length - 13, 4,
+                      player.weapon.overheated ? SDL_FColor{1, .3f, .1f, 1} : SDL_FColor{.5f, .56f, .64f, 1},
+                      mirror))
                 return false;
-        return p.part(origin, aim, 0, -12, 22, 24, {.25f, .3f, .37f, 1}, mirror);
+        return part(0, -12, 22, 24, {.25f, .3f, .37f, 1}, mirror);
     }
     if (kind == WeaponKind::Flamethrower)
-        return p.part(origin, aim, 3, -9, 27, 18, {.7f, .32f, .12f, 1}, mirror) &&
-               p.part(origin, aim, 25, -5, length - 20, 10, {.45f, .5f, .5f, 1}, mirror) &&
+        return part(3, -9, 27, 18, {.7f, .32f, .12f, 1}, mirror) &&
+               part(25, -5, length - 20, 10, {.45f, .5f, .5f, 1}, mirror) &&
                p.ellipse(player.muzzlePosition(), 4, 4, {255, 150, 30, 255});
     const bool longGun = kind == WeaponKind::Shotgun || kind == WeaponKind::Automatic ||
                          kind == WeaponKind::Rifle || kind == WeaponKind::Sniper;
     const SDL_FColor steel = kind == WeaponKind::Smg        ? SDL_FColor{.3f, .34f, .4f, 1}
                              : kind == WeaponKind::Revolver ? SDL_FColor{.8f, .82f, .87f, 1}
                                                             : SDL_FColor{.65f, .7f, .76f, 1};
-    if (!p.part(origin, aim, 0, -3, 15, 8, {.94f, .73f, .49f, 1}, mirror) ||
-        !p.part(origin, aim, 12, 0, 8, 15, {.2f, .23f, .28f, 1}, mirror) ||
-        !p.part(origin, aim, 10, -5, length - 10, 10, steel, mirror) ||
-        !p.part(origin, aim, 11, -5, length - 12, 3, {.9f, .93f, 1, 1}, mirror))
+    if (!part(0, -3, 15, 8, {.94f, .73f, .49f, 1}, mirror) ||
+        !part(12, 0, 8, 15, {.2f, .23f, .28f, 1}, mirror) || !part(10, -5, length - 10, 10, steel, mirror) ||
+        !part(11, -5, length - 12, 3, {.9f, .93f, 1, 1}, mirror))
         return false;
-    if (longGun && !p.part(origin, aim, -7, -3, 19, 12, {.37f, .25f, .17f, 1}, mirror))
+    if (longGun && !part(-7, -3, 19, 12, {.37f, .25f, .17f, 1}, mirror))
         return false;
     if (kind == WeaponKind::Automatic || kind == WeaponKind::Smg)
-        if (!p.part(origin, aim, 22, 3, 9, 15, {.25f, .29f, .32f, 1}, mirror))
+        if (!part(22, 3, 9, 15, {.25f, .29f, .32f, 1}, mirror))
             return false;
-    if (kind == WeaponKind::Revolver && !p.part(origin, aim, 16, -7, 12, 13, {.4f, .43f, .5f, 1}, mirror))
+    if (kind == WeaponKind::Revolver && !part(16, -7, 12, 13, {.4f, .43f, .5f, 1}, mirror))
         return false;
-    if (kind == WeaponKind::Shotgun && !p.part(origin, aim, 25, 0, 14, 7, {.47f, .29f, .16f, 1}, mirror))
+    if (kind == WeaponKind::Shotgun && !part(25, 0, 14, 7, {.47f, .29f, .16f, 1}, mirror))
         return false;
-    if (kind == WeaponKind::Sniper && (!p.part(origin, aim, 15, -14, 23, 6, {.17f, .2f, .24f, 1}, mirror) ||
-                                       !p.part(origin, aim, 21, -9, 5, 5, {.3f, .33f, .37f, 1}, mirror)))
+    if (kind == WeaponKind::Sniper && (!part(15, -14, 23, 6, {.17f, .2f, .24f, 1}, mirror) ||
+                                       !part(21, -9, 5, 5, {.3f, .33f, .37f, 1}, mirror)))
         return false;
     return pose.shot < .055f || p.sprite(18, player.muzzlePosition(), {30, 22},
                                          std::atan2(aim.y, aim.x) + 3.14159265f, {1, 1, 1, 1});
@@ -372,7 +379,8 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
     const SDL_FColor tint = piece.charred       ? SDL_FColor{.22f, .19f, .2f, 1}
                             : fragment && blood ? SDL_FColor{.92f, .7f, .7f, 1}
                                                 : color;
-    p.material(fragment && blood ? 5 : 4, piece.outline, piece.position, piece.angle, tint, piece.skinOffset);
+    p.material(fragment && blood ? 5 : 4, piece.outline, piece.position, piece.angle, tint, piece.skinOffset,
+               piece.visualScale);
     p.outline(piece.outline, piece.position, piece.angle, 2.2f, {.025f, .045f, .065f, 1});
     if (fragment)
     {
@@ -381,11 +389,11 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
             auto a = piece.outline[i], b = piece.outline[(i + 1) % piece.outline.size()];
             const bool shell =
                 (std::abs(a.x + piece.skinOffset.x) < .2f && std::abs(b.x + piece.skinOffset.x) < .2f) ||
-                (std::abs(a.x + piece.skinOffset.x - 48) < .2f &&
-                 std::abs(b.x + piece.skinOffset.x - 48) < .2f) ||
+                (std::abs(a.x + piece.skinOffset.x - 48 * piece.visualScale) < .2f &&
+                 std::abs(b.x + piece.skinOffset.x - 48 * piece.visualScale) < .2f) ||
                 (std::abs(a.y + piece.skinOffset.y) < .2f && std::abs(b.y + piece.skinOffset.y) < .2f) ||
-                (std::abs(a.y + piece.skinOffset.y - 48) < .2f &&
-                 std::abs(b.y + piece.skinOffset.y - 48) < .2f);
+                (std::abs(a.y + piece.skinOffset.y - 48 * piece.visualScale) < .2f &&
+                 std::abs(b.y + piece.skinOffset.y - 48 * piece.visualScale) < .2f);
             if (shell)
                 p.line(piecePoint(piece, a), piecePoint(piece, b), 4, color);
         }
@@ -394,8 +402,10 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
     if (piece.hasEye && containsPoint(piece.outline, eye))
     {
         const Vec2 direction{std::cos(piece.angle), std::sin(piece.angle)};
-        p.part(piece.position, direction, eye.x - 3, eye.y - 3, 7, 7, {.95f, .95f, .9f, 1});
-        p.part(piece.position, direction, eye.x, eye.y - 1, 3, 4, {.05f, .06f, .08f, 1});
+        p.part(piece.position, direction, eye.x - 3 * piece.visualScale, eye.y - 3 * piece.visualScale,
+               7 * piece.visualScale, 7 * piece.visualScale, {.95f, .95f, .9f, 1});
+        p.part(piece.position, direction, eye.x, eye.y - piece.visualScale, 3 * piece.visualScale,
+               4 * piece.visualScale, {.05f, .06f, .08f, 1});
     }
 }
 } // namespace
@@ -513,7 +523,31 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         color.g += (1 - color.g) * hit;
         color.b += (1 - color.b) * hit;
         const auto shape = player.bodyContour();
-        p.ellipse({player.position.x + 24, player.position.y + 49}, 24, 3, {7, 17, 26, 90});
+        p.ellipse({player.position.x + player.size.x / 2, player.position.y + player.size.y + 1},
+                  player.size.x / 2, 3, {7, 17, 26, 90});
+        if (player.abilities.level(AbilityKind::Jetpack))
+        {
+            float x = player.position.x +
+                      (player.aimDirection.x < 0 ? player.size.x : -6 * player.bodyScale()),
+                  y = player.position.y + player.size.y * .3f;
+            p.rect({{x, y}, {6 * player.bodyScale(), player.size.y * .55f}}, {91, 125, 146, 255});
+            if (player.jetpackActive)
+            {
+                p.line({x + 3 * player.bodyScale(), y + player.size.y * .55f},
+                       {x + 3 * player.bodyScale(), y + player.size.y * 1.1f}, 4 * player.bodyScale(),
+                       {.5f, .85f, 1, 1});
+            }
+        }
+        if (player.shields || pose.shield > 0)
+        {
+            const float margin = 3;
+            const auto c = pose.shield > 0 ? SDL_FColor{.9f, 1, 1, 1} : SDL_FColor{.3f, .72f, .95f, .7f};
+            Polygon border{{-margin, -margin},
+                           {player.size.x + margin, -margin},
+                           {player.size.x + margin, player.size.y + margin},
+                           {-margin, player.size.y + margin}};
+            p.outline(border, player.position, 0, pose.shield > 0 ? 3.f : 1.5f, c);
+        }
         p.body(shape, player.position, color, &player);
         p.outline(shape, player.position, 0, 1.f, {.025f, .045f, .07f, 1});
         // Irregular exposed flesh belongs to the cut edges, never to an independent floating decal.
@@ -534,10 +568,14 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         const auto anchor = player.bodyPoint({player.aimDirection.x < 0 ? 11.f : 37.f, 15});
         if (containsPoint(shape, anchor))
         {
-            const float eyeX = player.position.x + anchor.x - 4, eyeY = player.position.y + anchor.y - 4;
-            p.rect({{eyeX - 1, eyeY - 1}, {10, 11}}, {20, 29, 38, 255});
-            p.rect({{eyeX, eyeY}, {8, 9}}, {245, 247, 236, 255});
-            p.rect({{eyeX + (player.aimDirection.x < 0 ? 0.f : 5.f), eyeY + 2}, {3, 6}}, {18, 29, 41, 255});
+            const float scale = player.bodyScale();
+            const float eyeX = player.position.x + anchor.x - 4 * scale,
+                        eyeY = player.position.y + anchor.y - 4 * scale;
+            p.rect({{eyeX - scale, eyeY - scale}, {10 * scale, 11 * scale}}, {20, 29, 38, 255});
+            p.rect({{eyeX, eyeY}, {8 * scale, 9 * scale}}, {245, 247, 236, 255});
+            p.rect({{eyeX + (player.aimDirection.x < 0 ? 0.f : 5.f * scale), eyeY + 2 * scale},
+                    {3 * scale, 6 * scale}},
+                   {18, 29, 41, 255});
         }
         weapon(p, player, pose);
         if (pose.shot > .055f &&
@@ -554,36 +592,40 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         }
         if (player.burning > 0)
             p.sprite(static_cast<unsigned>(time * 12 + player.id) % 6,
-                     {player.position.x + 24, player.position.y + 29}, {45, 48}, 0, {1, 1, 1, .9f});
+                     {player.position.x + player.size.x / 2, player.position.y + player.size.y * .6f},
+                     {45 * player.bodyScale(), 48 * player.bodyScale()}, 0, {1, 1, 1, .9f});
     }
     for (const auto& b : bullets)
     {
+        const float scale = b.collisionRadius / Bullet::radius;
         const float speed = std::hypot(b.velocity.x, b.velocity.y);
         const Vec2 dir = speed > .001f ? Vec2{b.velocity.x / speed, b.velocity.y / speed} : Vec2{1, 0};
         if (b.weapon == WeaponKind::Flamethrower)
         {
             p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position,
-                     {20 + b.age * 25, 28 + b.age * 25}, std::atan2(dir.y, dir.x) + 1.5707963f,
+                     {(20 + b.age * 25) * scale, (28 + b.age * 25) * scale},
+                     std::atan2(dir.y, dir.x) + 1.5707963f,
                      {1, 1, 1, .9f * std::clamp(b.lifetime / .12f, 0.f, 1.f)});
             continue;
         }
         if (b.weapon == WeaponKind::FireBoomerang)
         {
-            p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position, {32, 32}, b.age * 15);
-            p.part(b.position, {std::cos(b.age * 22), std::sin(b.age * 22)}, -13, -3, 26, 6,
-                   {1, .85f, .4f, 1});
+            p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position, {32 * scale, 32 * scale},
+                     b.age * 15);
+            p.part(b.position, {std::cos(b.age * 22), std::sin(b.age * 22)}, -13 * scale, -3 * scale,
+                   26 * scale, 6 * scale, {1, .85f, .4f, 1});
             continue;
         }
         if (b.weapon == WeaponKind::Rpg)
         {
-            p.part(b.position, dir, -17, -6, 27, 12, {.04f, .08f, .1f, 1});
-            p.part(b.position, dir, -14, -4, 22, 8, {.5f, .65f, .24f, 1});
+            p.part(b.position, dir, -17 * scale, -6 * scale, 27 * scale, 12 * scale, {.04f, .08f, .1f, 1});
+            p.part(b.position, dir, -14 * scale, -4 * scale, 22 * scale, 8 * scale, {.5f, .65f, .24f, 1});
             p.sprite(18, {b.position.x - dir.x * 22, b.position.y - dir.y * 22}, {23, 16},
                      std::atan2(dir.y, dir.x), {1, 1, 1, .85f});
             continue;
         }
-        p.part(b.position, dir, -13, -1.5f, 13, 3, {1, .58f, .15f, .8f});
-        p.ellipse(b.position, 3, 3, {255, 244, 167, 255});
+        p.part(b.position, dir, -13 * scale, -1.5f * scale, 13 * scale, 3 * scale, {1, .58f, .15f, .8f});
+        p.ellipse(b.position, b.collisionRadius, b.collisionRadius, {255, 244, 167, 255});
     }
     for (const auto& fire : fires)
         p.sprite(static_cast<unsigned>(time * 12 + fire.id) % 6, {fire.position.x, fire.position.y - 20},
@@ -649,39 +691,66 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
     for (const auto& player : players)
         if (player.alive())
         {
-            const auto hp =
-                Vec2{player.position.x, std::max(player.position.y - 12, arena.bounds.position.y + 1)};
-            const float fraction = std::clamp(player.health, 0, 100) / 100.f;
-            p.rect({{hp.x - 1, hp.y - 1}, {50, 8}}, {10, 20, 30, 255});
-            p.rect({hp, {48, 6}}, {80, 35, 45, 255});
-            p.rect({hp, {48 * fraction, 6}}, {85, 210, 125, 255});
+            const bool below = player.abilities.level(AbilityKind::Jetpack) &&
+                               player.position.y < arena.bounds.position.y + 60;
+            const auto hp = Vec2{player.position.x,
+                                 below ? player.position.y + player.size.y + 40
+                                       : std::max(player.position.y - 12, arena.bounds.position.y + 1)};
+            const float fraction =
+                std::clamp(player.health, 0, player.healthLimit()) / static_cast<float>(player.healthLimit());
+            p.rect({{hp.x - 1, hp.y - 1}, {player.size.x + 2, 8}}, {10, 20, 30, 255});
+            p.rect({hp, {player.size.x, 6}}, {80, 35, 45, 255});
+            p.rect({hp, {player.size.x * fraction, 6}}, {85, 210, 125, 255});
+            if (player.abilities.level(AbilityKind::Jetpack))
+            {
+                p.rect({{hp.x, hp.y - 25}, {player.size.x, 3}}, {26, 48, 62, 255});
+                p.rect({{hp.x, hp.y - 25}, {player.size.x * std::clamp(player.jetpackFuel / 2, 0.f, 1.f), 3}},
+                       {101, 205, 245, 255});
+            }
             if (player.weapon.reloading)
             {
-                float duration = weaponDefinition(player.weapon.kind).reloadTime +
-                                 (player.weapon.kind == WeaponKind::Shotgun ? .35f : 0.f);
-                p.rect({{hp.x, hp.y - 20}, {48, 3}}, {25, 42, 58, 255});
+                float duration = player.weapon.reloadDuration() + player.weapon.reloadSetup();
+                p.rect({{hp.x, hp.y - 20}, {player.size.x, 3}}, {25, 42, 58, 255});
                 p.rect({{hp.x, hp.y - 20},
-                        {48 * (1 - std::clamp(player.weapon.reloadRemaining / duration, 0.f, 1.f)), 3}},
+                        {player.size.x * (1 - std::clamp(player.weapon.reloadRemaining / duration, 0.f, 1.f)),
+                         3}},
                        {94, 177, 255, 255});
             }
             if (player.weapon.charging)
             {
-                p.rect({{hp.x, hp.y - 9}, {48, 4}}, {45, 37, 22, 255});
-                p.rect(
-                    {{hp.x, hp.y - 9}, {48 * std::clamp(1 - player.weapon.preparation / .3f, 0.f, 1.f), 4}},
-                    {255, 205, 80, 255});
+                p.rect({{hp.x, hp.y - 9}, {player.size.x, 4}}, {45, 37, 22, 255});
+                p.rect({{hp.x, hp.y - 9},
+                        {player.size.x * std::clamp(1 - player.weapon.preparation / .3f, 0.f, 1.f), 4}},
+                       {255, 205, 80, 255});
             }
             if (player.weapon.kind == WeaponKind::Minigun)
             {
-                p.rect({{hp.x, hp.y - 9}, {48, 4}}, {45, 37, 22, 255});
-                p.rect({{hp.x, hp.y - 9}, {48 * player.weapon.heat, 4}},
+                p.rect({{hp.x, hp.y - 9}, {player.size.x, 4}}, {45, 37, 22, 255});
+                p.rect({{hp.x, hp.y - 9}, {player.size.x * player.weapon.heat, 4}},
                        player.weapon.overheated ? SDL_Color{255, 60, 25, 255} : SDL_Color{255, 195, 65, 255});
-                p.rect({{hp.x, hp.y - 14}, {48 * player.weapon.spin, 3}}, {135, 196, 240, 255});
+                p.rect({{hp.x, hp.y - 14}, {player.size.x * player.weapon.spin, 3}}, {135, 196, 240, 255});
             }
         }
     const bool rendered = p.flush();
+    bool labels = true;
+    for (const auto& player : players)
+        if (player.alive() && (player.healthLimit() > 100 || player.shields))
+        {
+            auto n = std::to_string(player.health) + "/" + std::to_string(player.healthLimit());
+            if (player.shields)
+                n += " [" + std::to_string(player.shields) + "]";
+            const bool below = player.abilities.level(AbilityKind::Jetpack) &&
+                               player.position.y < arena.bounds.position.y + 60;
+            auto at = p.view.toScreen(
+                {player.position.x, below ? player.position.y + player.size.y + 40 : player.position.y - 12});
+            at.y += below ? 10.f : player.abilities.level(AbilityKind::Jetpack) ? -45.f : -30.f;
+            const std::u32string label(n.begin(), n.end());
+            at.x = std::clamp(at.x, 2.f, std::max(2.f, 958 - textWidth(renderer, label, 1)));
+            at.y = std::clamp(at.y, 2.f, 522.f);
+            labels = labels && drawText(renderer, label, at, 1, {207, 233, 249, 255});
+        }
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-    return rendered && (!present || SDL_RenderPresent(renderer));
+    return labels && rendered && (!present || SDL_RenderPresent(renderer));
 }
 
 bool renderScene(SDL_Renderer* r, const World& world, bool present, const Effects* effects)

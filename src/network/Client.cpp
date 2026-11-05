@@ -249,6 +249,7 @@ void Client::control(PlayerInput input)
             out->set_sequence(command.sequence);
             out->set_movement(command.input.moveDirection);
             out->set_fire_held(command.input.triggerHeld);
+            out->set_jump_held(command.input.jetpackHeld);
             out->mutable_aim()->set_x(command.input.aimDirection.x);
             out->mutable_aim()->set_y(command.input.aimDirection.y);
         }
@@ -282,11 +283,17 @@ void Client::action(bool jump, bool shoot, Vec2 aim, bool reload)
 
 void Client::chooseWeapon(bool reroll)
 {
+    chooseUpgrade(reroll ? UpgradeKind::Weapon : UpgradeKind::Continue);
+}
+
+void Client::chooseUpgrade(UpgradeKind kind)
+{
     if (!connected() || !impl_->latest || impl_->latest->phase != MatchPhase::Armory)
         return;
     auto e = envelope();
     auto* choice = e.mutable_weapon_choice();
-    choice->set_reroll(reroll);
+    choice->set_reroll(kind == UpgradeKind::Weapon);
+    choice->set_upgrade(static_cast<unsigned>(kind));
     choice->set_round(impl_->latest->round);
     choice->set_selection_revision(impl_->latest->selectionRevision);
     send(impl_->connection, e, true);

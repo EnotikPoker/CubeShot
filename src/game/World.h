@@ -28,6 +28,7 @@ public:
                        bool reload = false);
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
+    void setAbilities(PlayerId id, const Abilities& abilities);
 
     void setVisualSeed(unsigned seed)
     {
@@ -48,7 +49,8 @@ public:
     }
 
 private:
-    void damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite = false);
+    bool damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite = false,
+                bool periodic = false);
     void explode(const Bullet& bullet, Vec2 at, PlayerId direct = 0);
     void igniteSurface(Vec2 at, PlayerId owner);
     void updateFire(float dt);

@@ -24,6 +24,8 @@ struct Bullet
     float acceleration = gravity;
     float age = 0;
     float travelled = 0;
+    float collisionRadius = radius;
+    bool ignites = false;
     int impactDamage() const;
     bool returning = false;
     std::uint32_t hitMask = 0;

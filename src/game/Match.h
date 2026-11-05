@@ -29,6 +29,13 @@ enum class WeaponChoice
     Ready
 };
 
+enum class UpgradeKind
+{
+    Continue,
+    Weapon,
+    Ability
+};
+
 struct WorldSnapshot
 {
     std::uint64_t tick = 0;
@@ -53,6 +60,9 @@ struct WorldSnapshot
     std::array<WeaponChoice, 2> weaponChoice{};
     std::array<WeaponKind, 2> loadout{}, rolled{};
     std::array<float, 2> spinRemaining{};
+    std::array<Abilities, 2> abilities{};
+    std::array<UpgradeKind, 2> upgrade{};
+    std::array<AbilityKind, 2> rolledAbility{{AbilityKind::None, AbilityKind::None}};
 };
 
 // Чистые правила дуэли. Сеть назначает слоты; только сервер меняет Match.
@@ -81,6 +91,7 @@ public:
                 bool reload = false);
     void update(float dt);
     bool chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision);
+    bool chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, std::uint64_t revision);
     WorldSnapshot snapshot() const;
 
     const World& world() const
@@ -104,6 +115,9 @@ private:
     std::array<WeaponKind, 2> loadout_{}, rolled_{};
     std::array<WeaponChoice, 2> weaponChoice_{};
     std::array<float, 2> spinRemaining_{};
+    std::array<Abilities, 2> abilities_{};
+    std::array<UpgradeKind, 2> upgrade_{};
+    std::array<AbilityKind, 2> rolledAbility_{{AbilityKind::None, AbilityKind::None}};
     World world_{Arena::createDuel(), 2};
     bool voting_ = false, rematch_ = false;
     std::array<int, 2> votes_{{-1, -1}};

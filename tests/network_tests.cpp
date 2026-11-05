@@ -294,16 +294,19 @@ void impairedCombat()
     expect(!r.host.snapshot()->corpses.empty() && r.host.snapshot()->corpses[0].body.owner == 2,
            "Physical corpse snapshot reaches remote clients");
     r.host.chooseWeapon(true);
-    r.guest.chooseWeapon(false);
+    r.guest.chooseUpgrade(UpgradeKind::Ability);
     r.until(
         [&]
         {
             return r.host.snapshot()->weaponChoice[0] == WeaponChoice::Spinning &&
-                   r.guest.snapshot()->weaponChoice[1] == WeaponChoice::Ready;
+                   r.guest.snapshot()->weaponChoice[1] == WeaponChoice::Spinning;
         },
-        2, "Independent roulette and keep choices are reliable under loss");
+        2, "Independent weapon and ability roulettes are reliable under loss");
     const auto rolled = r.host.snapshot()->rolled[0];
-    r.host.chooseWeapon(true); // A duplicate cannot buy a second draw or alter outcome.
+    const auto ability = r.guest.snapshot()->rolledAbility[1];
+    expect(validAbility(ability), "Ability result comes from the server");
+    r.guest.chooseWeapon(true); // A second category cannot be chosen during the same intermission.
+    r.host.chooseWeapon(true);  // A duplicate cannot buy a second draw or alter outcome.
     r.until(
         [&]
         {
@@ -315,6 +318,10 @@ void impairedCombat()
                r.guest.snapshot()->players[0].weapon.kind == rolled && r.host.snapshot()->corpses.empty() &&
                r.guest.snapshot()->pieces.empty(),
            "Both clients agree on weapon outcome and round cleanup");
+    expect(r.host.snapshot()->players[1].abilities.level(ability) == 1 &&
+               r.guest.snapshot()->players[1].abilities.level(ability) == 1 &&
+               r.host.snapshot()->players[1].weapon.kind == WeaponKind::Pistol,
+           "Both clients agree on the accumulated ability without a second weapon draw");
     r.guest.disconnect();
     r.until([&] { return r.host.snapshot()->phase == MatchPhase::Lobby && r.host.snapshot()->score[0] == 0; },
             3, "Leaving game resets score without award");

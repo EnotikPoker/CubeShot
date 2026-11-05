@@ -14,6 +14,7 @@ struct PlayerInput
     Vec2 aimDirection{1.0f, 0.0f};
     bool triggerHeld = false; // Continuous trigger state; discrete shoot remains a press.
     bool reload = false;      // Discrete manual reload press.
+    bool jetpackHeld = false; // Continuous state of the jump binding.
 };
 
 } // namespace cubeshot

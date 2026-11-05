@@ -35,6 +35,10 @@ struct BotTarget
     std::uint32_t shots = 0;
     bool reloading = false;
     float pushX = 0;
+    Abilities abilities;
+    unsigned shields = 0;
+    float jetpackFuel = 2;
+    bool jetpackActive = false;
 };
 
 struct BotObservation
@@ -69,6 +73,7 @@ class BotController
 public:
     BotController(Arena arena, BotDifficulty difficulty, std::uint32_t seed);
     void reset();
+    void prepare(const Abilities& abilities);
     PlayerInput update(const BotObservation& observation, float dt);
 
 private:
@@ -78,6 +83,7 @@ private:
     void cancelRoute(bool failed);
     float hazardCost(Vec2 position) const;
     BotMobility mobility_;
+    std::optional<Abilities> movementAbilities_;
     bool mobile_ = false;
     bool hard_ = false, enemyCharging_ = false;
     WeaponKind lastWeapon_ = WeaponKind::Pistol, enemyWeapon_ = WeaponKind::Pistol;

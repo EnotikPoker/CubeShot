@@ -1,4 +1,5 @@
 #pragma once
+#include "game/Abilities.h"
 #include "game/Arena.h"
 #include <memory>
 #include <vector>
@@ -16,15 +17,16 @@ struct BotTraversal
     std::size_t from, to;
     bool jump;
     int direction, holdTicks, durationTicks;
+    bool jetpack = false;
 };
 
 // Static geometry only. Every airborne edge is verified with Player's real physics.
 class BotNavigation
 {
 public:
-    explicit BotNavigation(const Arena& arena);
+    explicit BotNavigation(const Arena& arena, Abilities abilities = {});
     static std::shared_ptr<const BotNavigation> forMap(MapId map);
-    static std::shared_ptr<const BotNavigation> forArena(const Arena& arena);
+    static std::shared_ptr<const BotNavigation> forArena(const Arena& arena, Abilities abilities = {});
     const std::vector<BotWaypoint>& nodes() const;
     const std::vector<BotTraversal>& edges() const;
     std::vector<BotTraversal> route(Vec2 from, Vec2 goal, int avoidFrom = -1, int avoidTo = -1,
@@ -32,6 +34,7 @@ public:
     std::size_t nearest(Vec2 at) const;
 
 private:
+    float speed_ = 280;
     std::vector<BotWaypoint> nodes_;
     std::vector<BotTraversal> edges_;
     std::vector<std::vector<std::size_t>> outgoing_;

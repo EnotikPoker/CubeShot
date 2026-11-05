@@ -41,6 +41,9 @@ bool Match::changeMap(PlayerId id, std::uint64_t revision)
     rematch_ = false;
     roundsPlayed_ = 0;
     loadout_ = {};
+    abilities_ = {};
+    upgrade_ = {};
+    rolledAbility_ = {AbilityKind::None, AbilityKind::None};
     weaponChoice_ = {};
     spinRemaining_ = {};
     winner_ = 0;
@@ -80,6 +83,9 @@ void Match::disconnect(PlayerId id, AbortReason reason)
     winner_ = 0;
     roundsPlayed_ = 0;
     loadout_ = {};
+    abilities_ = {};
+    upgrade_ = {};
+    rolledAbility_ = {AbilityKind::None, AbilityKind::None};
     weaponChoice_ = {};
     spinRemaining_ = {};
     votes_ = {{-1, -1}};
@@ -93,7 +99,12 @@ void Match::disconnect(PlayerId id, AbortReason reason)
 void Match::beginCountdown()
 {
     if (phase_ == MatchPhase::Lobby || phase_ == MatchPhase::Finished)
+    {
         loadout_ = {};
+        abilities_ = {};
+    }
+    upgrade_ = {};
+    rolledAbility_ = {AbilityKind::None, AbilityKind::None};
     weaponChoice_ = {};
     spinRemaining_ = {};
     if (phase_ == MatchPhase::Finished)
@@ -118,6 +129,8 @@ void Match::beginCountdown()
     world_.resetPlayers(roundsPlayed_ % 2 != 0);
     world_.equip(1, loadout_[0]);
     world_.equip(2, loadout_[1]);
+    world_.setAbilities(1, abilities_[0]);
+    world_.setAbilities(2, abilities_[1]);
     phase_ = MatchPhase::Countdown;
     remaining_ = 3;
 }
@@ -169,19 +182,35 @@ bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, boo
 
 bool Match::chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision)
 {
+    return chooseUpgrade(id, reroll ? UpgradeKind::Weapon : UpgradeKind::Continue, round, revision);
+}
+
+bool Match::chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, std::uint64_t revision)
+{
     if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Armory || round != round_ ||
-        revision != selectionRevision_ || weaponChoice_[id - 1] != WeaponChoice::Pending)
+        revision != selectionRevision_ || weaponChoice_[id - 1] != WeaponChoice::Pending ||
+        static_cast<unsigned>(kind) > 2)
         return false;
     const auto slot = id - 1;
-    if (reroll)
+    if (kind == UpgradeKind::Ability)
     {
+        const auto pool = abilities_[slot].available();
+        if (pool.empty())
+            return false;
+        rolledAbility_[slot] =
+            pool[std::uniform_int_distribution<unsigned>(0, static_cast<unsigned>(pool.size() - 1))(random_)];
+    }
+    else if (kind == UpgradeKind::Weapon)
         rolled_[slot] =
             static_cast<WeaponKind>(std::uniform_int_distribution<unsigned>(0, weaponCount - 1)(random_));
+    upgrade_[slot] = kind;
+    if (kind == UpgradeKind::Continue)
+        weaponChoice_[slot] = WeaponChoice::Ready;
+    else
+    {
         spinRemaining_[slot] = spinSeconds;
         weaponChoice_[slot] = WeaponChoice::Spinning;
     }
-    else
-        weaponChoice_[slot] = WeaponChoice::Ready;
     return true;
 }
 
@@ -211,7 +240,10 @@ void Match::update(float dt)
                 if (spinRemaining_[i] <= .0001f)
                 {
                     spinRemaining_[i] = 0;
-                    loadout_[i] = rolled_[i];
+                    if (upgrade_[i] == UpgradeKind::Ability)
+                        abilities_[i].add(rolledAbility_[i]);
+                    else
+                        loadout_[i] = rolled_[i];
                     weaponChoice_[i] = WeaponChoice::Ready;
                 }
             }
@@ -237,6 +269,8 @@ void Match::update(float dt)
                 weaponChoice_ = {};
                 spinRemaining_ = {};
                 rolled_ = loadout_;
+                upgrade_ = {};
+                rolledAbility_ = {AbilityKind::None, AbilityKind::None};
                 ++selectionRevision_;
                 for (PlayerId id : {1u, 2u})
                     world_.clearPlayerInput(id);
@@ -275,6 +309,9 @@ WorldSnapshot Match::snapshot() const
     s.fires = world_.fires();
     s.corpses = world_.debris().corpses();
     s.pieces = world_.debris().pieces();
+    s.abilities = abilities_;
+    s.upgrade = upgrade_;
+    s.rolledAbility = rolledAbility_;
     s.weaponChoice = weaponChoice_;
     s.loadout = loadout_;
     s.rolled = rolled_;

@@ -13,7 +13,7 @@ namespace cubeshot::client
 struct Pose
 {
     Vec2 previous{};
-    float cycle = 0, land = 0, shot = 0, hit = 0, death = 0;
+    float cycle = 0, land = 0, shot = 0, hit = 0, death = 0, shield = 0;
     bool grounded = false, alive = true, initialized = false;
 };
 

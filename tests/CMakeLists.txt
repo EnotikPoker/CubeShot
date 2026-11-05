@@ -141,3 +141,7 @@ endif()
 add_executable(cubeshot_weapon_rework_tests weapon_rework_tests.cpp)
 target_link_libraries(cubeshot_weapon_rework_tests PRIVATE cubeshot_network)
 add_test(NAME weapon_rework COMMAND cubeshot_weapon_rework_tests)
+
+add_executable(cubeshot_abilities_tests abilities_tests.cpp)
+target_link_libraries(cubeshot_abilities_tests PRIVATE cubeshot_network)
+add_test(NAME abilities COMMAND cubeshot_abilities_tests)

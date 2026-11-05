@@ -12,7 +12,8 @@ enum class EventKind
     SurfaceImpact,
     CorpseHit,
     CorpseBreak,
-    Explosion
+    Explosion,
+    ShieldBlock
 };
 
 struct GameEvent

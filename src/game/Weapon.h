@@ -52,6 +52,11 @@ struct Weapon
     int ammo = 12;
     bool reloading = false;
     float reloadRemaining = 0;
+    unsigned magazineLevel = 0, reloadLevel = 0;
+    float bodyScale = 1;
+    int capacity() const;
+    float reloadDuration() const;
+    float reloadSetup() const;
     bool startReload();
     void cancelReload();
     void equip(WeaponKind value);

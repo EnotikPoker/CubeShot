@@ -16,7 +16,8 @@ Arena botArena(MapId map)
 } // namespace
 
 BotMatch::BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed)
-    : match_(false, seed), bot_(botArena(map), difficulty, seed), nickname_(std::move(nickname))
+    : upgradeRandom_(seed ^ 0x53a7e1u), match_(false, seed), bot_(botArena(map), difficulty, seed),
+      nickname_(std::move(nickname))
 {
     match_.connect(1);
     match_.connect(2);
@@ -39,6 +40,11 @@ bool BotMatch::chooseWeapon(bool reroll)
     return match_.chooseWeapon(1, reroll, match_.round(), match_.snapshot().selectionRevision);
 }
 
+bool BotMatch::chooseUpgrade(UpgradeKind kind)
+{
+    return match_.chooseUpgrade(1, kind, match_.round(), match_.snapshot().selectionRevision);
+}
+
 void BotMatch::clearInput()
 {
     match_.clearInput(1);
@@ -58,6 +64,7 @@ void BotMatch::update(float dt)
         {
             round_ = match_.round();
             bot_.reset();
+            bot_.prepare(match_.world().players()[1].abilities);
             botHeld_ = false;
         }
         if (match_.phase() == MatchPhase::Round)
@@ -75,7 +82,12 @@ void BotMatch::update(float dt)
         {
             auto state = match_.snapshot();
             if (state.weaponChoice[1] == WeaponChoice::Pending)
-                match_.chooseWeapon(2, state.winner != 2, state.round, state.selectionRevision);
+            {
+                bool weapon = std::bernoulli_distribution(state.winner == 2 ? .25 : .65)(upgradeRandom_);
+                auto kind = weapon ? UpgradeKind::Weapon : UpgradeKind::Ability;
+                if (!match_.chooseUpgrade(2, kind, state.round, state.selectionRevision))
+                    match_.chooseWeapon(2, false, state.round, state.selectionRevision);
+            }
         }
         match_.update(delta);
     }

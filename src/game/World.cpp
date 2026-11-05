@@ -51,6 +51,13 @@ void World::resetPlayers(bool swapSpawns)
     pendingImpact_.assign(players_.size(), {});
 }
 
+void World::setAbilities(PlayerId id, const Abilities& abilities)
+{
+    for (auto& p : players_)
+        if (p.id == id)
+            p.setAbilities(abilities);
+}
+
 void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload)
 {
     for (auto& player : players_)
@@ -192,7 +199,8 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     Player* victim = nullptr;
     for (const Rect& platform : arena_.platforms)
     {
-        const auto hit = collision::segmentHit(bullet.position, destination, platform, Bullet::radius);
+        const auto hit =
+            collision::segmentHit(bullet.position, destination, platform, bullet.collisionRadius);
         if (hit && *hit < nearest)
         {
             nearest = *hit;
@@ -208,7 +216,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         const auto hit =
             hitPolygon({bullet.position.x - player.position.x, bullet.position.y - player.position.y},
                        {destination.x - player.position.x, destination.y - player.position.y},
-                       player.bodyContour(), Bullet::radius);
+                       player.bodyContour(), bullet.collisionRadius);
         // При равном расстоянии платформа закрывает игрока.
         if (hit && *hit < nearest)
         {
@@ -216,7 +224,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             victim = &player;
         }
     }
-    auto remains = debris_.trace(bullet.position, destination);
+    auto remains = debris_.trace(bullet.position, destination, bullet.collisionRadius);
     if (remains && remains->fraction < nearest)
     {
         nearest = remains->fraction;
@@ -236,8 +244,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             return false;
         }
         bullet.damage = bullet.impactDamage();
-        if (incendiaryWeapon(bullet.weapon))
-            igniteSurface(at, bullet.shooterId);
+        bool applied = true;
         if (remains)
         {
             const auto owner = remains->fragment ? debris_.pieces()[remains->index].owner
@@ -246,9 +253,11 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, bullet, at, owner);
         }
         else if (victim)
-            damage(*victim, bullet, at, bullet.damage, incendiaryWeapon(bullet.weapon));
+            applied = damage(*victim, bullet, at, bullet.damage, incendiaryWeapon(bullet.weapon));
         else
             emit(EventKind::SurfaceImpact, bullet, at);
+        if (incendiaryWeapon(bullet.weapon) && applied)
+            igniteSurface(at, bullet.shooterId);
         if (bullet.weapon == WeaponKind::FireBoomerang)
         {
             if (victim)
@@ -270,10 +279,10 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     }
     bullet.position = destination;
     const Rect& bounds = arena_.bounds;
-    const bool inside = destination.x >= bounds.position.x + Bullet::radius &&
-                        destination.x <= bounds.position.x + bounds.size.x - Bullet::radius &&
-                        destination.y >= bounds.position.y + Bullet::radius &&
-                        destination.y <= bounds.position.y + bounds.size.y - Bullet::radius;
+    const bool inside = destination.x >= bounds.position.x + bullet.collisionRadius &&
+                        destination.x <= bounds.position.x + bounds.size.x - bullet.collisionRadius &&
+                        destination.y >= bounds.position.y + bullet.collisionRadius &&
+                        destination.y <= bounds.position.y + bounds.size.y - bullet.collisionRadius;
     if (!inside && bullet.weapon == WeaponKind::FireBoomerang && !bullet.returning)
     {
         bullet.returning = true;

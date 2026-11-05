@@ -23,6 +23,7 @@ public:
     void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
     void ready(bool value);
     void chooseWeapon(bool reroll);
+    void chooseUpgrade(UpgradeKind kind);
     void selectMap(MapId map);
     void changeMap();
     std::vector<GameEvent> takeEvents();

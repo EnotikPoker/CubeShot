@@ -109,6 +109,7 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         pose.land = std::max(0.f, pose.land - dt);
         pose.shot = std::max(0.f, pose.shot - dt);
         pose.hit = std::max(0.f, pose.hit - dt);
+        pose.shield = std::max(0.f, pose.shield - dt);
         if (!p.alive() && pose.alive)
             pose.death = .001f;
         if (!p.alive())
@@ -141,6 +142,10 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
             poses_[e.actor].shot = .1f;
             if (shake && e.actor == own)
                 shake_ = std::max(shake_, meleeWeapon(e.weapon) ? 1.5f : 2.5f);
+        }
+        else if (e.kind == EventKind::ShieldBlock)
+        {
+            poses_[e.target].shield = .15f;
         }
         else if (e.kind == EventKind::Hit)
         {

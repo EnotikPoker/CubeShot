@@ -36,6 +36,7 @@ enum class MenuAction
     StartBots,
     BotRematch,
     RollWeapon,
+    RollAbility,
     KeepWeapon,
     Quit,
     CreateRoom,

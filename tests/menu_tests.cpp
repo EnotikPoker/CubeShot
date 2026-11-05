@@ -323,6 +323,20 @@ void testArsenalSelection()
                    SDL_RenderPresent(renderer.get()),
                "Every roulette result fits the clipped card strip");
     }
+    state.weaponChoice[0] = WeaponChoice::Pending;
+    menu.networkState(state, 1);
+    expect(menu.buttons().size() == 3, "Intermission offers weapon, ability or continue");
+    menu.moveSelection(1);
+    expect(menu.activate() == MenuAction::RollAbility, "Ability button sends the distinct upgrade choice");
+    state.upgrade[0] = UpgradeKind::Ability;
+    state.weaponChoice[0] = WeaponChoice::Spinning;
+    for (unsigned i = 0; i < abilityCount; ++i)
+    {
+        state.rolledAbility[0] = static_cast<AbilityKind>(i);
+        menu.networkState(state, 1);
+        expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()),
+               "Every ability card and description render");
+    }
 }
 
 } // namespace

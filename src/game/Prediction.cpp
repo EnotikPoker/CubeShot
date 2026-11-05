@@ -56,7 +56,7 @@ void Prediction::simulate(const PredictedCommand& command, bool visuals)
                      b.position.y + b.velocity.y / speed * player_->weapon.barrel()};
             float fraction = 2;
             for (const auto& wall : arena_.platforms)
-                if (auto t = collision::segmentHit(b.position, end, wall, Bullet::radius))
+                if (auto t = collision::segmentHit(b.position, end, wall, b.collisionRadius))
                     fraction = std::min(fraction, *t);
             if (fraction <= 1)
             {
@@ -88,14 +88,14 @@ void Prediction::advanceRockets()
                            b.update(step);
                            float fraction = 2;
                            for (const auto& wall : arena_.platforms)
-                               if (auto t = collision::segmentHit(from, b.position, wall, Bullet::radius))
+                               if (auto t = collision::segmentHit(from, b.position, wall, b.collisionRadius))
                                    fraction = std::min(fraction, *t);
                            for (const auto& other : others_)
                                if (other.alive())
                                    if (auto t = hitPolygon(
                                            {from.x - other.position.x, from.y - other.position.y},
                                            {b.position.x - other.position.x, b.position.y - other.position.y},
-                                           other.bodyContour(), Bullet::radius))
+                                           other.bodyContour(), b.collisionRadius))
                                        fraction = std::min(fraction, *t);
                            bool outside = b.position.x < arena_.bounds.position.x ||
                                           b.position.y < arena_.bounds.position.y ||
@@ -198,36 +198,36 @@ void Prediction::advance(PlayerInput input)
     simulate(command, true);
     offset_.x *= .85f;
     offset_.y *= .85f;
-    bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
-                                  [&](Bullet& b)
-                                  {
-                                      const auto from = b.position;
-                                      if (b.weapon == WeaponKind::FireBoomerang)
-                                      {
-                                          if (b.age >= .55f)
-                                              b.returning = true;
-                                          if (b.returning)
-                                          {
-                                              const auto at = player_->weaponOrigin();
-                                              const float distance = std::hypot(at.x - from.x, at.y - from.y);
-                                              if (distance < 24)
-                                                  return true;
-                                              b.velocity = {(at.x - from.x) / distance * 700,
-                                                            (at.y - from.y) / distance * 700};
-                                          }
-                                      }
-                                      b.update(step);
-                                      if (b.lifetime <= 0 || b.position.x < arena_.bounds.position.x ||
-                                          b.position.x > arena_.bounds.size.x ||
-                                          b.position.y < arena_.bounds.position.y ||
-                                          b.position.y > arena_.bounds.size.y)
-                                          return true;
-                                      for (const auto& rect : arena_.platforms)
-                                          if (collision::segmentHit(from, b.position, rect, Bullet::radius))
-                                              return true;
-                                      return false;
-                                  }),
-                   bullets_.end());
+    bullets_.erase(
+        std::remove_if(bullets_.begin(), bullets_.end(),
+                       [&](Bullet& b)
+                       {
+                           const auto from = b.position;
+                           if (b.weapon == WeaponKind::FireBoomerang)
+                           {
+                               if (b.age >= .55f)
+                                   b.returning = true;
+                               if (b.returning)
+                               {
+                                   const auto at = player_->weaponOrigin();
+                                   const float distance = std::hypot(at.x - from.x, at.y - from.y);
+                                   if (distance < 24)
+                                       return true;
+                                   b.velocity = {(at.x - from.x) / distance * 700,
+                                                 (at.y - from.y) / distance * 700};
+                               }
+                           }
+                           b.update(step);
+                           if (b.lifetime <= 0 || b.position.x < arena_.bounds.position.x ||
+                               b.position.x > arena_.bounds.size.x ||
+                               b.position.y < arena_.bounds.position.y || b.position.y > arena_.bounds.size.y)
+                               return true;
+                           for (const auto& rect : arena_.platforms)
+                               if (collision::segmentHit(from, b.position, rect, b.collisionRadius))
+                                   return true;
+                           return false;
+                       }),
+        bullets_.end());
 }
 
 std::optional<GameEvent> Prediction::action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
@@ -263,7 +263,7 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
                       prototype.position.y + direction.y * definition.barrel};
     bool blocked = false;
     for (const auto& rect : arena_.platforms)
-        if (collision::segmentHit(prototype.position, muzzle, rect, Bullet::radius))
+        if (collision::segmentHit(prototype.position, muzzle, rect, prototype.collisionRadius))
             blocked = true;
     if (!blocked && !meleeWeapon(prototype.weapon))
     {

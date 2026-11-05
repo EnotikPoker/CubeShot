@@ -23,13 +23,14 @@ struct BodyPose
 
 BodyPose bodyPose(const Player& player)
 {
-    const float stride = player.grounded ? std::sin(player.motionPhase) *
-                                               std::min(1.f, std::abs(player.velocity.x) / Player::moveSpeed)
-                                         : 0;
+    const float stride = player.grounded
+                             ? std::sin(player.motionPhase) *
+                                   std::min(1.f, std::abs(player.velocity.x) / player.movementSpeed())
+                             : 0;
     const float rebound = -player.landing * .12f * std::cos((1 - player.landing) * 4.08407f);
     const float stretch = player.grounded
                               ? rebound + stride * .04f
-                              : std::clamp(-player.velocity.y / Player::jumpSpeed * .09f, -.06f, .1f);
+                              : std::clamp(-player.velocity.y / player.jumpVelocity() * .09f, -.06f, .1f);
     return {1 - stretch * .65f, 1 + stretch, player.lean * .055f};
 }
 } // namespace
@@ -37,11 +38,13 @@ BodyPose bodyPose(const Player& player)
 Vec2 Player::bodyPoint(Vec2 local) const
 {
     const auto pose = bodyPose(*this);
-    return {24 + (local.x - 24) * pose.x + (48 - local.y) * pose.shear, 48 + (local.y - 48) * pose.y};
+    return {(24 + (local.x - 24) * pose.x + (48 - local.y) * pose.shear) * bodyScale(),
+            (48 + (local.y - 48) * pose.y) * bodyScale()};
 }
 
 Vec2 Player::bodyLocal(Vec2 point) const
 {
+    point = {point.x / bodyScale(), point.y / bodyScale()};
     const auto pose = bodyPose(*this);
     const float y = 48 + (point.y - 48) / pose.y;
     return {24 + (point.x - 24 - (48 - y) * pose.shear) / pose.x, y};
@@ -62,7 +65,7 @@ bool Player::alive() const
 
 Vec2 Player::weaponOrigin() const
 {
-    const auto local = bodyPoint({size.x * .5f, size.y * .55f});
+    const auto local = bodyPoint({24, 26.4f});
     return {position.x + local.x, position.y + local.y};
 }
 
@@ -120,8 +123,58 @@ std::optional<Bullet> Player::takeShot()
     bullet.volley = weapon.shots;
     bullet.lifetime = definition.lifetime;
     bullet.acceleration = definition.gravity;
-    applyImpulse({-shotAim_.x * definition.recoil, -shotAim_.y * definition.recoil});
+    bullet.collisionRadius =
+        Bullet::radius *
+        (abilities.level(AbilityKind::LargeBullets) && !meleeWeapon(weapon.kind) ? 1.5f : 1.f);
+    bullet.ignites = abilities.level(AbilityKind::Incendiary) > 0;
+    applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil(),
+                  -shotAim_.y * definition.recoil * abilities.recoil()});
     return bullet;
+}
+
+void Player::setAbilities(const Abilities& value, bool refill)
+{
+    if (!value.valid())
+        return;
+    const float previous = size.x;
+    abilities = value;
+    size = {48 * bodyScale(), 48 * bodyScale()};
+    position.x += (previous - size.x) / 2;
+    position.y += previous - size.y;
+    weapon.magazineLevel = abilities.level(AbilityKind::Magazine);
+    weapon.reloadLevel = abilities.level(AbilityKind::FastReload);
+    weapon.bodyScale = bodyScale();
+    if (refill)
+    {
+        health = healthLimit();
+        shields = abilities.shields();
+        jetpackFuel = 2;
+        weapon.ammo = weapon.capacity();
+        weapon.cancelReload();
+        blockedShots_.clear();
+    }
+    else
+    {
+        health = std::min(health, healthLimit());
+        shields = std::min(shields, abilities.shields());
+        weapon.ammo = std::min(weapon.ammo, weapon.capacity());
+    }
+}
+
+bool Player::absorb(const Bullet& b)
+{
+    if (b.shooterId == id || b.shooterId == 0)
+        return false;
+    for (auto shot : blockedShots_)
+        if (shot.shooter == b.shooterId && shot.volley == b.volley)
+            return true;
+    if (!shields)
+        return false;
+    --shields;
+    if (blockedShots_.size() >= 512)
+        blockedShots_.erase(blockedShots_.begin());
+    blockedShots_.push_back({b.shooterId, b.volley});
+    return true;
 }
 
 void Player::applyImpulse(Vec2 impulse)
@@ -138,7 +191,7 @@ void Player::applyImpulse(Vec2 impulse)
 
 void Player::takeDamage(int damage)
 {
-    health = std::max(0, std::clamp(health, 0, maxHealth) - std::max(0, damage));
+    health = std::max(0, std::clamp(health, 0, healthLimit()) - std::max(0, damage));
     if (!alive())
     {
         velocity = {};
@@ -155,7 +208,8 @@ void Player::applyInput(const PlayerInput& input)
     {
         return;
     }
-    velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * moveSpeed + pushX;
+    velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * movementSpeed() + pushX;
+    jetpackHeld_ = input.jetpackHeld || input.jump;
     if (input.reload)
         weapon.startReload();
     jumpRequested_ = jumpRequested_ || (input.jump && !jumpHeld_);
@@ -194,6 +248,8 @@ void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequen
 void Player::clearInput()
 {
     velocity.x = pushX;
+    jetpackHeld_ = false;
+    jetpackActive = false;
     weapon.driven = false;
     jumpHeld_ = jumpRequested_ = false;
     shootHeld_ = shootRequested_ = triggerHeld_ = false;
@@ -209,13 +265,18 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
     }
 
     grounded = playerSupport || collision::isSupported(bounds(), arena.bounds, arena.platforms);
+    if (grounded)
+        jetpackFuel = 2;
     if (jumpRequested_ && grounded)
     {
-        velocity.y = -jumpSpeed;
+        velocity.y = -jumpVelocity();
         grounded = false;
     }
     jumpRequested_ = false;
 
+    jetpackActive = false;
+    if (grounded)
+        jetpackFuel = 2;
     // Короткие шаги сохраняют дугу прыжка и столкновения при редких обновлениях.
     double remaining = deltaSeconds;
     constexpr double maxStep = 1.0 / 120.0;
@@ -230,11 +291,22 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         const bool wasGrounded = grounded;
         const float falling = velocity.y;
         position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, arena.platforms);
+        const bool thrust =
+            abilities.level(AbilityKind::Jetpack) && jetpackHeld_ && !grounded && jetpackFuel > 0;
+        if (thrust)
+        {
+            float burn = std::min(step, jetpackFuel);
+            velocity.y = std::max(-1100.f, velocity.y - 2600 * burn);
+            jetpackFuel = std::max(0.f, jetpackFuel - burn);
+            jetpackActive = true;
+        }
         velocity.y += gravity * step;
         const auto movement =
             collision::moveVertically(bounds(), velocity.y * step, arena.bounds, arena.platforms);
         position.y = movement.y;
         grounded = movement.blocked && velocity.y > 0.0f;
+        if (grounded)
+            jetpackFuel = 2;
         if (movement.blocked)
         {
             velocity.y = 0.0f;
@@ -244,7 +316,7 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         if (grounded)
             motionPhase = std::remainder(motionPhase + std::abs(position.x - oldX) * .16f, 6.2831853f);
         landing = std::max(0.f, landing - step * 6);
-        lean += (std::clamp(velocity.x / moveSpeed, -1.f, 1.f) - lean) * std::min(1.f, step * 14);
+        lean += (std::clamp(velocity.x / movementSpeed(), -1.f, 1.f) - lean) * std::min(1.f, step * 14);
     }
     weapon.update(deltaSeconds);
 }
