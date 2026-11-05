@@ -12,7 +12,7 @@ public:
     void handle(MenuAction action, Menu& menu, const std::string& nickname);
     void synchronize(Menu& menu);
     void control(const PlayerInput& input);
-    void action(bool jump, bool shoot, Vec2 aim);
+    void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
     void clearInput();
     void update(float dt, const Menu& menu);
     BotMatch* match();

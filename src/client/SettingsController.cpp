@@ -136,7 +136,7 @@ std::vector<SettingsItem> SettingsController::items() const
                        U"Тряска экрана: " + std::u32string(draft_.shake ? U"Вкл" : U"Выкл")});
     }
     if (tab_ == SettingsTab::Controls)
-        for (int a = 0; a < 5; ++a)
+        for (int a = 0; a < static_cast<int>(InputAction::Count); ++a)
             for (int slot = 0; slot < 2; ++slot)
             {
                 const auto binding = draft_.bindings[a][slot];
@@ -145,10 +145,10 @@ std::vector<SettingsItem> SettingsController::items() const
                 out.push_back({Kind::Binding,
                                a,
                                slot,
-                               {{350.f + slot * 260, 142.f + a * 48}, {192, 36}},
+                               {{350.f + slot * 260, 142.f + a * 40}, {192, 36}},
                                capturing ? U"Нажмите..." : bindingName(binding)});
                 out.push_back(
-                    {Kind::ClearBinding, a, slot, {{548.f + slot * 260, 142.f + a * 48}, {42, 36}}, U"X"});
+                    {Kind::ClearBinding, a, slot, {{548.f + slot * 260, 142.f + a * 40}, {42, 36}}, U"X"});
             }
     out.push_back({Kind::Apply, 0, 0, {{40, 434}, {270, 42}}, U"Применить"});
     out.push_back({Kind::Cancel, 0, 0, {{345, 434}, {270, 42}}, U"Отмена"});

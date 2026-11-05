@@ -20,7 +20,7 @@ public:
     void disconnect();
     void poll();
     void control(PlayerInput input);
-    void action(bool jump, bool shoot, Vec2 aim);
+    void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
     void ready(bool value);
     void chooseWeapon(bool reroll);
     void selectMap(MapId map);

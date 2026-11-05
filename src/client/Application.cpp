@@ -377,7 +377,8 @@ int Application::run()
             }
             const bool jumpEvent = presses[static_cast<std::size_t>(InputAction::Jump)];
             const bool shotEvent = presses[static_cast<std::size_t>(InputAction::Shoot)];
-            if (menu_.playing() && (jumpEvent || shotEvent))
+            const bool reloadEvent = presses[static_cast<std::size_t>(InputAction::Reload)];
+            if (menu_.playing() && (jumpEvent || shotEvent || reloadEvent))
             {
                 auto input = rawInput();
                 if (jumpEvent)
@@ -402,6 +403,8 @@ int Application::run()
                 input = inputGate_.filter(input);
                 if (session)
                 {
+                    if (reloadEvent)
+                        session->action(false, false, input.aimDirection, true);
                     if (jumpEvent && input.jump)
                         session->action(true, false, input.aimDirection);
                     if (shotEvent && input.shoot)
@@ -409,13 +412,19 @@ int Application::run()
                 }
                 else if (bots_.match())
                 {
+                    if (reloadEvent)
+                        bots_.action(false, false, input.aimDirection, true);
                     if (jumpEvent && input.jump)
                         bots_.action(true, false, input.aimDirection);
                     if (shotEvent && input.shoot)
                         bots_.action(false, true, input.aimDirection);
                 }
                 else
+                {
+                    if (reloadEvent)
+                        world_.requestAction(World::localPlayerId, false, false, input.aimDirection, 0, true);
                     world_.setPlayerInput(World::localPlayerId, input);
+                }
             }
             // Menu clicks always use the left mouse button, independent of the fire binding.
             const bool menuClick =
@@ -552,8 +561,7 @@ int Application::run()
             }
             else
                 rendered = renderScene(renderer_, world_, false, &effects_) &&
-                           drawText(renderer_, weaponDefinition(world_.players()[0].weapon.kind).name,
-                                    {650, 500}, 2, {232, 240, 255, 255});
+                           drawWeaponHud(renderer_, world_.players()[0]);
         }
         if (menu_.screen() == Screen::Settings)
             rendered = renderSettings(renderer_, settings_, SDL_GetTicks(), menu_.lan());

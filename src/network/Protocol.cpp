@@ -166,6 +166,10 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         vec(v->mutable_aim(), p.aimDirection);
         v->set_health(p.health);
         v->set_grounded(p.grounded);
+        v->set_push_x(p.pushX);
+        v->set_ammo(p.weapon.ammo);
+        v->set_reloading(p.weapon.reloading);
+        v->set_reload_remaining(p.weapon.reloadRemaining);
         v->set_cooldown(p.weapon.cooldown);
         v->set_weapon(static_cast<unsigned>(p.weapon.kind));
         v->set_preparation(p.weapon.preparation);
@@ -174,6 +178,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_spin(p.weapon.spin);
         v->set_heat(p.weapon.heat);
         v->set_overheated(p.weapon.overheated);
+        v->set_driven(p.weapon.driven);
         v->set_burning(p.burning);
         v->set_burn_owner(p.burnOwner);
         auto* surface = v->mutable_surface();
@@ -210,6 +215,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_gravity(b.acceleration);
         v->set_volley(b.volley);
         v->set_age(b.age);
+        v->set_travelled(b.travelled);
         v->set_returning(b.returning);
         v->set_hit_mask(b.hitMask);
     }
@@ -298,6 +304,19 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         p.health = v.health();
         p.grounded = v.grounded();
         p.weapon.equip(static_cast<WeaponKind>(v.weapon()));
+        const auto& definition = weaponDefinition(p.weapon.kind);
+        if (v.ammo() > static_cast<unsigned>(definition.capacity) || !std::isfinite(v.reload_remaining()) ||
+            v.reload_remaining() < 0 || v.reload_remaining() > definition.reloadTime + .351f ||
+            (!v.reloading() && v.reload_remaining() != 0) ||
+            (v.reloading() &&
+             (!definition.capacity || v.ammo() >= static_cast<unsigned>(definition.capacity) ||
+              v.reload_remaining() <= 0 || v.charging())) ||
+            !std::isfinite(v.push_x()) || std::abs(v.push_x()) > 900.01f)
+            return {};
+        p.pushX = v.push_x();
+        p.weapon.ammo = v.ammo();
+        p.weapon.reloading = v.reloading();
+        p.weapon.reloadRemaining = v.reload_remaining();
         p.weapon.cooldown = v.cooldown();
         p.weapon.preparation = v.preparation();
         p.weapon.charging = v.charging();
@@ -305,6 +324,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         p.weapon.spin = v.spin();
         p.weapon.heat = v.heat();
         p.weapon.overheated = v.overheated();
+        p.weapon.driven = v.driven();
         p.burning = v.burning();
         p.burnOwner = v.burn_owner();
         p.surface.revision = v.surface().revision();
@@ -348,10 +368,10 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     {
         if (!v.id() || !bullets.insert(v.id()).second || !finite(v.position()) || !finite(v.velocity()) ||
             v.shooter() < 1 || v.shooter() > 2 || !std::isfinite(v.lifetime()) || v.lifetime() <= 0 ||
-            v.lifetime() > 4 || v.weapon() >= weaponCount || !v.damage() || v.damage() > 100 ||
+            v.lifetime() > 8.01f || v.weapon() >= weaponCount || !v.damage() || v.damage() > 100 ||
             !std::isfinite(v.gravity()) || v.gravity() < -35 || v.gravity() > 500)
             return {};
-        if (!std::isfinite(v.age()) || v.age() < 0 || v.age() > 4.01f || v.hit_mask() > 0x6)
+        if (!std::isfinite(v.age()) || v.age() < 0 || v.age() > 8.01f || v.hit_mask() > 0x6)
             return {};
         Bullet b;
         b.id = v.id();
@@ -364,6 +384,9 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         b.damage = v.damage();
         b.acceleration = v.gravity();
         b.volley = v.volley();
+        if (!std::isfinite(v.travelled()) || v.travelled() < 0 || v.travelled() > 100000)
+            return {};
+        b.travelled = v.travelled();
         b.age = v.age();
         b.returning = v.returning();
         b.hitMask = v.hit_mask();

@@ -28,6 +28,8 @@ struct WeaponDefinition
     int damage, pellets;
     float interval, speed, lifetime, spread, gravity, barrel, preparation;
     bool automatic;
+    int capacity = 0;
+    float reloadTime = 0, effectiveRange = 0, recoil = 0;
 };
 
 inline constexpr unsigned weaponCount = 14;
@@ -47,6 +49,11 @@ struct Weapon
     float spin = 0, heat = 0;
     float preparation = 0;
     std::uint32_t shots = 0;
+    int ammo = 12;
+    bool reloading = false;
+    float reloadRemaining = 0;
+    bool startReload();
+    void cancelReload();
     void equip(WeaponKind value);
     float barrel() const;
     bool automatic() const;

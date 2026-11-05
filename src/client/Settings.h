@@ -14,6 +14,7 @@ enum class InputAction
     Jump,
     Shoot,
     Restart,
+    Reload,
     Count
 };
 enum class BindingDevice

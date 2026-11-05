@@ -7,8 +7,15 @@
 struct SDL_Renderer;
 struct SDL_Color;
 
+namespace cubeshot
+{
+struct Player;
+}
+
 namespace cubeshot::client
 {
+
+bool drawWeaponHud(SDL_Renderer* renderer, const Player& player);
 
 float textHeight(SDL_Renderer* renderer, int scale);
 float textWidth(SDL_Renderer* renderer, std::u32string_view text, int scale);

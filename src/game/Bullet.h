@@ -23,6 +23,8 @@ struct Bullet
     std::uint32_t volley = 0;
     float acceleration = gravity;
     float age = 0;
+    float travelled = 0;
+    int impactDamage() const;
     bool returning = false;
     std::uint32_t hitMask = 0;
 

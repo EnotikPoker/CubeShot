@@ -23,6 +23,34 @@ bool blocked(Vec2 from, Vec2 to, const Arena& arena)
 }
 } // namespace
 
+int explosionDamage(float distance)
+{
+    return std::max(0, static_cast<int>(std::lround(120 * (1 - distance / explosionRadius))));
+}
+
+BlastEffect blastEffect(Vec2 at, const Player& p, const Arena& arena, PlayerId direct)
+{
+    BlastEffect effect;
+    effect.contact = nearestPoint(at, p.bounds());
+    const float d = std::hypot(effect.contact.x - at.x, effect.contact.y - at.y);
+    if (d < explosionRadius && !blocked(at, effect.contact, arena))
+    {
+        effect.damage = explosionDamage(d);
+        Vec2 dir{p.position.x + p.size.x / 2 - at.x, p.position.y + p.size.y / 2 - at.y};
+        float n = std::hypot(dir.x, dir.y);
+        if (n < .001f)
+        {
+            dir = {0, -1};
+            n = 1;
+        }
+        float force = explosionImpulse * (1 - d / explosionRadius);
+        effect.impulse = {dir.x / n * force, dir.y / n * force};
+    }
+    if (p.id == direct)
+        effect.damage = std::max(100, effect.damage);
+    return effect;
+}
+
 void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite)
 {
     if (!damageLiving_ || amount <= 0 || !player.alive())
@@ -80,20 +108,22 @@ void World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
     events_.back().surfaceRevision = player.surface.revision;
 }
 
-void World::explode(const Bullet& bullet, Vec2 at)
+void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
 {
     emit(EventKind::Explosion, bullet, at);
     debris_.blast(at, explosionRadius);
     for (auto& player : players_)
     {
-        const auto point = nearestPoint(at, player.bounds());
-        const float distance = std::hypot(point.x - at.x, point.y - at.y);
-        if (distance < explosionRadius && !blocked(at, point, arena_))
+        if (!player.alive())
+            continue;
+        const auto effect = blastEffect(at, player, arena_, direct);
+        if (effect.damage > 0)
         {
             auto impact = bullet;
-            impact.velocity = {player.weaponOrigin().x - at.x, player.weaponOrigin().y - at.y};
-            damage(player, impact, point,
-                   std::max(1, static_cast<int>(100 * (1 - distance / explosionRadius))));
+            impact.velocity = effect.impulse;
+            damage(player, impact, effect.contact, effect.damage);
+            if (damageLiving_)
+                player.applyImpulse(effect.impulse);
         }
     }
     for (std::size_t i = 0; i < debris_.corpses().size(); ++i)
@@ -103,7 +133,7 @@ void World::explode(const Bullet& bullet, Vec2 at)
         if (corpse.body.outline.empty() || distance >= explosionRadius)
             continue;
         auto impact = bullet;
-        impact.damage = std::max(1, static_cast<int>(100 * (1 - distance / explosionRadius)));
+        impact.damage = explosionDamage(distance);
         impact.velocity = {corpse.body.position.x - at.x, corpse.body.position.y - at.y - 20};
         const bool broken = debris_.hit({0, false, i}, impact, corpse.body.position);
         emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, impact, corpse.body.position,

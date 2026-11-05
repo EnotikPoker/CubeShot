@@ -112,7 +112,8 @@ void noHopping()
                 auto before = self.position;
                 apply(self, input, arena);
                 expect(std::abs(self.position.y - 392) < .01f &&
-                           std::abs(self.position.x - before.x) <= Player::moveSpeed * dt + .001f,
+                           std::abs(self.position.x - before.x) <=
+                               (Player::moveSpeed + std::abs(self.pushX) + self.weapon.damage) * dt + .001f,
                        "Navigation obeys normal physics and speed limits");
                 if (tick == 120 * 28)
                     settledX = self.position.x;

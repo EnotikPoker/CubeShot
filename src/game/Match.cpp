@@ -144,7 +144,7 @@ void Match::setInput(PlayerId id, const PlayerInput& input)
         return;
     PlayerInput continuous = input;
     continuous.triggerHeld = input.triggerHeld || input.shoot;
-    continuous.jump = continuous.shoot = false;
+    continuous.jump = continuous.shoot = continuous.reload = false;
     world_.setPlayerInput(id, continuous);
 }
 
@@ -154,7 +154,8 @@ void Match::clearInput(PlayerId id)
         world_.clearPlayerInput(id);
 }
 
-bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim)
+bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
+                   bool reload)
 {
     if (!validId(id) || !connected_[id - 1] ||
         (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd) || round != round_ || sequence == 0 ||
@@ -162,7 +163,7 @@ bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, boo
         std::hypot(aim.x, aim.y) < 0.0001f || !world_.players()[id - 1].alive())
         return false;
     lastAction_[id - 1] = sequence;
-    world_.requestAction(id, jump, shoot, aim, sequence);
+    world_.requestAction(id, jump, shoot, aim, sequence, reload);
     return true;
 }
 

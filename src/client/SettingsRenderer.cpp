@@ -38,8 +38,8 @@ bool renderSettings(SDL_Renderer* renderer, const SettingsController& settings, 
     }
     else if (settings.tab() == SettingsTab::Controls)
     {
-        for (int a = 0; a < 5; ++a)
-            if (!drawText(renderer, actionName(static_cast<InputAction>(a)), {45, 151.f + a * 48}, 2, white))
+        for (int a = 0; a < static_cast<int>(InputAction::Count); ++a)
+            if (!drawText(renderer, actionName(static_cast<InputAction>(a)), {45, 151.f + a * 40}, 2, white))
                 return false;
         if (!centered(renderer,
                       settings.capturing() ? U"Нажмите кнопку. Esc — отмена"

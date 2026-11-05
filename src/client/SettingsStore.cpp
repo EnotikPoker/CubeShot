@@ -93,10 +93,10 @@ Settings loadSettings(const std::filesystem::path& file)
         try
         {
             const auto& rows = data.at("bindings");
-            if (!rows.is_array() || rows.size() != settings.bindings.size())
+            if (!rows.is_array() || (rows.size() != settings.bindings.size() && rows.size() != 5))
                 return settings;
             InputBindings bindings{};
-            for (std::size_t a = 0; a < bindings.size(); ++a)
+            for (std::size_t a = 0; a < rows.size(); ++a)
             {
                 if (!rows[a].is_array() || rows[a].size() != 2)
                     return settings;
@@ -110,6 +110,48 @@ Settings loadSettings(const std::filesystem::path& file)
                         return settings;
                     bindings[a][s] = {static_cast<BindingDevice>(device), rows[a][s].at("code").get<int>()};
                 }
+            }
+            if (rows.size() == 5)
+            {
+                auto used = [&](int key)
+                {
+                    for (const auto& row : bindings)
+                        for (auto b : row)
+                            if (b.device == BindingDevice::Keyboard && b.code == key)
+                                return true;
+                    return false;
+                };
+                for (auto& binding : bindings[4])
+                    if (binding.device == BindingDevice::Keyboard && binding.code == SDL_SCANCODE_R)
+                    {
+                        int key = SDL_SCANCODE_F5;
+                        while (key < SDL_SCANCODE_F12 && used(key))
+                            ++key;
+                        if (used(key))
+                        {
+                            key = SDL_SCANCODE_F13;
+                            while (key < SDL_SCANCODE_F24 && used(key))
+                                ++key;
+                        }
+                        binding = {BindingDevice::Keyboard, key};
+                    }
+                int key = SDL_SCANCODE_R;
+                if (used(key))
+                {
+                    for (int candidate : {SDL_SCANCODE_E, SDL_SCANCODE_T, SDL_SCANCODE_G, SDL_SCANCODE_F})
+                        if (!used(candidate))
+                        {
+                            key = candidate;
+                            break;
+                        }
+                }
+                if (used(key))
+                {
+                    key = SDL_SCANCODE_A;
+                    while (key <= SDL_SCANCODE_Z && used(key))
+                        ++key;
+                }
+                bindings[5][0] = {BindingDevice::Keyboard, key};
             }
             if (validBindings(bindings))
                 settings.bindings = bindings;

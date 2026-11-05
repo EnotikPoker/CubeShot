@@ -2,6 +2,7 @@
 #include "client/Effects.h"
 #include "client/VisualAssets.h"
 #include "client/WorldView.h"
+#include "game/Collision.h"
 #include "game/Match.h"
 #include "game/World.h"
 #include <SDL3/SDL.h>
@@ -209,6 +210,13 @@ struct Painter
 bool weapon(const Painter& p, const Player& player, const Pose& pose)
 {
     Vec2 origin = player.weaponOrigin(), aim = player.aimDirection;
+    if (player.weapon.reloading)
+    {
+        float phase = player.weapon.reloadRemaining * 5;
+        float angle = std::atan2(aim.y, aim.x) + (aim.x < 0 ? -.35f : .35f) * (1 + .12f * std::sin(phase));
+        aim = {std::cos(angle), std::sin(angle)};
+        origin.y += 3;
+    }
     const float recoil = pose.shot / .1f;
     origin.y += player.grounded ? std::sin(pose.cycle) *
                                       std::min(1.f, std::abs(player.velocity.x) / Player::moveSpeed) * .9f
@@ -556,7 +564,7 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         {
             p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position,
                      {20 + b.age * 25, 28 + b.age * 25}, std::atan2(dir.y, dir.x) + 1.5707963f,
-                     {1, 1, 1, .9f});
+                     {1, 1, 1, .9f * std::clamp(b.lifetime / .12f, 0.f, 1.f)});
             continue;
         }
         if (b.weapon == WeaponKind::FireBoomerang)
@@ -585,6 +593,20 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         for (const auto& b : effects->blasts())
         {
             float age = 1 - b.life / .45f;
+            auto wave = [&](float a)
+            {
+                Vec2 end{b.position.x + std::cos(a) * explosionRadius * age,
+                         b.position.y + std::sin(a) * explosionRadius * age};
+                float fraction = 1;
+                for (const auto& wall : arena.platforms)
+                    if (auto t = collision::segmentHit(b.position, end, wall, 0))
+                        fraction = std::min(fraction, *t);
+                return Vec2{b.position.x + (end.x - b.position.x) * fraction,
+                            b.position.y + (end.y - b.position.y) * fraction};
+            };
+            for (int n = 0; n < 64; ++n)
+                p.line(wave(n * 6.2831853f / 64), wave((n + 1) * 6.2831853f / 64), 2.f,
+                       {1, .73f, .3f, (1 - age) * .8f});
             for (int n = 0; n < 6; ++n)
             {
                 float a = n * 6.2831853f / 6, spread = age * explosionRadius * .65f;
@@ -633,6 +655,15 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
             p.rect({{hp.x - 1, hp.y - 1}, {50, 8}}, {10, 20, 30, 255});
             p.rect({hp, {48, 6}}, {80, 35, 45, 255});
             p.rect({hp, {48 * fraction, 6}}, {85, 210, 125, 255});
+            if (player.weapon.reloading)
+            {
+                float duration = weaponDefinition(player.weapon.kind).reloadTime +
+                                 (player.weapon.kind == WeaponKind::Shotgun ? .35f : 0.f);
+                p.rect({{hp.x, hp.y - 20}, {48, 3}}, {25, 42, 58, 255});
+                p.rect({{hp.x, hp.y - 20},
+                        {48 * (1 - std::clamp(player.weapon.reloadRemaining / duration, 0.f, 1.f)), 3}},
+                       {94, 177, 255, 255});
+            }
             if (player.weapon.charging)
             {
                 p.rect({{hp.x, hp.y - 9}, {48, 4}}, {45, 37, 22, 255});

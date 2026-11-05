@@ -20,7 +20,8 @@ public:
     void reconcile(const WorldSnapshot& snapshot, PlayerId own);
     void advance(PlayerInput input);
     std::vector<GameEvent> takeEvents();
-    std::optional<GameEvent> action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim);
+    std::optional<GameEvent> action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
+                                    bool reload = false);
 
     const std::optional<Player>& player() const
     {
@@ -52,6 +53,7 @@ private:
     {
         std::uint64_t sequence, input;
         bool jump, shoot;
+        bool reload;
         Vec2 aim;
     };
 
@@ -65,7 +67,8 @@ private:
     std::optional<Player> player_;
     std::deque<PredictedCommand> commands_;
     std::deque<Action> actions_;
-    std::vector<Bullet> bullets_;
+    std::vector<Bullet> bullets_, flight_;
+    void advanceRockets();
     std::uint64_t sequence_ = 0, actionAck_ = 0;
     std::uint32_t round_ = 0;
     MatchPhase phase_ = MatchPhase::Lobby;

@@ -77,7 +77,8 @@ public:
     void setReady(PlayerId id, bool ready);
     void setInput(PlayerId id, const PlayerInput& input);
     void clearInput(PlayerId id);
-    bool action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim);
+    bool action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
+                bool reload = false);
     void update(float dt);
     bool chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision);
     WorldSnapshot snapshot() const;

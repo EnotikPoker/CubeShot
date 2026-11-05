@@ -11,7 +11,8 @@ Settings::Settings()
         {{BindingDevice::Keyboard, SDL_SCANCODE_D}, {BindingDevice::Keyboard, SDL_SCANCODE_RIGHT}}};
     bindings[2][0] = {BindingDevice::Keyboard, SDL_SCANCODE_SPACE};
     bindings[3][0] = {BindingDevice::Mouse, SDL_BUTTON_LEFT};
-    bindings[4][0] = {BindingDevice::Keyboard, SDL_SCANCODE_R};
+    bindings[4][0] = {BindingDevice::Keyboard, SDL_SCANCODE_F5};
+    bindings[5][0] = {BindingDevice::Keyboard, SDL_SCANCODE_R};
 }
 
 bool validBinding(InputBinding binding)
@@ -57,8 +58,8 @@ bool validDisplay(const DisplaySettings& display)
 
 std::u32string_view actionName(InputAction action)
 {
-    static constexpr std::array<std::u32string_view, 5> names{U"Влево", U"Вправо", U"Прыжок", U"Выстрел",
-                                                              U"Перезапуск теста"};
+    static constexpr std::array<std::u32string_view, 6> names{
+        U"Влево", U"Вправо", U"Прыжок", U"Выстрел", U"Перезапуск теста", U"Перезарядка"};
     return names.at(static_cast<std::size_t>(action));
 }
 
@@ -68,7 +69,7 @@ std::u32string bindingName(InputBinding binding)
         return U"Пусто";
     if (binding.device == BindingDevice::Mouse)
     {
-        static constexpr std::array<std::u32string_view, 5> names{U"ЛКМ", U"СКМ", U"ПКМ", U"Мышь 4",
+        static constexpr std::array<std::u32string_view, 6> names{U"ЛКМ", U"СКМ", U"ПКМ", U"Мышь 4",
                                                                   U"Мышь 5"};
         return std::u32string(names.at(binding.code - 1));
     }

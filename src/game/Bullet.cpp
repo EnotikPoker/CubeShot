@@ -1,4 +1,5 @@
 #include "game/Bullet.h"
+#include <algorithm>
 #include <cmath>
 
 namespace cubeshot
@@ -6,15 +7,46 @@ namespace cubeshot
 
 void Bullet::update(float deltaSeconds)
 {
-    if (!(deltaSeconds > 0.0f))
+    if (!(deltaSeconds > 0.0f) || !std::isfinite(deltaSeconds))
     {
         return;
     }
-    position.x += velocity.x * deltaSeconds;
-    position.y += velocity.y * deltaSeconds + 0.5f * acceleration * deltaSeconds * deltaSeconds;
-    velocity.y += acceleration * deltaSeconds;
-    lifetime -= deltaSeconds;
-    age += deltaSeconds;
+    float remaining = deltaSeconds;
+    const auto& d = weaponDefinition(weapon);
+    const bool ordinary = !meleeWeapon(weapon) && weapon != WeaponKind::Rpg &&
+                          weapon != WeaponKind::Flamethrower && weapon != WeaponKind::FireBoomerang;
+    while (remaining > 0)
+    {
+        const float dt = std::min(remaining, 1.f / 120);
+        remaining -= dt;
+        const bool spent = ordinary && d.effectiveRange > 0 && travelled >= d.effectiveRange;
+        if (spent)
+        {
+            float drag = std::exp(-2 * dt);
+            velocity.x *= drag;
+            velocity.y *= drag;
+        }
+        const float g = acceleration * (spent ? 4.f : 1.f);
+        const Vec2 delta{velocity.x * dt, velocity.y * dt + .5f * g * dt * dt};
+        position.x += delta.x;
+        position.y += delta.y;
+        travelled += std::hypot(delta.x, delta.y);
+        velocity.y += g * dt;
+        lifetime -= dt;
+        age += dt;
+    }
+}
+
+int Bullet::impactDamage() const
+{
+    const auto& d = weaponDefinition(weapon);
+    float factor = 1;
+    if (weapon == WeaponKind::Flamethrower)
+        factor = std::clamp(lifetime / .12f, 0.f, 1.f);
+    else if (!meleeWeapon(weapon) && weapon != WeaponKind::Rpg && weapon != WeaponKind::FireBoomerang &&
+             d.effectiveRange > 0)
+        factor = std::clamp(1 - .9f * (travelled - d.effectiveRange) / (.75f * d.effectiveRange), .1f, 1.f);
+    return std::max(1, static_cast<int>(std::lround(damage * factor)));
 }
 
 std::vector<Bullet> scatterShot(const Bullet& prototype)

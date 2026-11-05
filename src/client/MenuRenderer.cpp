@@ -433,10 +433,9 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
         std::find_if(s.players.begin(), s.players.end(), [own](const auto& p) { return p.id == own; });
     if (player != s.players.end())
     {
-        const auto label = weaponDefinition(player->weapon.kind).name;
-        if (!drawText(renderer, label, {948 - textWidth(renderer, label, 2), 500}, 2, white))
+        if (!drawWeaponHud(renderer, *player))
             return false;
-        if (player->weapon.kind == WeaponKind::Sniper &&
+        if (player->weapon.kind == WeaponKind::Sniper && !player->weapon.reloading &&
             !drawText(renderer, U"Удерживайте огонь 0.3 с", {690, 522}, 1, muted))
             return false;
     }
