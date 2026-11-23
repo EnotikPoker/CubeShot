@@ -91,7 +91,7 @@ void World::radialActive(Player& p, ActiveKind kind)
             }
         }
     if (kind == ActiveKind::Slam)
-        arena_.damageTerrain(at, 64 * p.abilities.blastRadius(), int(60 * b.terrainPower));
+        arena_.damageTerrain(at, 64 * p.abilities.blastRadius(), int(60 * b.terrainPower), false, true);
 }
 
 void World::updateBleeding(float dt)

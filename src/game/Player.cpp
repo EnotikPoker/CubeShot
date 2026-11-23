@@ -428,7 +428,7 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, *solids);
         const bool thrust =
             abilities.level(AbilityKind::Jetpack) && jetpackHeld_ && !grounded && jetpackFuel > 0;
-        if (thrust && !dash)
+        if (thrust && !dash && !slamming)
         {
             float burn = std::min(step, jetpackFuel);
             velocity.y = std::max(-1100.f, velocity.y - 2600 * burn);
@@ -437,9 +437,14 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         }
         if (!dash)
         {
-            velocity.y += gravity * step;
-            velocity.y =
-                std::min(velocity.y, fallSpeed * (abilities.level(AbilityKind::FeatherFall) ? .6f : 1.f));
+            if (slamming)
+                velocity.y = fallSpeed;
+            else
+            {
+                velocity.y += gravity * step;
+                velocity.y =
+                    std::min(velocity.y, fallSpeed * (abilities.level(AbilityKind::FeatherFall) ? .6f : 1.f));
+            }
         }
         const auto movement = collision::moveVertically(bounds(), velocity.y * step, arena.bounds, *solids);
         position.y = movement.y;

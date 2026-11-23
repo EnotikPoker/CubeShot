@@ -133,6 +133,21 @@ void attacks()
 
 void deferredSlam()
 {
+    Player diver;
+    diver.position = {100, 180};
+    Abilities glider;
+    glider.add(AbilityKind::FeatherFall);
+    glider.add(AbilityKind::Jetpack);
+    diver.setAbilities(glider);
+    diver.setActives({ActiveKind::Slam, ActiveKind::None});
+    PlayerInput held;
+    held.jetpackHeld = true;
+    diver.applyInput(held);
+    diver.activate(0, flat());
+    diver.update(dt, flat());
+    expect(diver.velocity.y == 1100 && !diver.jetpackActive && diver.jetpackFuel == 2,
+           "Slam keeps its specified descent speed despite feather fall or held jetpack");
+
     auto a = flat(220);
     a.spawnPoints[0] = {100, 180};
     World w(a, 2);
