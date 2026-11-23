@@ -6,23 +6,37 @@ namespace cubeshot
 {
 const std::vector<MapInfo>& mapCatalog()
 {
-    static const std::vector<MapInfo> maps{{MapId::Duel, U"Классическая дуэль", MapTheme::Classic},
-                                           {MapId::FactorySmall, U"Завод: Цех", MapTheme::Factory},
-                                           {MapId::FactoryMedium, U"Завод: Склад", MapTheme::Factory},
-                                           {MapId::FactoryLarge, U"Завод: Комплекс", MapTheme::Factory},
-                                           {MapId::RuinsSmall, U"Руины: Двор", MapTheme::Ruins},
-                                           {MapId::RuinsMedium, U"Руины: Башни", MapTheme::Ruins},
-                                           {MapId::RuinsLarge, U"Руины: Крепость", MapTheme::Ruins},
-                                           {MapId::NatureSmall, U"Природа: Поляна", MapTheme::Nature},
-                                           {MapId::NatureMedium, U"Природа: Террасы", MapTheme::Nature},
-                                           {MapId::NatureLarge, U"Природа: Долина", MapTheme::Nature},
-                                           {MapId::Test, U"Первый полигон", MapTheme::Classic}};
+    static const std::vector<MapInfo> maps{
+        {MapId::Duel, U"Классическая дуэль", MapTheme::Classic},
+        {MapId::FactorySmall, U"Завод: Цех", MapTheme::Factory},
+        {MapId::FactoryMedium, U"Завод: Склад", MapTheme::Factory},
+        {MapId::FactoryLarge, U"Завод: Комплекс", MapTheme::Factory},
+        {MapId::RuinsSmall, U"Руины: Двор", MapTheme::Ruins},
+        {MapId::RuinsMedium, U"Руины: Башни", MapTheme::Ruins},
+        {MapId::RuinsLarge, U"Руины: Крепость", MapTheme::Ruins},
+        {MapId::NatureSmall, U"Природа: Поляна", MapTheme::Nature},
+        {MapId::NatureMedium, U"Природа: Террасы", MapTheme::Nature},
+        {MapId::NatureLarge, U"Природа: Долина", MapTheme::Nature},
+        {MapId::Test, U"Первый полигон", MapTheme::Classic},
+        {MapId::FactoryPartitions, U"Завод: Перегородки", MapTheme::Factory},
+        {MapId::RuinsBreach, U"Руины: Пролом", MapTheme::Ruins},
+        {MapId::NatureCrossing, U"Природа: Переправа", MapTheme::Nature}};
     return maps;
 }
 
 bool validMap(MapId id, bool test)
 {
-    return static_cast<unsigned>(id) <= static_cast<unsigned>(test ? MapId::Test : MapId::NatureLarge);
+    return static_cast<unsigned>(id) <= static_cast<unsigned>(MapId::NatureCrossing) &&
+           (test || id != MapId::Test);
+}
+
+std::vector<MapId> playableMaps(bool test)
+{
+    std::vector<MapId> ids;
+    for (auto& m : mapCatalog())
+        if (validMap(m.id, test))
+            ids.push_back(m.id);
+    return ids;
 }
 
 const MapInfo& mapInfo(MapId id)
@@ -35,12 +49,50 @@ Arena Arena::create(MapId id, bool test)
     if (!validMap(id, test))
         id = MapId::Duel;
     if (id == MapId::Test)
-        return createDefault();
+    {
+        auto a = createDefault();
+        a.decorate();
+        return a;
+    }
+    if (static_cast<unsigned>(id) >= 11)
+    {
+        MapId base = id == MapId::FactoryPartitions ? MapId::FactorySmall
+                     : id == MapId::RuinsBreach     ? MapId::RuinsMedium
+                                                    : MapId::NatureLarge;
+        auto a = create(base, test);
+        a.map = id;
+        // New layouts retain safe floors but open alternative routes through walls and bridges.
+        a.terrain.clear();
+        a.materials.clear();
+        a.spatial.clear();
+        a.platforms = a.fixedPlatforms;
+        a.nextTerrainGroup = 1;
+        float w = a.bounds.size.x, f = a.bounds.size.y - 100;
+        a.fixedPlatforms = {
+            {{0, f}, {w, 100}}, {{w * .32f - 100, f - 80}, {90, 20}}, {{w * .68f + 10, f - 80}, {90, 20}}};
+        if (test)
+        {
+            a.spawnPoints[2] = {w * .32f - 88, f - 128};
+            a.spawnPoints[3] = {w * .68f + 22, f - 128};
+        }
+        a.addTerrain({{w * .32f, f - 150}, {24, 150}},
+                     id == MapId::RuinsBreach ? Material::Stone : Material::Wood);
+        a.addTerrain({{w * .68f - 24, f - 150}, {24, 150}},
+                     id == MapId::RuinsBreach ? Material::Stone : Material::Glass);
+        a.addTerrain({{w * .32f, f - 160}, {w * .36f, 24}},
+                     id == MapId::NatureCrossing ? Material::Wood : Material::Stone);
+        for (float ratio : {.25f, .75f})
+            a.addTerrain({{w * ratio - 18, f - 36}, {36, 36}}, Material::Wood, true);
+        a.addTerrain({{w * .5f - 16, f - 32}, {32, 32}}, Material::Metal, true);
+        a.rebuildTerrain();
+        return a;
+    }
     if (id == MapId::Duel)
     {
         auto a = createDuel();
         if (test)
             a.spawnPoints = {{80, 392}, {832, 392}, {200, 302}, {700, 302}};
+        a.decorate();
         return a;
     }
     const unsigned index = static_cast<unsigned>(id) - 1;
@@ -113,6 +165,7 @@ Arena Arena::create(MapId id, bool test)
                          {w - 84, floor - 48},
                          {a.platforms[1].position.x + 12, a.platforms[1].position.y - 48},
                          {w / 2 - 24, floor - 48}};
+    a.decorate();
     return a;
 }
 

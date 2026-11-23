@@ -230,6 +230,10 @@ void Debris::chip(const Player& player, const Polygon& material, Vec2 impulse, u
         point.x -= centre.x;
         point.y -= centre.y;
     }
+    // Body scaling and pose can reduce a valid canonical chip below the minimum
+    // physical polygon area. Keep the wound, but do not spawn a degenerate body.
+    if (!validPolygon(p.outline))
+        return;
     p.velocity = {player.velocity.x * .3f + impulse.x * 170, player.velocity.y * .2f + impulse.y * 90 - 100};
     p.spin = static_cast<int>(seed % 13) - 6.f;
     const Vec2 anchor{player.aimDirection.x < 0 ? 11.f : 37.f, 15};

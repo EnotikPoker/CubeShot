@@ -10,6 +10,17 @@ bool validWeapon(WeaponKind kind)
     return static_cast<unsigned>(kind) < weaponCount;
 }
 
+bool explosiveWeapon(WeaponKind kind)
+{
+    return kind == WeaponKind::Rpg || kind == WeaponKind::GrenadeLauncher;
+}
+
+bool ballisticWeapon(WeaponKind kind)
+{
+    return static_cast<unsigned>(kind) <= static_cast<unsigned>(WeaponKind::Minigun) ||
+           kind == WeaponKind::Crossbow;
+}
+
 bool meleeWeapon(WeaponKind kind)
 {
     return kind == WeaponKind::Bat || kind == WeaponKind::Katana || kind == WeaponKind::Knife;
@@ -36,7 +47,10 @@ const WeaponDefinition& weaponDefinition(WeaponKind kind)
          {U"Бита", 25, 1, .55f, 1000, .1f, 0, 0, 82, 0, false},
          {U"Катана", 30, 1, .32f, 1000, .1f, 0, 0, 90, 0, false},
          {U"Нож", 15, 1, .18f, 1000, .1f, 0, 0, 52, 0, false},
-         {U"Огненный бумеранг", 20, 1, 1.8f, 560, 2.4f, 0, 0, 30, 0, false}}};
+         {U"Огненный бумеранг", 20, 1, 1.8f, 560, 2.4f, 0, 0, 30, 0, false},
+         {U"Гранатомёт", 90, 1, .9f, 420, 1.5f, 0, 900, 42, 0, false, 4, 2.6f, 0, 100},
+         {U"Арбалет", 65, 1, 1.f, 1300, 8, .1f, 180, 48, 0, false, 5, 2.4f, 1500, 60},
+         {U"Электропушка", 55, 1, .7f, 1800, .1f, 0, 0, 42, 0, false, 8, 2.4f, 600, 30}}};
     return definitions[validWeapon(kind) ? static_cast<unsigned>(kind) : 0];
 }
 

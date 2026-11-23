@@ -29,7 +29,7 @@ void test()
            "Bot setup is independent from network and test modes");
     expect(menu.botMap() == MapId::Duel && menu.botDifficulty() == BotDifficulty::Medium,
            "Defaults are classic duel and medium difficulty");
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < static_cast<int>(playableMaps().size()); ++i)
     {
         select(menu, 1);
         menu.activate();

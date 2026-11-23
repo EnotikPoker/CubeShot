@@ -196,7 +196,7 @@ void replay()
 
 void reloadAndRocketPrediction(MatchPhase phase = MatchPhase::Round)
 {
-    const auto a = Arena::createDuel();
+    const auto a = Arena::create(MapId::Duel);
     World world(a, 2);
     world.equip(1, WeaponKind::Rpg);
     Match match(false, 42);
@@ -209,6 +209,7 @@ void reloadAndRocketPrediction(MatchPhase phase = MatchPhase::Round)
     auto snapshot = match.snapshot();
     snapshot.phase = phase;
     snapshot.players = world.players();
+    snapshot.terrain = world.arena().terrainState();
     snapshot.bullets.clear();
     Prediction prediction;
     prediction.reconcile(snapshot, 1);
@@ -251,7 +252,7 @@ void reloadAndRocketPrediction(MatchPhase phase = MatchPhase::Round)
 
 void minigunSnapshotPrediction()
 {
-    World world(Arena::createDuel(), 2);
+    World world(Arena::create(MapId::Duel), 2);
     world.equip(1, WeaponKind::Minigun);
     Match match(false, 42);
     match.connect(1);
@@ -269,6 +270,7 @@ void minigunSnapshotPrediction()
     for (int tick = 0; tick < 120 * 30; ++tick)
     {
         snapshot.players = world.players();
+        snapshot.terrain = world.arena().terrainState();
         snapshot.bullets = world.bullets();
         snapshot.inputAck[0] = prediction.sequence();
         snapshot.actionAck[0] = tick > 2800 ? 1 : 0;

@@ -13,7 +13,8 @@ enum class EventKind
     CorpseHit,
     CorpseBreak,
     Explosion,
-    ShieldBlock
+    ShieldBlock,
+    ElectricArc
 };
 
 struct GameEvent
@@ -29,5 +30,6 @@ struct GameEvent
     Vec2 local;
     unsigned surfaceRevision = 0;
     int volleyDamage = 0;
+    float radius = 240;
 };
 } // namespace cubeshot

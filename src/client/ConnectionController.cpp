@@ -102,6 +102,8 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
         client_->chooseUpgrade(action == MenuAction::RollWeapon    ? UpgradeKind::Weapon
                                : action == MenuAction::RollAbility ? UpgradeKind::Ability
                                                                    : UpgradeKind::Continue);
+    if (action == MenuAction::SelectRules && client_)
+        client_->selectRules(menu.wins());
     if (action == MenuAction::SelectMap && client_)
         client_->selectMap(menu.selectedMap());
     if (action == MenuAction::ChangeMap && client_)

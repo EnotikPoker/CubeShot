@@ -1,5 +1,6 @@
 #include "game/BotController.h"
 #include "game/Collision.h"
+#include "support/ArenaFixtures.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -70,9 +71,10 @@ void navigation()
     {
         if (!validMap(info.id))
             continue;
-        auto arena = Arena::create(info.id);
-        auto graph = BotNavigation::forMap(info.id);
-        expect(graph == BotNavigation::forMap(info.id), "Navigation is cached per map");
+        auto arena = openRoutes(info.id);
+        auto graph = BotNavigation::forArena(arena);
+        expect(BotNavigation::forMap(info.id) == BotNavigation::forMap(info.id),
+               "Navigation is cached per map");
         expect(!graph->nodes().empty(), "Map has navigable positions");
         for (auto spawn : arena.spawnPoints)
             for (std::size_t surface = 0; surface < arena.platforms.size(); ++surface)
@@ -128,8 +130,8 @@ void platformEncounters()
     {
         if (!validMap(info.id))
             continue;
-        const auto graph = BotNavigation::forMap(info.id);
-        auto arena = Arena::create(info.id);
+        const auto graph = BotNavigation::forArena(openRoutes(info.id));
+        auto arena = openRoutes(info.id);
         for (std::size_t surface = 1; surface < arena.platforms.size(); ++surface)
         {
             std::vector<Vec2> positions;

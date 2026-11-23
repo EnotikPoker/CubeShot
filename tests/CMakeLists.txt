@@ -145,3 +145,7 @@ add_test(NAME weapon_rework COMMAND cubeshot_weapon_rework_tests)
 add_executable(cubeshot_abilities_tests abilities_tests.cpp)
 target_link_libraries(cubeshot_abilities_tests PRIVATE cubeshot_network)
 add_test(NAME abilities COMMAND cubeshot_abilities_tests)
+
+add_executable(cubeshot_destruction_tests destruction_tests.cpp)
+target_link_libraries(cubeshot_destruction_tests PRIVATE cubeshot_network)
+add_test(NAME destruction COMMAND cubeshot_destruction_tests)

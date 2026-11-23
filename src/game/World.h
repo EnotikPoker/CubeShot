@@ -28,6 +28,7 @@ public:
                        bool reload = false);
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
+    void setHealth(PlayerId id, unsigned percent);
     void setAbilities(PlayerId id, const Abilities& abilities);
 
     void setVisualSeed(unsigned seed)
@@ -50,11 +51,12 @@ public:
 
 private:
     bool damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite = false,
-                bool periodic = false);
+                DamageContext context = {});
     void explode(const Bullet& bullet, Vec2 at, PlayerId direct = 0);
     void igniteSurface(Vec2 at, PlayerId owner);
     void updateFire(float dt);
     void melee(const Bullet& attack);
+    void electric(const Bullet& attack);
     std::vector<FirePatch> fires_;
     std::uint64_t nextFireId_ = 1;
     bool moveBullet(Bullet& bullet, Vec2 destination);

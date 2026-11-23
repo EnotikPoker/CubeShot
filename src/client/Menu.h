@@ -27,11 +27,14 @@ enum class Screen
     Maps,
     BotSetup,
     BotResult,
-    Armory
+    Armory,
+    TestSetup
 };
 enum class MenuAction
 {
     None,
+    SelectRules,
+    ApplyTest,
     StartTest,
     StartBots,
     BotRematch,
@@ -71,6 +74,37 @@ struct ListedRoom
 class Menu
 {
 public:
+    unsigned wins() const
+    {
+        return wins_;
+    }
+
+    struct TestConfiguration
+    {
+        std::array<Abilities, 4> abilities{};
+        std::array<unsigned, 4> healthPercent{{100, 100, 100, 100}};
+    };
+
+    const TestConfiguration& testConfiguration() const
+    {
+        return test_;
+    }
+
+    const TestConfiguration& testDraft() const
+    {
+        return draft_;
+    }
+
+    unsigned testTarget() const
+    {
+        return testTarget_;
+    }
+
+    unsigned testPage() const
+    {
+        return testPage_;
+    }
+
     bool bots() const
     {
         return bots_;
@@ -180,6 +214,10 @@ public:
     }
 
 private:
+    unsigned wins_ = 15, testTarget_ = 0, testPage_ = 0;
+    TestConfiguration test_, draft_;
+    Screen testReturn_ = Screen::Maps;
+    std::u32string winsLabel_ = U"До 15 побед";
     std::optional<int> buttonAt(Vec2 position) const;
     MapId selectedMap_ = MapId::Test;
     WeaponKind testWeapon_ = WeaponKind::Pistol;

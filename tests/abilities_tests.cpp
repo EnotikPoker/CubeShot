@@ -335,6 +335,7 @@ void roulette()
     Match m(false, 42);
     m.connect(1);
     m.connect(2);
+    m.selectRules(1, {5}, m.snapshot().selectionRevision);
     m.setReady(1, true);
     m.setReady(2, true);
     Abilities expected;

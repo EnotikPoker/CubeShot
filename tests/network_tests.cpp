@@ -208,6 +208,12 @@ void impairedCombat()
     r.until([&] { return r.host.connected() && r.host.snapshot(); }, 5, "Owner connects under loss");
     r.guest.connect(r.address());
     r.until([&] { return r.guest.connected() && r.guest.snapshot(); }, 5, "Guest connects under loss");
+    r.guest.selectRules(5);
+    r.run(.2);
+    expect(r.server.match().snapshot().rules.wins == 15, "Guest cannot override the host's match goal");
+    r.host.selectRules(20);
+    r.until([&] { return r.host.snapshot()->rules.wins == 20 && r.guest.snapshot()->rules.wins == 20; }, 3,
+            "Match goal reaches both clients under loss");
     r.host.ready(true);
     r.guest.ready(true);
     r.until(
@@ -216,6 +222,22 @@ void impairedCombat()
                    r.guest.snapshot()->phase == MatchPhase::Round;
         },
         5, "Reliable ready starts impaired match");
+    auto pristine = r.server.match().snapshot().terrain.health;
+    for (int i = 0; i < 8; ++i)
+    {
+        r.host.action(false, true, {1, -.5f});
+        r.run(.28);
+    }
+    r.until(
+        [&]
+        {
+            const auto actual = r.server.match().snapshot().terrain.health;
+            return actual != pristine && r.host.snapshot()->terrain.health == actual &&
+                   r.guest.snapshot()->terrain.health == actual;
+        },
+        3, "Actual shots destroy material and both clients converge despite packet loss");
+    expect(r.server.match().world().players()[1].health == 100,
+           "Terrain shots do not accidentally damage the distant opponent");
     r.hostInput.moveDirection = 1;
     r.guestInput.moveDirection = -1;
     r.run(1);
@@ -322,6 +344,10 @@ void impairedCombat()
                r.guest.snapshot()->players[1].abilities.level(ability) == 1 &&
                r.host.snapshot()->players[1].weapon.kind == WeaponKind::Pistol,
            "Both clients agree on the accumulated ability without a second weapon draw");
+    expect(r.host.snapshot()->terrain.health == pristine && r.guest.snapshot()->terrain.health == pristine,
+           "New round restores all geometry identically on both clients");
+    expect(r.host.snapshot()->rules.wins == 20 && r.guest.snapshot()->rules.wins == 20,
+           "Selected match length survives the next round");
     r.guest.disconnect();
     r.until([&] { return r.host.snapshot()->phase == MatchPhase::Lobby && r.host.snapshot()->score[0] == 0; },
             3, "Leaving game resets score without award");

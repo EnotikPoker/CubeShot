@@ -2,6 +2,7 @@
 
 #include "game/BodyPhysics.h"
 #include "game/Collision.h"
+#include "game/ProjectileMotion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,6 +22,7 @@ World::World(Arena arena, std::size_t playerCount)
 
 void World::resetPlayers(bool swapSpawns)
 {
+    arena_.restoreTerrain();
     debris_.clear();
     fires_.clear();
     players_.clear();
@@ -49,6 +51,13 @@ void World::resetPlayers(bool swapSpawns)
     pendingCauses_.assign(players_.size(), {});
     pendingContacts_.assign(players_.size(), {});
     pendingImpact_.assign(players_.size(), {});
+}
+
+void World::setHealth(PlayerId id, unsigned percent)
+{
+    for (auto& p : players_)
+        if (p.id == id)
+            p.health = std::max(1, static_cast<int>(p.healthLimit() * std::min(100u, percent) / 100));
 }
 
 void World::setAbilities(PlayerId id, const Abilities& abilities)
@@ -124,6 +133,11 @@ void World::update(float deltaSeconds, bool damageLiving)
                 emit(EventKind::Shot, *bullet,
                      {bullet->position.x + bullet->velocity.x / shotSpeed * player.weapon.barrel(),
                       bullet->position.y + bullet->velocity.y / shotSpeed * player.weapon.barrel()});
+                if (bullet->weapon == WeaponKind::Electric)
+                {
+                    electric(*bullet);
+                    continue;
+                }
                 if (meleeWeapon(bullet->weapon))
                 {
                     melee(*bullet);
@@ -197,13 +211,22 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
 {
     float nearest = 2.0f;
     Player* victim = nullptr;
-    for (const Rect& platform : arena_.platforms)
+    Rect hitBox{};
+    bool hitSurface = false;
+    auto candidates =
+        arena_.solidsNear({{std::min(bullet.position.x, destination.x) - bullet.collisionRadius,
+                            std::min(bullet.position.y, destination.y) - bullet.collisionRadius},
+                           {std::abs(destination.x - bullet.position.x) + 2 * bullet.collisionRadius,
+                            std::abs(destination.y - bullet.position.y) + 2 * bullet.collisionRadius}});
+    for (const Rect& platform : candidates)
     {
         const auto hit =
             collision::segmentHit(bullet.position, destination, platform, bullet.collisionRadius);
         if (hit && *hit < nearest)
         {
             nearest = *hit;
+            hitBox = platform;
+            hitSurface = true;
         }
     }
     for (Player& player : players_)
@@ -222,6 +245,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         {
             nearest = *hit;
             victim = &player;
+            hitSurface = false;
         }
     }
     auto remains = debris_.trace(bullet.position, destination, bullet.collisionRadius);
@@ -229,6 +253,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     {
         nearest = remains->fraction;
         victim = nullptr;
+        hitSurface = false;
     }
     else
         remains.reset();
@@ -238,10 +263,15 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
                 bullet.position.y + (destination.y - bullet.position.y) * nearest};
         bullet.travelled =
             std::max(0.f, bullet.travelled - std::hypot(destination.x - at.x, destination.y - at.y));
-        if (bullet.weapon == WeaponKind::Rpg)
+        if (explosiveWeapon(bullet.weapon) && (bullet.weapon != WeaponKind::GrenadeLauncher || victim))
         {
             explode(bullet, at, victim ? victim->id : 0);
             return false;
+        }
+        if (hitSurface && bullet.weapon == WeaponKind::GrenadeLauncher)
+        {
+            bounceProjectile(bullet, at, hitBox, .55f);
+            return true;
         }
         bullet.damage = bullet.impactDamage();
         bool applied = true;
@@ -255,7 +285,26 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         else if (victim)
             applied = damage(*victim, bullet, at, bullet.damage, incendiaryWeapon(bullet.weapon));
         else
+        {
             emit(EventKind::SurfaceImpact, bullet, at);
+            const auto* cell = arena_.terrainAt(at, bullet.collisionRadius + 1);
+            unsigned group = cell ? cell->group : 0;
+            Material material = cell ? cell->material : Material::Fixed;
+            Vec2 materialContact{std::clamp(at.x, hitBox.position.x, hitBox.position.x + hitBox.size.x),
+                                 std::clamp(at.y, hitBox.position.y, hitBox.position.y + hitBox.size.y)};
+            arena_.damageTerrain(materialContact, bullet.collisionRadius + 2,
+                                 static_cast<int>(bullet.damage * bullet.terrainPower),
+                                 bullet.weapon == WeaponKind::Flamethrower);
+            if (tunnelProjectile(bullet, arena_, at, group, material))
+                return true;
+            if (bullet.ricochets)
+            {
+                bounceProjectile(bullet, at, hitBox, 1);
+                --bullet.ricochets;
+                bullet.damage = std::max(1, static_cast<int>(std::lround(bullet.damage * .7f)));
+                return true;
+            }
+        }
         if (incendiaryWeapon(bullet.weapon) && applied)
             igniteSurface(at, bullet.shooterId);
         if (bullet.weapon == WeaponKind::FireBoomerang)
@@ -292,7 +341,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             std::clamp(destination.y, bounds.position.y + 4, bounds.position.y + bounds.size.y - 4)};
         return true;
     }
-    if (!inside && bullet.weapon == WeaponKind::Rpg)
+    if (!inside && explosiveWeapon(bullet.weapon))
         explode(bullet, bullet.position);
     return inside;
 }
@@ -330,7 +379,7 @@ void World::updateBullets(float deltaSeconds)
                                       bullet.position = start;
                                       if (bullet.lifetime <= 0)
                                       {
-                                          if (bullet.weapon == WeaponKind::Rpg)
+                                          if (explosiveWeapon(bullet.weapon))
                                               explode(bullet, start);
                                           return true;
                                       }

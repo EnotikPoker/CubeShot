@@ -4,6 +4,11 @@
 
 namespace cubeshot
 {
+struct DamageContext
+{
+    bool periodic = false, reflected = false;
+};
+
 struct FirePatch
 {
     std::uint64_t id = 0;
@@ -25,5 +30,6 @@ struct BlastEffect
 };
 
 int explosionDamage(float distance);
-BlastEffect blastEffect(Vec2 at, const Player& player, const Arena& arena, PlayerId direct = 0);
+BlastEffect blastEffect(Vec2 at, const Player& player, const Arena& arena, PlayerId direct = 0,
+                        float radius = explosionRadius, int maximumDamage = 120);
 } // namespace cubeshot

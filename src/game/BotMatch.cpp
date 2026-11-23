@@ -15,13 +15,15 @@ Arena botArena(MapId map)
 }
 } // namespace
 
-BotMatch::BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed)
+BotMatch::BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed,
+                   MatchRules rules)
     : upgradeRandom_(seed ^ 0x53a7e1u), match_(false, seed), bot_(botArena(map), difficulty, seed),
       nickname_(std::move(nickname))
 {
     match_.connect(1);
     match_.connect(2);
     match_.selectMap(1, map, match_.snapshot().selectionRevision);
+    match_.selectRules(1, rules, match_.snapshot().selectionRevision);
     rematch();
 }
 
@@ -64,7 +66,7 @@ void BotMatch::update(float dt)
         {
             round_ = match_.round();
             bot_.reset();
-            bot_.prepare(match_.world().players()[1].abilities);
+            bot_.prepare(match_.world().players()[1].abilities, &match_.world().arena());
             botHeld_ = false;
         }
         if (match_.phase() == MatchPhase::Round)

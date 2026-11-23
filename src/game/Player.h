@@ -21,6 +21,7 @@ struct Player
     static constexpr float defaultSize = 48.0f;
     static constexpr float moveSpeed = 280.0f; // Пикселей в секунду.
     static constexpr float jumpSpeed = 620.0f; // Начальная скорость вверх, пикселей/с.
+    static constexpr float fallSpeed = 1100.f;
     static constexpr float gravity = 1800.0f; // Пикселей/с².
 
     PlayerId id = 0;
@@ -34,6 +35,16 @@ struct Player
     unsigned shields = 0;
     float jetpackFuel = 2;
     bool jetpackActive = false;
+    unsigned airJumps = 0;
+    bool secondChanceUsed = false;
+    float invulnerability = 0, damageQuiet = 3, healingRemainder = 0;
+
+    float adrenaline() const
+    {
+        return abilities.level(AbilityKind::Adrenaline) && health * 10 < healthLimit() * 3 ? 1.f : 0.f;
+    }
+
+    void heal(float amount);
 
     int healthLimit() const
     {
@@ -42,7 +53,7 @@ struct Player
 
     float movementSpeed() const
     {
-        return moveSpeed * abilities.speed();
+        return moveSpeed * abilities.speed() * (1 + .2f * adrenaline());
     }
 
     float jumpVelocity() const

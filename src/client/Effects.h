@@ -26,12 +26,20 @@ struct Particle
     float size = 3, angle = 0, spin = 0;
     unsigned sprite = 0;
     bool smoke = false;
+    Material material = Material::Fixed;
+};
+
+struct Arc
+{
+    Vec2 from, to;
+    float life = .12f;
 };
 
 struct Blast
 {
     Vec2 position;
     float life = .45f;
+    float radius = 240;
 };
 
 struct Stain
@@ -74,6 +82,11 @@ public:
         return stains_;
     }
 
+    const std::vector<Arc>& arcs() const
+    {
+        return arcs_;
+    }
+
     const std::vector<Blast>& blasts() const
     {
         return blasts_;
@@ -110,10 +123,14 @@ private:
     std::map<PlayerId, Pose> poses_;
     std::vector<Particle> particles_;
     std::vector<Blast> blasts_;
+    std::vector<Arc> arcs_;
+    std::map<std::tuple<std::uint32_t, PlayerId, std::uint32_t, unsigned>, float> predictedArcs_;
     std::vector<Splash> splashes_;
     std::deque<Stain> stains_;
     std::deque<Drip> drips_;
     unsigned burstBudget_ = 180;
+    std::uint64_t terrainRevision_ = 0;
+    MapId terrainMap_ = MapId::Test;
     std::set<std::pair<std::uint32_t, std::uint64_t>> seen_;
     std::set<std::tuple<std::uint32_t, PlayerId, std::uint64_t>> predicted_;
 };

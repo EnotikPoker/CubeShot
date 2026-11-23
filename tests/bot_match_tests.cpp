@@ -75,7 +75,7 @@ void matches()
             }
         }
     }
-    BotMatch game(MapId::Duel, BotDifficulty::Medium, "Player", 25);
+    BotMatch game(MapId::Duel, BotDifficulty::Medium, "Player", 25, MatchRules{5});
     bool sawSwap = false;
     std::uint32_t lastRound = 0;
     for (int tick = 0; tick < 120 * 240 && game.snapshot().phase != MatchPhase::Finished; ++tick)

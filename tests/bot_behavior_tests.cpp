@@ -1,5 +1,6 @@
 #include "game/BotController.h"
 #include "game/Collision.h"
+#include "support/ArenaFixtures.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -74,8 +75,8 @@ void noHopping()
     {
         if (!validMap(info.id))
             continue;
-        auto arena = Arena::create(info.id);
-        auto graph = BotNavigation::forMap(info.id);
+        auto arena = openRoutes(info.id);
+        auto graph = BotNavigation::forArena(arena);
         for (int side : {0, 1})
         {
             auto path = graph->route(arena.spawnPoints[side], arena.spawnPoints[1 - side]);

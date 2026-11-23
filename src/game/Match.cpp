@@ -13,6 +13,17 @@ bool validId(PlayerId id)
 }
 } // namespace
 
+bool Match::selectRules(PlayerId id, MatchRules rules, std::uint64_t revision)
+{
+    if (id != 1 || !connected_[0] || phase_ != MatchPhase::Lobby || revision != selectionRevision_ ||
+        !rules.valid())
+        return false;
+    rules_ = rules;
+    ready_ = {};
+    ++selectionRevision_;
+    return true;
+}
+
 bool Match::selectMap(PlayerId id, MapId map, std::uint64_t revision)
 {
     if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Lobby ||
@@ -264,7 +275,7 @@ void Match::update(float dt)
             remaining_ = 0;
             if (phase_ == MatchPhase::RoundEnd)
             {
-                const bool finished = winner_ && score_[winner_ - 1] >= winsRequired;
+                const bool finished = winner_ && score_[winner_ - 1] >= rules_.wins;
                 phase_ = finished ? MatchPhase::Finished : MatchPhase::Armory;
                 weaponChoice_ = {};
                 spinRemaining_ = {};
@@ -306,6 +317,8 @@ WorldSnapshot Match::snapshot() const
 {
     WorldSnapshot s{tick_,  round_,  phase_,   remaining_,       score_,          connected_,
                     ready_, winner_, aborted_, world_.players(), world_.bullets()};
+    s.rules = rules_;
+    s.terrain = world_.arena().terrainState();
     s.fires = world_.fires();
     s.corpses = world_.debris().corpses();
     s.pieces = world_.debris().pieces();

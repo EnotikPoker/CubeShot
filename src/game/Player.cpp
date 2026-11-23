@@ -127,6 +127,26 @@ std::optional<Bullet> Player::takeShot()
         Bullet::radius *
         (abilities.level(AbilityKind::LargeBullets) && !meleeWeapon(weapon.kind) ? 1.5f : 1.f);
     bullet.ignites = abilities.level(AbilityKind::Incendiary) > 0;
+    bullet.power = abilities.power();
+    bullet.terrainPower = abilities.demolition();
+    bullet.blastScale = abilities.blastRadius();
+    bullet.rangeScale = abilities.range();
+    bullet.spreadScale = abilities.accuracy();
+    if (ballisticWeapon(weapon.kind))
+    {
+        bullet.twinned = abilities.level(AbilityKind::TwinShot) > 0;
+        bullet.ricochets = abilities.level(AbilityKind::Ricochet);
+        bullet.penetrations =
+            abilities.level(AbilityKind::Penetration) + (weapon.kind == WeaponKind::Crossbow ? 1 : 0);
+    }
+    if (ballisticWeapon(weapon.kind) || explosiveWeapon(weapon.kind))
+    {
+        bullet.velocity.x *= abilities.projectileSpeed();
+        bullet.velocity.y *= abilities.projectileSpeed();
+    }
+    if (weapon.kind == WeaponKind::Flamethrower)
+        bullet.lifetime *= abilities.range();
+    weapon.cooldown = std::max(.03f, weapon.cooldown / (abilities.fireRate() * (1 + .15f * adrenaline())));
     applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil(),
                   -shotAim_.y * definition.recoil * abilities.recoil()});
     return bullet;
@@ -147,6 +167,11 @@ void Player::setAbilities(const Abilities& value, bool refill)
     if (refill)
     {
         health = healthLimit();
+        airJumps = 0;
+        secondChanceUsed = false;
+        invulnerability = 0;
+        damageQuiet = 3;
+        healingRemainder = 0;
         shields = abilities.shields();
         jetpackFuel = 2;
         weapon.ammo = weapon.capacity();
@@ -189,9 +214,30 @@ void Player::applyImpulse(Vec2 impulse)
         grounded = false;
 }
 
+void Player::heal(float amount)
+{
+    if (!alive() || amount <= 0)
+        return;
+    healingRemainder += amount;
+    int whole = static_cast<int>(healingRemainder);
+    healingRemainder -= whole;
+    health = std::min(healthLimit(), health + whole);
+}
+
 void Player::takeDamage(int damage)
 {
     health = std::max(0, std::clamp(health, 0, healthLimit()) - std::max(0, damage));
+    if (damage > 0)
+        damageQuiet = 0;
+    if (!alive() && abilities.level(AbilityKind::SecondChance) && !secondChanceUsed)
+    {
+        secondChanceUsed = true;
+        health = std::max(1, healthLimit() / 4);
+        burning = 0;
+        burnTick = 0;
+        invulnerability = .5f;
+        surface = {};
+    }
     if (!alive())
     {
         velocity = {};
@@ -265,10 +311,19 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
     }
 
     grounded = playerSupport || collision::isSupported(bounds(), arena.bounds, arena.platforms);
+    invulnerability = std::max(0.f, invulnerability - deltaSeconds);
+    damageQuiet += deltaSeconds;
+    if (damageQuiet >= 3)
+        heal(4 * abilities.level(AbilityKind::Regeneration) * deltaSeconds);
     if (grounded)
-        jetpackFuel = 2;
-    if (jumpRequested_ && grounded)
     {
+        jetpackFuel = 2;
+        airJumps = 0;
+    }
+    if (jumpRequested_ && (grounded || (abilities.level(AbilityKind::DoubleJump) && airJumps < 1)))
+    {
+        if (!grounded)
+            ++airJumps;
         velocity.y = -jumpVelocity();
         grounded = false;
     }
@@ -290,7 +345,17 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         const float oldX = position.x;
         const bool wasGrounded = grounded;
         const float falling = velocity.y;
-        position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, arena.platforms);
+        std::vector<Rect> nearby;
+        const auto* solids = &arena.platforms;
+        if (arena.platforms.size() > 32)
+        {
+            nearby = arena.solidsNear({{position.x - std::abs(velocity.x * step) - 2,
+                                        position.y - std::abs(velocity.y * step) - 24},
+                                       {size.x + 2 * std::abs(velocity.x * step) + 4,
+                                        size.y + 2 * std::abs(velocity.y * step) + 48}});
+            solids = &nearby;
+        }
+        position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, *solids);
         const bool thrust =
             abilities.level(AbilityKind::Jetpack) && jetpackHeld_ && !grounded && jetpackFuel > 0;
         if (thrust)
@@ -301,12 +366,16 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
             jetpackActive = true;
         }
         velocity.y += gravity * step;
-        const auto movement =
-            collision::moveVertically(bounds(), velocity.y * step, arena.bounds, arena.platforms);
+        velocity.y =
+            std::min(velocity.y, fallSpeed * (abilities.level(AbilityKind::FeatherFall) ? .6f : 1.f));
+        const auto movement = collision::moveVertically(bounds(), velocity.y * step, arena.bounds, *solids);
         position.y = movement.y;
         grounded = movement.blocked && velocity.y > 0.0f;
         if (grounded)
+        {
             jetpackFuel = 2;
+            airJumps = 0;
+        }
         if (movement.blocked)
         {
             velocity.y = 0.0f;
