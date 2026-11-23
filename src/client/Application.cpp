@@ -140,6 +140,15 @@ bool Application::handle(MenuAction action)
         effects_.clear();
         lastRound_ = 0;
     }
+    if (action == MenuAction::EditTest)
+    {
+        const auto& edit = menu_.testPanel().edit();
+        bool accepted = world_.editTest(edit, menu_.testDraft());
+        menu_.completeTestEdit(accepted);
+        if (accepted && (edit.operation == TestOperation::RestoreMap ||
+                         edit.operation == TestOperation::Clear || edit.operation == TestOperation::Respawn))
+            effects_.clear();
+    }
     if (action == MenuAction::StartTest || action == MenuAction::ApplyTest)
     {
         world_ = World{Arena::create(menu_.selectedMap(), true), 4};
@@ -147,6 +156,7 @@ bool Application::handle(MenuAction action)
         for (unsigned i = 0; i < 4; ++i)
         {
             world_.setAbilities(i + 1, menu_.testConfiguration().abilities[i]);
+            world_.equip(i + 1, menu_.testConfiguration().weapons[i]);
             world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
         }
         effects_.clear();
@@ -338,7 +348,15 @@ int Application::run()
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
             {
                 const auto key = event.key.scancode;
-                if (key == SDL_SCANCODE_ESCAPE)
+                if (key == SDL_SCANCODE_TAB && !session && !menu_.bots() &&
+                    (before == Screen::Playing || menu_.liveTestPanel()))
+                {
+                    if (menu_.liveTestPanel())
+                        menu_.escape();
+                    else
+                        menu_.openTestPanel(true, Screen::Playing);
+                }
+                else if (key == SDL_SCANCODE_ESCAPE)
                 {
                     if (before == Screen::Connecting)
                         action = MenuAction::CancelConnection;
@@ -372,8 +390,8 @@ int Application::run()
                 }
             }
             // Only rising aggregate action edges produce discrete gameplay events.
-            if (menu_.playing() && presses[static_cast<std::size_t>(InputAction::Restart)] && !session &&
-                !menu_.bots())
+            if (before == Screen::Playing && menu_.playing() &&
+                presses[static_cast<std::size_t>(InputAction::Restart)] && !session && !menu_.bots())
             {
                 {
                     world_ = World{Arena::create(menu_.selectedMap(), true), 4};
@@ -381,6 +399,7 @@ int Application::run()
                     for (unsigned i = 0; i < 4; ++i)
                     {
                         world_.setAbilities(i + 1, menu_.testConfiguration().abilities[i]);
+                        world_.equip(i + 1, menu_.testConfiguration().weapons[i]);
                         world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
                     }
                     effects_.clear();
@@ -391,7 +410,7 @@ int Application::run()
             const bool jumpEvent = presses[static_cast<std::size_t>(InputAction::Jump)];
             const bool shotEvent = presses[static_cast<std::size_t>(InputAction::Shoot)];
             const bool reloadEvent = presses[static_cast<std::size_t>(InputAction::Reload)];
-            if (menu_.playing() && (jumpEvent || shotEvent || reloadEvent))
+            if (before == Screen::Playing && menu_.playing() && (jumpEvent || shotEvent || reloadEvent))
             {
                 auto input = rawInput();
                 if (jumpEvent)
@@ -554,10 +573,23 @@ int Application::run()
                 SDL_DelayNS(200000);
             continue;
         }
-        const bool sceneVisible = menu_.playing() || menu_.screen() == Screen::Paused ||
-                                  (session && menu_.screen() == Screen::Result) ||
-                                  (bots_.match() && menu_.screen() == Screen::BotResult) ||
-                                  menu_.screen() == Screen::Armory;
+        if (menu_.liveTestPanel())
+        {
+            const auto& p = world_.players()[menu_.testTarget()];
+            menu_.testStatus(U"HP " + asciiText(std::to_string(p.health)) + U"/" +
+                             asciiText(std::to_string(p.healthLimit())) + U" · Щиты " +
+                             asciiText(std::to_string(p.shields)) + U" · Патроны " +
+                             asciiText(std::to_string(p.weapon.ammo)) + U" · Перегрев " +
+                             asciiText(std::to_string(static_cast<int>(p.weapon.heat * 100))) +
+                             U"%\nДжетпак " +
+                             asciiText(std::to_string(static_cast<int>(p.jetpackFuel * 50))) + U"% · " +
+                             (p.weapon.reloading ? U"Идёт перезарядка" : U"Оружие готово") +
+                             (p.burning > 0 ? U" · Горит" : U""));
+        }
+        const bool sceneVisible =
+            menu_.playing() || menu_.liveTestPanel() || menu_.screen() == Screen::Paused ||
+            (session && menu_.screen() == Screen::Result) ||
+            (bots_.match() && menu_.screen() == Screen::BotResult) || menu_.screen() == Screen::Armory;
         bool rendered = true;
         if (sceneVisible)
         {

@@ -26,7 +26,8 @@ enum class WeaponChoice
 {
     Pending,
     Spinning,
-    Ready
+    Ready,
+    Revealing
 };
 
 enum class UpgradeKind
@@ -82,6 +83,7 @@ class Match
 {
 public:
     static constexpr float aftermathSeconds = 4, spinSeconds = 3.2f, wheelSeconds = 2.4f;
+    static constexpr float abilityReviewSeconds = 5;
 
     explicit Match(bool voting = false, std::uint32_t seed = 0)
         : voting_(voting), random_(seed ? seed : std::random_device{}())

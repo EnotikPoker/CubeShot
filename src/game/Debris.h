@@ -59,6 +59,7 @@ class Debris
 public:
     static constexpr std::size_t maxPieces = 64;
     void clear();
+    void eraseOwner(PlayerId id);
     void chip(const Player& player, const Polygon& material, Vec2 impulse, unsigned seed, bool fatal = false);
     void blast(Vec2 at, float radius);
     void spawn(const Player& player, Vec2 velocity, Vec2 impact, WeaponKind cause = WeaponKind::Pistol,

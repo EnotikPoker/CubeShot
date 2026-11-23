@@ -68,6 +68,13 @@ struct Player
 
     void setAbilities(const Abilities& value, bool refill = true);
     bool absorb(const Bullet& bullet);
+
+    void refillShields()
+    {
+        shields = abilities.shields();
+        blockedShots_.clear();
+    }
+
     Weapon weapon;
     bool grounded = false;
     float burning = 0, burnTick = 0;
@@ -89,6 +96,7 @@ struct Player
     Vec2 weaponOrigin() const;
     Vec2 muzzlePosition() const;
     std::optional<Bullet> takeShot();
+    Bullet shotPrototype(Vec2 direction, std::uint64_t sequence = 0) const;
     void takeDamage(int damage);
     void applyInput(const PlayerInput& input);
     void requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0, bool reload = false);

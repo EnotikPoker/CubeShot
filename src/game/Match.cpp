@@ -219,7 +219,7 @@ bool Match::chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, st
         weaponChoice_[slot] = WeaponChoice::Ready;
     else
     {
-        spinRemaining_[slot] = spinSeconds;
+        spinRemaining_[slot] = wheelSeconds;
         weaponChoice_[slot] = WeaponChoice::Spinning;
     }
     return true;
@@ -245,17 +245,26 @@ void Match::update(float dt)
     if (phase_ == MatchPhase::Armory)
     {
         for (unsigned i = 0; i < 2; ++i)
-            if (weaponChoice_[i] == WeaponChoice::Spinning)
+            if (weaponChoice_[i] == WeaponChoice::Spinning || weaponChoice_[i] == WeaponChoice::Revealing)
             {
                 spinRemaining_[i] = std::max(0.f, spinRemaining_[i] - dt);
                 if (spinRemaining_[i] <= .0001f)
                 {
-                    spinRemaining_[i] = 0;
-                    if (upgrade_[i] == UpgradeKind::Ability)
-                        abilities_[i].add(rolledAbility_[i]);
+                    if (weaponChoice_[i] == WeaponChoice::Spinning)
+                    {
+                        if (upgrade_[i] == UpgradeKind::Ability)
+                            abilities_[i].add(rolledAbility_[i]);
+                        else
+                            loadout_[i] = rolled_[i];
+                        weaponChoice_[i] = WeaponChoice::Revealing;
+                        spinRemaining_[i] = upgrade_[i] == UpgradeKind::Ability ? abilityReviewSeconds
+                                                                                : spinSeconds - wheelSeconds;
+                    }
                     else
-                        loadout_[i] = rolled_[i];
-                    weaponChoice_[i] = WeaponChoice::Ready;
+                    {
+                        spinRemaining_[i] = 0;
+                        weaponChoice_[i] = WeaponChoice::Ready;
+                    }
                 }
             }
         if (weaponChoice_[0] == WeaponChoice::Ready && weaponChoice_[1] == WeaponChoice::Ready)

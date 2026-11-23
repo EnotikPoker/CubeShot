@@ -35,43 +35,7 @@ std::vector<MenuButton> Menu::buttons() const
     switch (screen_)
     {
         case Screen::TestSetup:
-        {
-            result = {{U"Игрок", {}}, {U"Мишень 1", {}}, {U"Мишень 2", {}}, {U"Мишень 3", {}}};
-            for (unsigned row = 0; row < 6; ++row)
-            {
-                unsigned index = testPage_ * 6 + row;
-                bool valid = index < abilityCount;
-                result.push_back({U"−", {}, !valid || !draft_.abilities[testTarget_].levels[index]});
-                result.push_back(
-                    {U"+",
-                     {},
-                     !valid || !draft_.abilities[testTarget_].canAdd(static_cast<AbilityKind>(index))});
-            }
-            result.insert(result.end(), {{U"Предыдущая", {}, testPage_ == 0},
-                                         {U"Следующая", {}, (testPage_ + 1) * 6 >= abilityCount},
-                                         {U"HP −", {}},
-                                         {U"HP +", {}},
-                                         {U"Сбросить", {}},
-                                         {U"Сбросить всё", {}},
-                                         {U"Применить и перезапустить", {}},
-                                         {U"Отмена", {}}});
-            for (unsigned i = 0; i < 4; ++i)
-                result[i].bounds = {{40.f + i * 225, 88}, {205, 32}};
-            for (unsigned i = 4; i < 16; ++i)
-                result[i].bounds = {{700.f + (i % 2) * 64, 135.f + ((i - 4) / 2) * 44}, {52, 34}};
-            for (unsigned i = 4; i < 16; ++i)
-                if (testPage_ * 6 + (i - 4) / 2 >= abilityCount)
-                    result[i].bounds = {{0, 0}, {0, 0}};
-            result[16].bounds = {{40, 414}, {150, 32}};
-            result[17].bounds = {{205, 414}, {150, 32}};
-            result[18].bounds = {{535, 414}, {80, 32}};
-            result[19].bounds = {{630, 414}, {80, 32}};
-            result[20].bounds = {{25, 488}, {155, 34}};
-            result[21].bounds = {{190, 488}, {180, 34}};
-            result[22].bounds = {{385, 488}, {365, 34}};
-            result[23].bounds = {{765, 488}, {170, 34}};
-            return result;
-        }
+            return testPanel_.buttons();
         case Screen::Main:
             result = {{U"Играть", {}}, {U"Настройки", {}}, {U"Выйти из игры", {}}};
             break;
@@ -208,6 +172,28 @@ std::vector<MenuButton> Menu::buttons() const
     return result;
 }
 
+void Menu::openTestPanel(bool live, Screen returnScreen)
+{
+    testPanel_.open(test_, live);
+    testReturn_ = returnScreen;
+    open(Screen::TestSetup);
+}
+
+void Menu::completeTestEdit(bool success)
+{
+    if (success)
+    {
+        test_ = testPanel_.draft();
+        testWeapon_ = test_.weapons[0];
+        testWeaponLabel_ = U"Оружие: " + std::u32string(weaponDefinition(testWeapon_).name);
+    }
+    else
+    {
+        testPanel_.restore(test_);
+        testPanel_.status(U"Недостаточно места: освободите позицию или восстановите карту.");
+    }
+}
+
 void Menu::open(Screen screen)
 {
     screen_ = screen;
@@ -319,52 +305,24 @@ MenuAction Menu::activate()
     }
     else if (screen_ == Screen::TestSetup)
     {
-        if (selection_ < 4)
-            testTarget_ = selection_;
-        else if (selection_ < 16)
+        const auto intent = testPanel_.activate(selection_);
+        if (intent == TestPanel::Intent::Edit)
+            return MenuAction::EditTest;
+        if (intent == TestPanel::Intent::Apply || intent == TestPanel::Intent::Restart)
         {
-            unsigned index = testPage_ * 6 + (selection_ - 4) / 2;
-            if (index < abilityCount)
-            {
-                auto& level = draft_.abilities[testTarget_].levels[index];
-                if (selection_ % 2)
-                    draft_.abilities[testTarget_].add(static_cast<AbilityKind>(index));
-                else if (level)
-                    --level;
-            }
-        }
-        else if (selection_ == 16 && testPage_)
-            --testPage_;
-        else if (selection_ == 17 && (testPage_ + 1) * 6 < abilityCount)
-            ++testPage_;
-        else if (selection_ == 18)
-            draft_.healthPercent[testTarget_] = std::max(
-                1u, draft_.healthPercent[testTarget_] > 10 ? draft_.healthPercent[testTarget_] - 10 : 1u);
-        else if (selection_ == 19)
-            draft_.healthPercent[testTarget_] = std::min(100u, draft_.healthPercent[testTarget_] + 10);
-        else if (selection_ == 20)
-        {
-            draft_.abilities[testTarget_] = {};
-            draft_.healthPercent[testTarget_] = 100;
-        }
-        else if (selection_ == 21)
-            draft_ = {};
-        else if (selection_ == 22)
-        {
-            test_ = draft_;
+            completeTestEdit(true);
             open(Screen::Playing);
             return MenuAction::ApplyTest;
         }
-        else if (selection_ == 23)
+        if (intent == TestPanel::Intent::Close)
             open(testReturn_);
+        selection_ = std::min(selection_, static_cast<int>(buttons().size()) - 1);
     }
     else if (screen_ == Screen::Paused)
     {
         if (selection_ == 4)
         {
-            draft_ = test_;
-            testReturn_ = Screen::Paused;
-            open(Screen::TestSetup);
+            openTestPanel(true, Screen::Playing);
             return MenuAction::None;
         }
         if (selection_ == 1)
@@ -464,13 +422,12 @@ MenuAction Menu::activate()
         }
         else if (selection_ == 5)
         {
-            draft_ = test_;
-            testReturn_ = Screen::Maps;
-            open(Screen::TestSetup);
+            openTestPanel(false, Screen::Maps);
         }
         else if (selection_ == 4)
         {
             testWeapon_ = static_cast<WeaponKind>((static_cast<unsigned>(testWeapon_) + 1) % weaponCount);
+            test_.weapons[0] = testWeapon_;
             testWeaponLabel_ = U"Оружие: " + std::u32string(weaponDefinition(testWeapon_).name);
         }
         else

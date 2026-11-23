@@ -202,6 +202,16 @@ void Debris::blast(Vec2 at, float radius)
     }
 }
 
+void Debris::eraseOwner(PlayerId id)
+{
+    corpses_.erase(
+        std::remove_if(corpses_.begin(), corpses_.end(), [=](const auto& c) { return c.body.owner == id; }),
+        corpses_.end());
+    pieces_.erase(
+        std::remove_if(pieces_.begin(), pieces_.end(), [=](const auto& p) { return p.owner == id; }),
+        pieces_.end());
+}
+
 void Debris::chip(const Player& player, const Polygon& material, Vec2 impulse, unsigned seed, bool fatal)
 {
     if (pieces_.size() >= maxPieces)

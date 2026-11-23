@@ -13,6 +13,9 @@
 namespace cubeshot
 {
 
+struct TestEdit;
+struct TestConfiguration;
+
 class World
 {
 public:
@@ -28,6 +31,7 @@ public:
                        bool reload = false);
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
+    bool editTest(const TestEdit& edit, const TestConfiguration& config);
     void setHealth(PlayerId id, unsigned percent);
     void setAbilities(PlayerId id, const Abilities& abilities);
 

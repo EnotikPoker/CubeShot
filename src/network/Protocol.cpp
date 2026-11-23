@@ -341,9 +341,9 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         s.names[i] = in.names(i);
         if (in.score(i) > s.rules.wins)
             return {};
-        if (in.loadout(i) >= weaponCount || in.rolled(i) >= weaponCount || in.weapon_choice(i) > 2 ||
+        if (in.loadout(i) >= weaponCount || in.rolled(i) >= weaponCount || in.weapon_choice(i) > 3 ||
             !std::isfinite(in.spin_remaining(i)) || in.spin_remaining(i) < 0 ||
-            in.spin_remaining(i) > Match::spinSeconds + .01f)
+            in.spin_remaining(i) > Match::abilityReviewSeconds + .01f)
             return {};
         s.loadout[i] = static_cast<WeaponKind>(in.loadout(i));
         auto abilities = decodeAbilities(in.abilities(i));
@@ -357,6 +357,15 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         s.rolled[i] = static_cast<WeaponKind>(in.rolled(i));
         s.weaponChoice[i] = static_cast<WeaponChoice>(in.weapon_choice(i));
         s.spinRemaining[i] = in.spin_remaining(i);
+        if ((s.weaponChoice[i] == WeaponChoice::Spinning &&
+             s.spinRemaining[i] > Match::wheelSeconds + .01f) ||
+            (s.weaponChoice[i] == WeaponChoice::Revealing &&
+             (s.upgrade[i] == UpgradeKind::Continue ||
+              s.spinRemaining[i] > (s.upgrade[i] == UpgradeKind::Ability
+                                        ? Match::abilityReviewSeconds
+                                        : Match::spinSeconds - Match::wheelSeconds) +
+                                       .01f)))
+            return {};
         s.inputAck[i] = in.input_ack(i);
         s.actionAck[i] = in.action_ack(i);
         s.score[i] = in.score(i);

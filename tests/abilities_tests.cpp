@@ -382,7 +382,18 @@ void roulette()
                    !m.chooseWeapon(1, false, state.round, state.selectionRevision),
                "Ability choice prevents weapon reroll and switching to continue");
         m.chooseWeapon(2, false, state.round, state.selectionRevision);
-        for (int i = 0; i < 400 && m.phase() == MatchPhase::Armory; ++i)
+        for (int i = 0; i < 289; ++i)
+            m.update(dt);
+        auto revealed = m.snapshot();
+        expect(revealed.phase == MatchPhase::Armory && revealed.weaponChoice[0] == WeaponChoice::Revealing &&
+                   revealed.spinRemaining[0] > 4.98f && revealed.abilities[0] == expected,
+               "Ability applies once at wheel stop and begins five full seconds of reading");
+        for (int i = 0; i < 480; ++i)
+            m.update(dt);
+        expect(m.phase() == MatchPhase::Armory && m.snapshot().weaponChoice[0] == WeaponChoice::Revealing &&
+                   m.snapshot().abilities[0] == expected,
+               "Four seconds later the result remains visible without granting another stack");
+        for (int i = 0; i < 1000 && m.phase() == MatchPhase::Armory; ++i)
             m.update(dt);
         auto next = m.snapshot();
         expect(next.abilities[0] == expected && next.players[0].abilities == expected &&

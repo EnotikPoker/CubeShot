@@ -6,6 +6,7 @@
 #include "client/VisualAssets.h"
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -336,6 +337,23 @@ void testArsenalSelection()
         menu.networkState(state, 1);
         expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()),
                "Every ability card and description render");
+        state.weaponChoice[0] = WeaponChoice::Revealing;
+        state.spinRemaining[0] = Match::abilityReviewSeconds;
+        for (unsigned n = 0; n < abilityCount; ++n)
+            state.abilities[0].levels[n] = abilityDefinition(static_cast<AbilityKind>(n)).maximum;
+        menu.networkState(state, 1);
+        const auto reviewButtons = menu.buttons();
+        expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()) &&
+                   std::all_of(reviewButtons.begin(), reviewButtons.end(),
+                               [](const auto& b) { return b.placeholder; }),
+               "All results remain readable and cannot reroll during the review interval");
+        if (const auto capture = SDL_getenv("CUBESHOT_CAPTURE_DIR"))
+        {
+            auto path = std::filesystem::path(capture) / ("ability-result-" + std::to_string(i) + ".bmp");
+            expect(SDL_SaveBMP(surface.get(), path.string().c_str()), "Save ability result preview");
+        }
+        state.weaponChoice[0] = WeaponChoice::Spinning;
+        state.spinRemaining[0] = .7f;
     }
 }
 
@@ -345,46 +363,59 @@ void testAbilityLaboratory()
     menu.open(Screen::Maps);
     menu.moveSelection(5);
     menu.activate();
-    expect(menu.screen() == Screen::TestSetup && menu.buttons().size() == 24,
-           "Map picker opens ability laboratory");
-    auto activate = [&](int index)
+    expect(menu.screen() == Screen::TestSetup, "Map picker opens the shared test panel");
+    auto click = [&](int index)
     {
         menu.moveSelection(index - menu.selection());
         return menu.activate();
     };
-    activate(5);
-    expect(menu.testDraft().abilities[0].level(AbilityKind::SmallBody) == 1, "Plus changes only the draft");
-    expect(menu.testConfiguration().abilities[0].level(AbilityKind::SmallBody) == 0,
-           "Unapplied draft does not change the test");
-    activate(1);
-    activate(5);
-    activate(18);
+    auto label = [&](std::u32string_view name)
+    {
+        auto list = menu.buttons();
+        for (unsigned i = 0; i < list.size(); ++i)
+            if (list[i].label == name)
+                return click(i);
+        throw std::runtime_error("Missing test control");
+    };
+    click(9);
+    expect(menu.testDraft().abilities[0].level(AbilityKind::SmallBody) == 1 &&
+               menu.testConfiguration().abilities[0].level(AbilityKind::SmallBody) == 0,
+           "Pre-match panel edits a transactional draft");
+    click(1);
+    click(9);
+    click(6);
+    label(U"HP −10%");
     expect(menu.testDraft().abilities[1].level(AbilityKind::SmallBody) == 1 &&
                menu.testDraft().healthPercent[1] == 90,
-           "Every target has its own upgrades and starting HP");
-    for (unsigned page = 1; page < (abilityCount + 5) / 6; ++page)
-        activate(17);
-    expect(menu.testPage() == 5, "All 31 abilities are reachable by pagination");
-    activate(5);
+           "Every target has separate HP and traits");
+    click(5);
+    label(U"Арбалет");
+    expect(menu.testDraft().weapons[1] == WeaponKind::Crossbow,
+           "Weapons are directly selectable for targets");
+    click(4);
+    for (unsigned i = 0; i < 5; ++i)
+        label(U"Следующая");
+    click(9);
     expect(menu.testDraft().abilities[1].level(AbilityKind::SecondChance) == 1, "Last passive is editable");
-    expect(activate(22) == MenuAction::ApplyTest && menu.playing(),
-           "Apply explicitly restarts with committed configuration");
-    expect(menu.testConfiguration().abilities[0].level(AbilityKind::SmallBody) == 1 &&
-               menu.testConfiguration().abilities[1].level(AbilityKind::SecondChance) == 1,
-           "Applied builds persist for F5");
+    expect(label(U"Применить и начать") == MenuAction::ApplyTest && menu.playing(),
+           "Apply starts committed setup");
+    expect(menu.testConfiguration().weapons[1] == WeaponKind::Crossbow, "Weapon setup persists for F5");
+    menu.openTestPanel(true, Screen::Playing);
+    expect(menu.liveTestPanel(), "In-match Tab panel pauses over the scene");
+    label(U"Сбросить всех");
+    menu.completeTestEdit(false);
+    expect(menu.testDraft().weapons[1] == WeaponKind::Crossbow,
+           "Rejected unsafe edits restore the applied draft");
+    expect(label(U"Сбросить всех") == MenuAction::EditTest, "Live edit requests world validation");
+    menu.completeTestEdit(true);
     menu.escape();
-    activate(4);
-    expect(menu.screen() == Screen::TestSetup, "Test pause opens the same editor");
-    activate(21);
+    expect(menu.playing() && menu.testConfiguration().abilities[1] == Abilities{},
+           "Closing live editor resumes committed state");
+    menu.openTestPanel(false, Screen::Maps);
+    click(9);
     menu.escape();
-    expect(menu.screen() == Screen::Paused &&
-               menu.testConfiguration().abilities[1].level(AbilityKind::SecondChance) == 1,
-           "Cancel discards reset without altering the applied builds");
-    activate(4);
-    activate(21);
-    activate(22);
-    expect(menu.testConfiguration().abilities[1].levels == Abilities{}.levels,
-           "Reset all clears every build on apply");
+    expect(menu.screen() == Screen::Maps && menu.testConfiguration().abilities[1] == Abilities{},
+           "Pre-match cancel discards draft");
 }
 
 } // namespace
