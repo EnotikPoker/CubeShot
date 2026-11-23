@@ -323,6 +323,16 @@ void Client::selectMap(MapId map)
     send(impl_->connection, e, true);
 }
 
+void Client::selectRules(unsigned wins)
+{
+    if (!connected() || !impl_->latest || impl_->id != 1)
+        return;
+    auto e = envelope();
+    e.mutable_rule_choice()->set_wins(wins);
+    e.mutable_rule_choice()->set_selection_revision(impl_->latest->selectionRevision);
+    send(impl_->connection, e, true);
+}
+
 void Client::changeMap()
 {
     if (!connected() || !impl_->latest)

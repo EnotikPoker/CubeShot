@@ -14,6 +14,15 @@ class BotMobility
 public:
     explicit BotMobility(Arena arena, bool hard);
     void reset();
+
+    void geometry(const Arena& arena, std::shared_ptr<const BotNavigation> graph, Abilities abilities)
+    {
+        arena_ = arena;
+        navigation_ = std::move(graph);
+        navigationAbilities_ = abilities;
+        reset();
+    }
+
     bool control(const Player& self, Vec2 goal, const std::vector<Bullet>& threats,
                  const std::vector<FirePatch>& fires, PlayerInput& input, float dt,
                  const Player* opponent = nullptr);
@@ -54,6 +63,7 @@ private:
     bool advance(Simulation& simulation);
     float routeTime(Vec2 from, Vec2 to) const;
     Simulation simulateProgram(const Player& self, Program program) const;
+    std::optional<Abilities> navigationAbilities_;
     Arena arena_;
     bool hard_;
     std::shared_ptr<const BotNavigation> navigation_;

@@ -1,6 +1,7 @@
 #pragma once
 #include "game/BotMobility.h"
 #include "game/BotNavigation.h"
+#include "game/NavigationWorker.h"
 #include "game/World.h"
 #include <deque>
 #include <optional>
@@ -47,6 +48,7 @@ struct BotObservation
     std::optional<BotTarget> target;
     std::vector<Bullet> bullets;
     std::vector<FirePatch> fires;
+    const Arena* geometry = nullptr;
 };
 
 BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent);
@@ -73,7 +75,7 @@ class BotController
 public:
     BotController(Arena arena, BotDifficulty difficulty, std::uint32_t seed);
     void reset();
-    void prepare(const Abilities& abilities);
+    void prepare(const Abilities& abilities, const Arena* arena = nullptr);
     PlayerInput update(const BotObservation& observation, float dt);
 
 private:
@@ -82,6 +84,8 @@ private:
     void avoidBullets(const BotObservation& observation, PlayerInput& input);
     void cancelRoute(bool failed);
     float hazardCost(Vec2 position) const;
+    NavigationWorker navigationWorker_;
+    std::uint64_t navigationGeneration_ = 0;
     BotMobility mobility_;
     std::optional<Abilities> movementAbilities_;
     bool mobile_ = false;

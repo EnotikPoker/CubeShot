@@ -63,6 +63,23 @@ void Effects::burst(Vec2 at, Vec2 direction, int count, bool blood, PlayerId own
 void Effects::update(float dt, const std::vector<Player>& players, const Arena& arena,
                      const std::vector<GameEvent>& events, PlayerId own, bool blood, bool shake)
 {
+    if (terrainMap_ != arena.map || terrainRevision_ != arena.geometryRevision)
+    {
+        terrainMap_ = arena.map;
+        terrainRevision_ = arena.geometryRevision;
+        auto detached = [&](const auto& stain)
+        {
+            for (auto& solid : arena.platforms)
+                if (stain.position.x >= solid.position.x - 2 &&
+                    stain.position.x <= solid.position.x + solid.size.x + 2 &&
+                    stain.position.y >= solid.position.y - 2 &&
+                    stain.position.y <= solid.position.y + solid.size.y + 2)
+                    return false;
+            return true;
+        };
+        stains_.erase(std::remove_if(stains_.begin(), stains_.end(), detached), stains_.end());
+        drips_.erase(std::remove_if(drips_.begin(), drips_.end(), detached), drips_.end());
+    }
     bloodVisible_ = blood;
     dt = std::clamp(dt, 0.f, .1f);
     time_ += dt;
@@ -77,6 +94,10 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
             std::remove_if(particles_.begin(), particles_.end(), [](const auto& p) { return p.blood; }),
             particles_.end());
     }
+    for (auto& a : arcs_)
+        a.life -= dt;
+    arcs_.erase(std::remove_if(arcs_.begin(), arcs_.end(), [](const auto& a) { return a.life <= 0; }),
+                arcs_.end());
     for (auto& b : blasts_)
         b.life -= dt;
     blasts_.erase(std::remove_if(blasts_.begin(), blasts_.end(), [](const auto& b) { return b.life <= 0; }),
@@ -143,6 +164,21 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
             if (shake && e.actor == own)
                 shake_ = std::max(shake_, meleeWeapon(e.weapon) ? 1.5f : 2.5f);
         }
+        else if (e.kind == EventKind::ElectricArc)
+        {
+            auto key = std::make_tuple(e.round, e.actor, e.volley, e.surfaceRevision);
+            if (e.id && predictedArcs_.erase(key))
+                continue;
+            if (!e.id)
+                predictedArcs_[key] = time_;
+            for (auto it = predictedArcs_.begin(); it != predictedArcs_.end();)
+                if (time_ - it->second > 2)
+                    it = predictedArcs_.erase(it);
+                else
+                    ++it;
+            if (arcs_.size() < 16)
+                arcs_.push_back({e.local, e.position, .12f});
+        }
         else if (e.kind == EventKind::ShieldBlock)
         {
             poses_[e.target].shield = .15f;
@@ -168,12 +204,37 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         else if (e.kind == EventKind::SurfaceImpact)
         {
             if (e.weapon != WeaponKind::Flamethrower)
-                burst(e.position, {-e.direction.x, -e.direction.y}, 4, false);
+            {
+                Material material = Material::Fixed;
+                for (auto& cell : arena.terrain)
+                    if (e.position.x >= cell.bounds.position.x - 8 &&
+                        e.position.x <= cell.bounds.position.x + cell.bounds.size.x + 8 &&
+                        e.position.y >= cell.bounds.position.y - 8 &&
+                        e.position.y <= cell.bounds.position.y + cell.bounds.size.y + 8)
+                    {
+                        material = cell.material;
+                        break;
+                    }
+                auto terrainCount = std::count_if(particles_.begin(), particles_.end(), [](const auto& p)
+                                                  { return p.material != Material::Fixed; });
+                auto start = particles_.size();
+                burst(e.position, {-e.direction.x, -e.direction.y},
+                      material == Material::Fixed
+                          ? 4
+                          : std::min(12, std::max(0, 256 - static_cast<int>(terrainCount))),
+                      false, 0, material != Material::Fixed);
+                for (auto i = start; i < particles_.size(); ++i)
+                {
+                    particles_[i].material = material;
+                    if (material != Material::Fixed)
+                        particles_[i].size = random(4, 8);
+                }
+            }
         }
         else if (e.kind == EventKind::Explosion)
         {
             if (blasts_.size() < 16)
-                blasts_.push_back({e.position, .45f});
+                blasts_.push_back({e.position, .45f, e.radius});
             if (shake)
                 shake_ = std::max(shake_, 8.f);
         }

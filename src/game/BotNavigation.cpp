@@ -21,7 +21,8 @@ float distance(Vec2 a, Vec2 b)
 }
 } // namespace
 
-BotNavigation::BotNavigation(const Arena& arena, Abilities abilities)
+BotNavigation::BotNavigation(const Arena& arena, Abilities abilities,
+                             std::shared_ptr<std::atomic_bool> cancel)
 {
     const float bodySize = Player::defaultSize * abilities.scale();
     speed_ = Player::moveSpeed * abilities.speed();
@@ -71,6 +72,8 @@ BotNavigation::BotNavigation(const Arena& arena, Abilities abilities)
     };
     for (std::size_t from = 0; from < nodes_.size(); ++from)
     {
+        if (cancel && cancel->load())
+            return;
         // Consecutive samples on the same surface form walkable edges.
         for (int offset : {-1, 1})
         {
@@ -101,8 +104,10 @@ BotNavigation::BotNavigation(const Arena& arena, Abilities abilities)
                         bool airborne = false;
                         for (int tick = 0; tick < (jet ? 360 : 180); ++tick)
                         {
-                            PlayerInput input{tick < hold ? static_cast<float>(direction) : 0.f,
-                                              jump && tick == 0};
+                            PlayerInput input{
+                                tick < hold ? static_cast<float>(direction) : 0.f,
+                                jump &&
+                                    (tick == 0 || (tick == 40 && abilities.level(AbilityKind::DoubleJump)))};
                             input.jetpackHeld = jet && tick < hold;
                             p.applyInput(input);
                             p.update(step, arena);
@@ -122,7 +127,8 @@ BotNavigation::BotNavigation(const Arena& arena, Abilities abilities)
                                                                    body, dx, arena.bounds, arena.platforms) -
                                                                nodes_[to].position.x) < .1f;
                                 if (!jump || !walkable)
-                                    add({from, to, jump, direction, hold, tick + 1, jet});
+                                    add({from, to, jump, direction, hold, tick + 1, jet,
+                                         abilities.level(AbilityKind::DoubleJump) ? 40 : -1});
                             }
                             break;
                         }
@@ -152,12 +158,18 @@ std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena,
         std::equal(arena.platforms.begin(), arena.platforms.end(), original.platforms.begin(), same))
     {
         if (!abilities.level(AbilityKind::SmallBody) && !abilities.level(AbilityKind::Speed) &&
-            !abilities.level(AbilityKind::Jump) && !abilities.level(AbilityKind::Jetpack))
+            !abilities.level(AbilityKind::Jump) && !abilities.level(AbilityKind::Jetpack) &&
+            !abilities.level(AbilityKind::DoubleJump) && !abilities.level(AbilityKind::FeatherFall))
             return forMap(arena.map);
-        using Key = std::tuple<MapId, unsigned, unsigned, unsigned, unsigned>;
+        using Key = std::tuple<MapId, unsigned, unsigned, unsigned, unsigned, unsigned, unsigned>;
         static std::map<Key, std::weak_ptr<const BotNavigation>> cache;
-        Key key{arena.map, abilities.level(AbilityKind::SmallBody), abilities.level(AbilityKind::Speed),
-                abilities.level(AbilityKind::Jump), abilities.level(AbilityKind::Jetpack)};
+        Key key{arena.map,
+                abilities.level(AbilityKind::SmallBody),
+                abilities.level(AbilityKind::Speed),
+                abilities.level(AbilityKind::Jump),
+                abilities.level(AbilityKind::Jetpack),
+                abilities.level(AbilityKind::DoubleJump),
+                abilities.level(AbilityKind::FeatherFall)};
         if (auto graph = cache[key].lock())
             return graph;
         auto graph = std::make_shared<const BotNavigation>(arena, abilities);

@@ -3,6 +3,7 @@
 #include "game/Match.h"
 #include "game/Prediction.h"
 #include "network/Protocol.h"
+#include "support/ArenaFixtures.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -104,7 +105,7 @@ void bodies()
            "Prediction includes body contact");
     s.map = MapId::NatureLarge;
     s.round++;
-    s.players = {body(1, {1000, 752}), body(2, {1516, 752})};
+    s.players = {body(1, {920, 752}), body(2, {1516, 752})};
     prediction.reconcile(s, 1);
     expect(prediction.action(99, false, true, {1, 0}).has_value(),
            "Shot immediately creates presentation event on large map");
@@ -130,7 +131,7 @@ void bodies()
 
 void maps()
 {
-    expect(mapCatalog().size() == 11, "Nine new maps and two legacy arenas");
+    expect(mapCatalog().size() == 14, "Nine new maps and two legacy arenas");
     for (const auto& info : mapCatalog())
     {
         auto a = Arena::create(info.id, true);
@@ -151,14 +152,15 @@ void maps()
                    "Targets remain supported and stationary");
         if (info.id == MapId::Test)
             continue;
-        a = Arena::create(info.id);
+        a = openRoutes(info.id);
         World duel(a);
         expect(duel.players().size() == 2, "Duel always contains exactly two players");
         expect(near(a.spawnPoints[0].x + a.spawnPoints[1].x + 48, a.bounds.size.x),
                "Duel spawn positions are symmetric");
         if (info.id == MapId::Duel)
             continue;
-        const unsigned size = (static_cast<unsigned>(info.id) - 1) % 3;
+        const unsigned size = static_cast<unsigned>(info.id) >= 11 ? static_cast<unsigned>(info.id) - 11
+                                                                   : (static_cast<unsigned>(info.id) - 1) % 3;
         expect(near(a.bounds.size.x, size == 0   ? 960
                                      : size == 1 ? 1280
                                                  : 1600),

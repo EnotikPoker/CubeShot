@@ -74,7 +74,11 @@ BotMobility::Simulation BotMobility::simulateProgram(const Player& self, Program
 void BotMobility::begin(const Player& self, Vec2 goal, const std::vector<Bullet>& threats,
                         const std::vector<FirePatch>& fires, const PlayerInput& baseline)
 {
-    navigation_ = BotNavigation::forArena(arena_, self.abilities);
+    if (!navigationAbilities_ || *navigationAbilities_ != self.abilities)
+    {
+        navigation_ = BotNavigation::forArena(arena_, self.abilities);
+        navigationAbilities_ = self.abilities;
+    }
     root_ = self;
     goal_ = goal;
     threats_ = threats;

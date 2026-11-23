@@ -66,6 +66,61 @@ bool drawAbilityIcon(SDL_Renderer* r, AbilityKind kind, Rect box)
         case AbilityKind::Recoil:
             return rect(12, 9, 19, 6) && rect(15, 15, 5, 13) && line(8, 7, 1, 15) && line(1, 15, 8, 23) &&
                    line(13, 4, 6, 11);
+        case AbilityKind::Power:
+            return rect(13, 3, 6, 26) && rect(3, 13, 26, 6);
+        case AbilityKind::FireRate:
+            return line(2, 10, 13, 10) && line(2, 16, 18, 16) && line(2, 22, 13, 22) && rect(20, 8, 8, 16);
+        case AbilityKind::ProjectileSpeed:
+            return line(2, 8, 12, 8) && line(2, 16, 15, 16) && line(2, 24, 12, 24) && line(18, 5, 29, 16) &&
+                   line(29, 16, 18, 27);
+        case AbilityKind::Range:
+            return line(3, 16, 29, 16) && line(3, 9, 3, 23) && line(29, 9, 29, 23) && line(13, 8, 20, 16) &&
+                   line(20, 16, 13, 24);
+        case AbilityKind::Accuracy:
+            return line(16, 2, 16, 11) && line(16, 21, 16, 30) && line(2, 16, 11, 16) &&
+                   line(21, 16, 30, 16) && rect(14, 14, 4, 4);
+        case AbilityKind::TwinShot:
+            return rect(3, 7, 20, 5) && rect(3, 20, 20, 5) && line(23, 7, 29, 10) && line(23, 20, 29, 23);
+        case AbilityKind::Ricochet:
+            return line(3, 25, 20, 8) && line(20, 8, 28, 22) && line(11, 5, 29, 5) && line(23, 19, 28, 22) &&
+                   line(28, 22, 30, 16);
+        case AbilityKind::Penetration:
+            return rect(13, 3, 5, 26) && line(2, 16, 30, 16) && line(23, 10, 30, 16) && line(30, 16, 23, 22);
+        case AbilityKind::Demolition:
+            return rect(3, 16, 11, 12) && rect(17, 16, 12, 12) && rect(3, 3, 11, 10) && line(20, 2, 16, 13) &&
+                   line(16, 13, 27, 8);
+        case AbilityKind::BlastRadius:
+            return line(16, 1, 16, 8) && line(16, 24, 16, 31) && line(1, 16, 8, 16) && line(24, 16, 31, 16) &&
+                   line(6, 6, 11, 11) && line(21, 21, 26, 26) && rect(12, 12, 8, 8);
+        case AbilityKind::Vampirism:
+            return line(5, 5, 9, 25) && line(9, 25, 16, 12) && line(16, 12, 23, 25) && line(23, 25, 27, 5) &&
+                   rect(13, 24, 6, 6);
+        case AbilityKind::Regeneration:
+            return rect(13, 7, 6, 18) && rect(7, 13, 18, 6) && line(3, 4, 14, 1) && line(3, 4, 1, 15) &&
+                   line(29, 28, 18, 31) && line(29, 28, 31, 17);
+        case AbilityKind::ToughSkin:
+            return line(4, 4, 28, 4) && line(28, 4, 28, 20) && line(28, 20, 16, 30) && line(16, 30, 4, 20) &&
+                   line(4, 20, 4, 4) && rect(11, 11, 10, 10);
+        case AbilityKind::FireResistance:
+            return drawAbilityIcon(r, AbilityKind::Armor, box) && line(12, 22, 16, 9) && line(16, 9, 20, 22);
+        case AbilityKind::Thorns:
+            return line(2, 27, 7, 6) && line(7, 6, 14, 22) && line(14, 22, 22, 4) && line(22, 4, 30, 27) &&
+                   line(2, 27, 30, 27);
+        case AbilityKind::Adrenaline:
+            return line(1, 17, 9, 17) && line(9, 17, 13, 5) && line(13, 5, 20, 28) && line(20, 28, 24, 17) &&
+                   line(24, 17, 31, 17);
+        case AbilityKind::DoubleJump:
+            return line(4, 15, 10, 6) && line(10, 6, 16, 15) && line(16, 25, 23, 16) &&
+                   line(23, 16, 30, 25) && line(10, 6, 10, 27) && line(23, 16, 23, 31);
+        case AbilityKind::FeatherFall:
+            return line(3, 7, 16, 3) && line(16, 3, 29, 7) && line(3, 7, 16, 22) && line(29, 7, 16, 22) &&
+                   line(16, 22, 16, 30);
+        case AbilityKind::Stability:
+            return line(16, 2, 16, 29) && line(4, 22, 16, 29) && line(16, 29, 28, 22) && line(4, 22, 4, 17) &&
+                   line(28, 22, 28, 17) && line(8, 9, 24, 9);
+        case AbilityKind::SecondChance:
+            return drawAbilityIcon(r, AbilityKind::Health, box) && line(2, 3, 10, 3) && line(2, 3, 2, 11) &&
+                   line(30, 29, 22, 29) && line(30, 29, 30, 21);
         default:
             return true;
     }
@@ -77,7 +132,7 @@ bool drawAbilityRow(SDL_Renderer* r, const Abilities& abilities, Vec2 at, float 
     for (unsigned i = 0; i < abilityCount; ++i)
         if (abilities.levels[i])
         {
-            Rect box{{at.x + n * (size + 7), at.y}, {size, size}};
+            Rect box{{at.x + (n % 10) * (size + 7), at.y - (n / 10) * (size + 7)}, {size, size}};
             SDL_SetRenderDrawColor(r, 24, 36, 49, 255);
             SDL_FRect panel{box.position.x - 2, box.position.y - 2, size + 4, size + 4};
             if (!SDL_RenderFillRect(r, &panel) || !drawAbilityIcon(r, static_cast<AbilityKind>(i), box))
@@ -102,10 +157,10 @@ bool drawAbilityHud(SDL_Renderer* r, const Player& p)
         return false;
     if (p.abilities.level(AbilityKind::Jetpack))
     {
-        if (!drawText(r, U"Топливо", {12, 444}, 1, {133, 203, 235, 255}))
+        if (!drawText(r, U"Топливо", {315, 444}, 1, {133, 203, 235, 255}))
             return false;
         SDL_SetRenderDrawColor(r, 35, 57, 74, 255);
-        SDL_FRect bar{12, 461, 132, 3};
+        SDL_FRect bar{315, 461, 132, 3};
         if (!SDL_RenderFillRect(r, &bar))
             return false;
         SDL_SetRenderDrawColor(r, 123, 211, 250, 255);

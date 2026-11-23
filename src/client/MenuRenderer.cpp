@@ -60,6 +60,28 @@ bool weaponCard(SDL_Renderer* renderer, WeaponKind kind, float x)
                                           static_cast<int>(vertices.size()), nullptr, 0);
         }
     };
+    if (kind == WeaponKind::Crossbow)
+    {
+        part(-40, -4, 80, 8, wood);
+        part(0, -35, 6, 70, steel);
+        part(26, -2, 25, 4, steel);
+        return ok;
+    }
+    if (kind == WeaponKind::GrenadeLauncher)
+    {
+        round(-8, 5, 21, dark);
+        part(-27, -12, 65, 20, {100, 123, 79, 255});
+        part(-20, 15, 8, 19, wood);
+        return ok;
+    }
+    if (kind == WeaponKind::Electric)
+    {
+        part(-35, -12, 49, 24, dark);
+        part(10, -16, 7, 32, {80, 202, 255, 255});
+        part(28, -16, 7, 32, {80, 202, 255, 255});
+        part(11, -3, 33, 6, steel);
+        return ok;
+    }
     if (kind == WeaponKind::FireBoomerang)
     {
         part(-37, -9, 40, 9, {255, 119, 39, 255});
@@ -299,9 +321,13 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     title.clear();
                     hint.clear();
                     break;
+                case Screen::TestSetup:
+                    title = U"Способности и мишени";
+                    hint.clear();
+                    break;
                 case Screen::BotSetup:
                     title = U"Игра с ботом";
-                    hint = U"Выберите карту и сложность. Дуэль до 5 побед";
+                    hint = U"Выберите карту, сложность и цель побед";
                     break;
                 case Screen::BotResult:
                     title = U"Матч завершён";
@@ -321,8 +347,49 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 default:
                     break;
             }
-            if (!centeredText(renderer, title, 65, 4, white) || !centeredText(renderer, hint, 117, 2, muted))
+            if (menu.screen() != Screen::TestSetup && (!centeredText(renderer, title, 65, 4, white) ||
+                                                       !centeredText(renderer, hint, 117, 2, muted)))
                 return false;
+            if (menu.screen() == Screen::TestSetup)
+            {
+                // Dedicated layout leaves room for all 31 abilities across six pages.
+                if (!rectangle(renderer, {{0, 0}, {960, 84}}, {15, 21, 29, 255}) ||
+                    !centeredText(renderer, U"Способности и мишени", 25, 3, white))
+                    return false;
+                const auto& config = menu.testDraft();
+                unsigned target = menu.testTarget(), page = menu.testPage();
+                for (unsigned row = 0; row < 6; ++row)
+                {
+                    unsigned index = page * 6 + row;
+                    if (index >= abilityCount)
+                        break;
+                    float y = 135 + row * 44;
+                    if (!drawAbilityIcon(renderer, static_cast<AbilityKind>(index),
+                                         {{40, y + 3}, {27, 27}}) ||
+                        !drawText(renderer, abilityDefinition(static_cast<AbilityKind>(index)).name,
+                                  {80, y + 5}, 1, white) ||
+                        !drawText(renderer, asciiText(std::to_string(config.abilities[target].levels[index])),
+                                  {640, y + 5}, 1, blue))
+                        return false;
+                }
+                auto hp = U"HP: " + asciiText(std::to_string(config.healthPercent[target])) + U"%";
+                if (!drawText(renderer, hp, {390, 423}, 1, white) ||
+                    !drawText(renderer,
+                              asciiText(std::to_string(page + 1)) + U" / " +
+                                  asciiText(std::to_string((abilityCount + 5) / 6)),
+                              {760, 423}, 1, muted))
+                    return false;
+                int selected = menu.selection();
+                if (selected >= 4 && selected < 16)
+                {
+                    unsigned index = page * 6 + (selected - 4) / 2;
+                    if (index < abilityCount &&
+                        !centeredText(renderer,
+                                      abilityDefinition(static_cast<AbilityKind>(index)).description, 460, 1,
+                                      muted))
+                        return false;
+                }
+            }
             if (menu.screen() == Screen::Armory)
             {
                 if (!wheel(renderer, menu.networkSnapshot(), menu.ownId()))
@@ -380,7 +447,8 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                         return false;
                 }
                 const auto score = U"Счёт " + asciiText(std::to_string(s.score[0])) + U":" +
-                                   asciiText(std::to_string(s.score[1])) + U". До 5 побед";
+                                   asciiText(std::to_string(s.score[1])) + U". До " +
+                                   asciiText(std::to_string(s.rules.wins)) + U" побед";
                 if (!centeredText(renderer, mapInfo(menu.selectedMap()).name, 225, 2, blue) ||
                     !preview(renderer, menu.selectedMap(), {{35, 162}, {190, 106.875f}}))
                     return false;
@@ -404,10 +472,14 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
     for (std::size_t i = 0; i < buttons.size(); ++i)
     {
         const auto& button = buttons[i];
-        const bool selected = static_cast<int>(i) == menu.selection();
+        if (button.bounds.size.x <= 0 || button.bounds.size.y <= 0)
+            continue;
+        const bool selected = static_cast<int>(i) == menu.selection() ||
+                              (menu.screen() == Screen::TestSetup && i == menu.testTarget());
         const Rect& bounds = button.bounds;
-        const int scale = (menu.screen() == Screen::Main || menu.screen() == Screen::Modes ||
-                           menu.screen() == Screen::Paused)
+        const int scale = menu.screen() == Screen::TestSetup ? 1
+                          : (menu.screen() == Screen::Main || menu.screen() == Screen::Modes ||
+                             menu.screen() == Screen::Paused)
                               ? 3
                               : 2;
         const SDL_Color face = selected ? SDL_Color{54, 103, 147, 255} : SDL_Color{41, 62, 86, 255};
@@ -419,7 +491,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             return false;
         if (button.placeholder && menu.screen() != Screen::Armory && menu.screen() != Screen::Lobby &&
             menu.screen() != Screen::Result && menu.screen() != Screen::Browser &&
-            menu.screen() != Screen::OnlineBrowser &&
+            menu.screen() != Screen::OnlineBrowser && menu.screen() != Screen::TestSetup &&
             !drawText(renderer, U"Скоро", {bounds.position.x + bounds.size.x - 44, bounds.position.y + 40}, 1,
                       muted))
             return false;
@@ -432,7 +504,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                : menu.screen() == Screen::Paused     ? U"Esc — продолжить"
                                                      : U"Esc — назад")
             : menu.message();
-    return centeredText(renderer, footer, 510, 2, muted);
+    return menu.screen() == Screen::TestSetup || centeredText(renderer, footer, 510, 2, muted);
 }
 
 bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own)
@@ -441,8 +513,10 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
                  asciiText(std::to_string(s.score[1])) + U" " + network::nicknameText(s.names[1]);
     if (!uiPanel(renderer, {{235, 8}, {490, 69}}, {30, 46, 66, 255}) ||
         !centeredText(renderer, score, 14, textWidth(renderer, score, 2) > 466 ? 1 : 2, white) ||
-        !centeredText(renderer, U"Вы — игрок " + asciiText(std::to_string(own)) + U". До 5 побед", 45, 1,
-                      muted))
+        !centeredText(renderer,
+                      U"Вы — игрок " + asciiText(std::to_string(own)) + U". До " +
+                          asciiText(std::to_string(s.rules.wins)) + U" побед",
+                      45, 1, muted))
         return false;
     const auto player =
         std::find_if(s.players.begin(), s.players.end(), [own](const auto& p) { return p.id == own; });

@@ -34,6 +34,44 @@ std::vector<MenuButton> Menu::buttons() const
     std::vector<MenuButton> result;
     switch (screen_)
     {
+        case Screen::TestSetup:
+        {
+            result = {{U"Игрок", {}}, {U"Мишень 1", {}}, {U"Мишень 2", {}}, {U"Мишень 3", {}}};
+            for (unsigned row = 0; row < 6; ++row)
+            {
+                unsigned index = testPage_ * 6 + row;
+                bool valid = index < abilityCount;
+                result.push_back({U"−", {}, !valid || !draft_.abilities[testTarget_].levels[index]});
+                result.push_back(
+                    {U"+",
+                     {},
+                     !valid || !draft_.abilities[testTarget_].canAdd(static_cast<AbilityKind>(index))});
+            }
+            result.insert(result.end(), {{U"Предыдущая", {}, testPage_ == 0},
+                                         {U"Следующая", {}, (testPage_ + 1) * 6 >= abilityCount},
+                                         {U"HP −", {}},
+                                         {U"HP +", {}},
+                                         {U"Сбросить", {}},
+                                         {U"Сбросить всё", {}},
+                                         {U"Применить и перезапустить", {}},
+                                         {U"Отмена", {}}});
+            for (unsigned i = 0; i < 4; ++i)
+                result[i].bounds = {{40.f + i * 225, 88}, {205, 32}};
+            for (unsigned i = 4; i < 16; ++i)
+                result[i].bounds = {{700.f + (i % 2) * 64, 135.f + ((i - 4) / 2) * 44}, {52, 34}};
+            for (unsigned i = 4; i < 16; ++i)
+                if (testPage_ * 6 + (i - 4) / 2 >= abilityCount)
+                    result[i].bounds = {{0, 0}, {0, 0}};
+            result[16].bounds = {{40, 414}, {150, 32}};
+            result[17].bounds = {{205, 414}, {150, 32}};
+            result[18].bounds = {{535, 414}, {80, 32}};
+            result[19].bounds = {{630, 414}, {80, 32}};
+            result[20].bounds = {{25, 488}, {155, 34}};
+            result[21].bounds = {{190, 488}, {180, 34}};
+            result[22].bounds = {{385, 488}, {365, 34}};
+            result[23].bounds = {{765, 488}, {170, 34}};
+            return result;
+        }
         case Screen::Main:
             result = {{U"Играть", {}}, {U"Настройки", {}}, {U"Выйти из игры", {}}};
             break;
@@ -86,11 +124,9 @@ std::vector<MenuButton> Menu::buttons() const
             result = {{U"Отмена", {}}};
             break;
         case Screen::Maps:
-            result = {{U"Предыдущая карта", {}},
-                      {U"Следующая карта", {}},
-                      {U"Начать тест", {}},
-                      {U"Назад", {}},
-                      {testWeaponLabel_, {}}};
+            result = {{U"Предыдущая карта", {}}, {U"Следующая карта", {}},
+                      {U"Начать тест", {}},      {U"Назад", {}},
+                      {testWeaponLabel_, {}},    {U"Способности и мишени", {}}};
             break;
         case Screen::Armory:
         {
@@ -103,11 +139,9 @@ std::vector<MenuButton> Menu::buttons() const
             break;
         }
         case Screen::BotSetup:
-            result = {{U"Предыдущая карта", {}},
-                      {U"Следующая карта", {}},
-                      {botDifficultyName(botDifficulty_), {}},
-                      {U"Начать", {}},
-                      {U"Назад", {}}};
+            result = {
+                {U"Предыдущая карта", {}}, {U"Следующая карта", {}}, {botDifficultyName(botDifficulty_), {}},
+                {U"Начать", {}},           {U"Назад", {}},           {winsLabel_, {}}};
             break;
         case Screen::BotResult:
             result = {{U"Реванш", {}}, {U"Карта и сложность", {}}, {U"Выйти в главное меню", {}}};
@@ -124,6 +158,7 @@ std::vector<MenuButton> Menu::buttons() const
             {
                 result[1] = {U"Предыдущая карта", {}, !snapshot_.voting && own_ != 1};
                 result.insert(result.begin() + 2, {U"Следующая карта", {}, !snapshot_.voting && own_ != 1});
+                result.insert(result.begin() + 3, {winsLabel_, {}, own_ != 1});
                 if (snapshot_.voting && own_ && snapshot_.votes[own_ - 1] < 0)
                     result[0].label = U"Голосовать за карту";
                 else if (snapshot_.voting && (snapshot_.votes[0] < 0 || snapshot_.votes[1] < 0))
@@ -134,6 +169,8 @@ std::vector<MenuButton> Menu::buttons() const
         case Screen::Settings:
             break;
     }
+    if (screen_ == Screen::Paused && !bots_ && !lan_)
+        result.push_back({U"Настроить тест", {}});
     const float top = screen_ == Screen::Armory                                          ? 398
                       : screen_ == Screen::Maps                                          ? 270
                       : screen_ == Screen::BotSetup                                      ? 270
@@ -149,17 +186,22 @@ std::vector<MenuButton> Menu::buttons() const
     for (std::size_t i = 0; i < result.size(); ++i)
         result[i].bounds = {
             {264, top + static_cast<float>(i) *
-                            ((screen_ == Screen::BotSetup || screen_ == Screen::Maps)
-                                 ? 44
+                            ((screen_ == Screen::BotSetup || screen_ == Screen::Maps) ? 38
+                             : screen_ == Screen::Lobby
+                                 ? 40
                                  : ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
                                      screen_ == Screen::Lobby || screen_ == Screen::Maps)
                                         ? 48
                                         : 66))},
-            {432, (screen_ == Screen::BotSetup || screen_ == Screen::Maps) ? 38.f
+            {432, screen_ == Screen::Lobby                                   ? 36.f
+                  : (screen_ == Screen::BotSetup || screen_ == Screen::Maps) ? 32.f
                   : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
                      screen_ == Screen::Lobby || screen_ == Screen::Maps)
                       ? 42.f
                       : 52.f}};
+    if (screen_ == Screen::Paused && result.size() == 5)
+        for (unsigned i = 0; i < result.size(); ++i)
+            result[i].bounds = {{264, 214.f + i * 56}, {432, 46}};
     if (screen_ == Screen::Armory)
         for (unsigned i = 0; i < result.size(); ++i)
             result[i].bounds = {{166.f + i * 214, 432}, {200, 48}};
@@ -172,6 +214,8 @@ void Menu::open(Screen screen)
     selection_ = 0;
     pressed_.reset();
     message_.clear();
+    if (screen == Screen::BotSetup)
+        winsLabel_ = U"До " + asciiText(std::to_string(wins_)) + U" побед";
     if (screen == Screen::BotSetup || screen == Screen::Maps || screen == Screen::Main ||
         screen == Screen::Modes || screen == Screen::Lan || screen == Screen::Online)
         bots_ = false;
@@ -273,8 +317,56 @@ MenuAction Menu::activate()
         else
             open(Screen::Main);
     }
+    else if (screen_ == Screen::TestSetup)
+    {
+        if (selection_ < 4)
+            testTarget_ = selection_;
+        else if (selection_ < 16)
+        {
+            unsigned index = testPage_ * 6 + (selection_ - 4) / 2;
+            if (index < abilityCount)
+            {
+                auto& level = draft_.abilities[testTarget_].levels[index];
+                if (selection_ % 2)
+                    draft_.abilities[testTarget_].add(static_cast<AbilityKind>(index));
+                else if (level)
+                    --level;
+            }
+        }
+        else if (selection_ == 16 && testPage_)
+            --testPage_;
+        else if (selection_ == 17 && (testPage_ + 1) * 6 < abilityCount)
+            ++testPage_;
+        else if (selection_ == 18)
+            draft_.healthPercent[testTarget_] = std::max(
+                1u, draft_.healthPercent[testTarget_] > 10 ? draft_.healthPercent[testTarget_] - 10 : 1u);
+        else if (selection_ == 19)
+            draft_.healthPercent[testTarget_] = std::min(100u, draft_.healthPercent[testTarget_] + 10);
+        else if (selection_ == 20)
+        {
+            draft_.abilities[testTarget_] = {};
+            draft_.healthPercent[testTarget_] = 100;
+        }
+        else if (selection_ == 21)
+            draft_ = {};
+        else if (selection_ == 22)
+        {
+            test_ = draft_;
+            open(Screen::Playing);
+            return MenuAction::ApplyTest;
+        }
+        else if (selection_ == 23)
+            open(testReturn_);
+    }
     else if (screen_ == Screen::Paused)
     {
+        if (selection_ == 4)
+        {
+            draft_ = test_;
+            testReturn_ = Screen::Paused;
+            open(Screen::TestSetup);
+            return MenuAction::None;
+        }
         if (selection_ == 1)
             return MenuAction::OpenSettings;
         if (selection_ == 3)
@@ -360,14 +452,21 @@ MenuAction Menu::activate()
     {
         if (selection_ == 0 || selection_ == 1)
         {
-            const int count = static_cast<int>(mapCatalog().size());
-            selectedMap_ = static_cast<MapId>(
-                (static_cast<int>(selectedMap_) + (selection_ == 0 ? count - 1 : 1)) % count);
+            auto maps = playableMaps(true);
+            auto it = std::find(maps.begin(), maps.end(), selectedMap_);
+            int index = static_cast<int>(it - maps.begin());
+            selectedMap_ = maps[(index + (selection_ == 0 ? maps.size() - 1 : 1)) % maps.size()];
         }
         else if (selection_ == 2)
         {
             open(Screen::Playing);
             return MenuAction::StartTest;
+        }
+        else if (selection_ == 5)
+        {
+            draft_ = test_;
+            testReturn_ = Screen::Maps;
+            open(Screen::TestSetup);
         }
         else if (selection_ == 4)
         {
@@ -385,9 +484,9 @@ MenuAction Menu::activate()
     {
         if (selection_ <= 1)
         {
-            const int count = static_cast<int>(MapId::NatureLarge) + 1;
-            botMap_ =
-                static_cast<MapId>((static_cast<int>(botMap_) + (selection_ == 0 ? count - 1 : 1)) % count);
+            auto maps = playableMaps();
+            int index = std::find(maps.begin(), maps.end(), botMap_) - maps.begin();
+            botMap_ = maps[(index + (selection_ == 0 ? maps.size() - 1 : 1)) % maps.size()];
         }
         else if (selection_ == 2)
             botDifficulty_ = static_cast<BotDifficulty>((static_cast<int>(botDifficulty_) + 1) % 3);
@@ -396,6 +495,11 @@ MenuAction Menu::activate()
             bots_ = true;
             open(Screen::Playing);
             return MenuAction::StartBots;
+        }
+        else if (selection_ == 5)
+        {
+            wins_ = wins_ == 20 ? 5 : wins_ + 5;
+            winsLabel_ = U"До " + asciiText(std::to_string(wins_)) + U" побед";
         }
         else
             open(Screen::Modes);
@@ -424,9 +528,15 @@ MenuAction Menu::activate()
             int current = snapshot_.voting && own_ && snapshot_.votes[own_ - 1] >= 0
                               ? snapshot_.votes[own_ - 1]
                               : static_cast<int>(snapshot_.map);
-            const int count = static_cast<int>(MapId::NatureLarge) + 1;
-            selectedMap_ = static_cast<MapId>((current + (selection_ == 1 ? count - 1 : 1)) % count);
+            auto maps = playableMaps();
+            int index = std::find(maps.begin(), maps.end(), static_cast<MapId>(current)) - maps.begin();
+            selectedMap_ = maps[(index + (selection_ == 1 ? maps.size() - 1 : 1)) % maps.size()];
             return MenuAction::SelectMap;
+        }
+        if (screen_ == Screen::Lobby && selection_ == 3)
+        {
+            wins_ = snapshot_.rules.wins == 20 ? 5 : snapshot_.rules.wins + 5;
+            return MenuAction::SelectRules;
         }
         return MenuAction::LeaveRoom;
     }
@@ -435,6 +545,11 @@ MenuAction Menu::activate()
 
 void Menu::escape()
 {
+    if (screen_ == Screen::TestSetup)
+    {
+        open(testReturn_);
+        return;
+    }
     if (screen_ == Screen::Playing || screen_ == Screen::Armory)
         open(Screen::Paused);
     else if (screen_ == Screen::Paused)
@@ -529,6 +644,7 @@ void Menu::backspace()
 void Menu::botState(const WorldSnapshot& snapshot)
 {
     snapshot_ = snapshot;
+    winsLabel_ = U"До " + asciiText(std::to_string(snapshot.rules.wins)) + U" побед";
     own_ = 1;
     if (snapshot.phase == MatchPhase::Armory && screen_ != Screen::Armory && screen_ != Screen::Paused &&
         screen_ != Screen::Settings)
@@ -547,6 +663,7 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
                 ? static_cast<MapId>(snapshot.votes[own - 1])
                 : snapshot.map;
     snapshot_ = snapshot;
+    winsLabel_ = U"До " + asciiText(std::to_string(snapshot.rules.wins)) + U" побед";
     own_ = own;
     lan_ = true;
     bots_ = false;

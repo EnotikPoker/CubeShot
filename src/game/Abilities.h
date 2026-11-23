@@ -19,6 +19,26 @@ enum class AbilityKind : std::uint32_t
     Incendiary,
     Jetpack,
     Recoil,
+    Power,
+    FireRate,
+    ProjectileSpeed,
+    Range,
+    Accuracy,
+    TwinShot,
+    Ricochet,
+    Penetration,
+    Demolition,
+    BlastRadius,
+    Vampirism,
+    Regeneration,
+    ToughSkin,
+    FireResistance,
+    Thorns,
+    Adrenaline,
+    DoubleJump,
+    FeatherFall,
+    Stability,
+    SecondChance,
     Count,
     None = Count
 };
@@ -48,6 +68,13 @@ struct Abilities
     float jump() const;
     float reload() const;
     float recoil() const;
+    float power() const;
+    float fireRate() const;
+    float projectileSpeed() const;
+    float range() const;
+    float accuracy() const;
+    float demolition() const;
+    float blastRadius() const;
     int health() const;
     unsigned shields() const;
 

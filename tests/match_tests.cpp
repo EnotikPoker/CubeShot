@@ -36,6 +36,7 @@ void ready(Match& m)
 {
     m.connect(1);
     m.connect(2);
+    m.selectRules(1, {5}, m.snapshot().selectionRevision);
     m.setReady(1, true);
     m.setReady(2, true);
     advance(m, 360);
@@ -63,7 +64,12 @@ void win(Match& m, PlayerId id)
     approach(m);
     for (unsigned i = 1; i <= 5; ++i)
     {
-        expect(m.action(id, m.round(), i, false, true, aim(m, id)), "Accept fresh shot");
+        bool accepted = m.action(id, m.round(), i, false, true, aim(m, id));
+        if (!accepted)
+            std::cerr << "Reject shot seq=" << i << " phase=" << static_cast<int>(m.phase())
+                      << " round=" << m.round() << " score=" << m.snapshot().score[0]
+                      << " HP=" << m.world().players()[id - 1].health << '\n';
+        expect(accepted, "Accept fresh shot");
         advance(m, 60);
     }
 }
@@ -72,9 +78,9 @@ void rules()
 {
     Match m;
     const auto& a = m.world().arena();
-    expect(a.platforms.size() == 3 && a.spawnPoints.size() == 2 && a.spawnPoints[0].x == 80 &&
+    expect(!a.terrain.empty() && a.spawnPoints.size() == 2 && a.spawnPoints[0].x == 80 &&
                a.spawnPoints[1].x == 832,
-           "Symmetric arena has exactly two spawns and two platforms");
+           "Duel has two symmetric safe spawns and destructible terrain");
     m.connect(1);
     m.setReady(1, true);
     advance(m, 400);
@@ -134,6 +140,7 @@ void mapChangeAfterMatch()
             m.selectMap(1, MapId::Duel, 0);
             m.selectMap(2, MapId::Duel, m.snapshot().selectionRevision);
         }
+        m.selectRules(1, {5}, m.snapshot().selectionRevision);
         m.setReady(1, true);
         m.setReady(2, true);
         advance(m, 360);

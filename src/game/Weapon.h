@@ -19,7 +19,10 @@ enum class WeaponKind : std::uint32_t
     Bat,
     Katana,
     Knife,
-    FireBoomerang
+    FireBoomerang,
+    GrenadeLauncher,
+    Crossbow,
+    Electric
 };
 
 struct WeaponDefinition
@@ -32,8 +35,10 @@ struct WeaponDefinition
     float reloadTime = 0, effectiveRange = 0, recoil = 0;
 };
 
-inline constexpr unsigned weaponCount = 14;
+inline constexpr unsigned weaponCount = 17;
 bool meleeWeapon(WeaponKind kind);
+bool ballisticWeapon(WeaponKind kind);
+bool explosiveWeapon(WeaponKind kind);
 bool incendiaryWeapon(WeaponKind kind);
 bool validWeapon(WeaponKind kind);
 const WeaponDefinition& weaponDefinition(WeaponKind kind);

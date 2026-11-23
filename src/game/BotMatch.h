@@ -9,7 +9,8 @@ namespace cubeshot
 class BotMatch
 {
 public:
-    BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed);
+    BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed,
+             MatchRules rules = {});
     void control(const PlayerInput& input);
     void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
     void clearInput();

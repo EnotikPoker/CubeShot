@@ -1,6 +1,7 @@
 #pragma once
 #include "game/Abilities.h"
 #include "game/Arena.h"
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -18,13 +19,15 @@ struct BotTraversal
     bool jump;
     int direction, holdTicks, durationTicks;
     bool jetpack = false;
+    int secondJumpTick = -1;
 };
 
 // Static geometry only. Every airborne edge is verified with Player's real physics.
 class BotNavigation
 {
 public:
-    explicit BotNavigation(const Arena& arena, Abilities abilities = {});
+    explicit BotNavigation(const Arena& arena, Abilities abilities = {},
+                           std::shared_ptr<std::atomic_bool> cancel = {});
     static std::shared_ptr<const BotNavigation> forMap(MapId map);
     static std::shared_ptr<const BotNavigation> forArena(const Arena& arena, Abilities abilities = {});
     const std::vector<BotWaypoint>& nodes() const;

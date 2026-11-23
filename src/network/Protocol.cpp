@@ -2,6 +2,7 @@
 #include "network/Identity.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <set>
 
 namespace cubeshot::network
@@ -185,6 +186,12 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
     for (const auto& piece : s.pieces)
         if (!piece.outline.empty())
             encodePiece(out.add_pieces(), piece);
+    out.set_wins(s.rules.wins);
+    auto terrain = s.terrain;
+    if (terrain.health.empty())
+        terrain = Arena::create(s.map).terrainState();
+    out.set_terrain_revision(terrain.revision);
+    out.set_terrain_health(std::string(terrain.health.begin(), terrain.health.end()));
     for (const auto& p : s.players)
     {
         auto* v = out.add_players();
@@ -199,6 +206,11 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_jetpack_fuel(p.jetpackFuel);
         v->set_jetpack_active(p.jetpackActive);
         v->set_shields(p.shields);
+        v->set_air_jumps(p.airJumps);
+        v->set_second_chance_used(p.secondChanceUsed);
+        v->set_invulnerability(p.invulnerability);
+        v->set_damage_quiet(std::min(p.damageQuiet, 60.f));
+        v->set_healing_remainder(p.healingRemainder);
         v->set_ammo(p.weapon.ammo);
         v->set_reloading(p.weapon.reloading);
         v->set_reload_remaining(p.weapon.reloadRemaining);
@@ -250,6 +262,14 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_travelled(b.travelled);
         v->set_radius(b.collisionRadius);
         v->set_ignites(b.ignites);
+        v->set_ricochets(b.ricochets);
+        v->set_penetrations(b.penetrations);
+        v->set_power(b.power);
+        v->set_terrain_power(b.terrainPower);
+        v->set_blast_scale(b.blastScale);
+        v->set_range_scale(b.rangeScale);
+        v->set_spread_scale(b.spreadScale);
+        v->set_twinned(b.twinned);
         v->set_returning(b.returning);
         v->set_hit_mask(b.hitMask);
     }
@@ -267,7 +287,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     if (!validMap(static_cast<MapId>(in.map())) || in.votes_size() != 2)
         return {};
     for (auto vote : in.votes())
-        if (vote < -1 || vote > static_cast<int>(MapId::NatureLarge))
+        if (vote < -1 || (vote >= 0 && !validMap(static_cast<MapId>(vote))))
             return {};
     if (in.abilities_size() != 2 || in.upgrade_size() != 2 || in.rolled_ability_size() != 2)
         return {};
@@ -277,6 +297,23 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     if (in.fires_size() > static_cast<int>(maxFires))
         return {};
     WorldSnapshot s;
+    s.rules.wins = in.wins();
+    if (!s.rules.valid())
+        return {};
+    // Validate against immutable layout metadata; do not rebuild a collision mesh for every packet.
+    static thread_local std::map<MapId, Arena> layouts;
+    const auto map = static_cast<MapId>(in.map());
+    auto found = layouts.find(map);
+    if (found == layouts.end())
+        found = layouts.emplace(map, Arena::create(map)).first;
+    const auto& terrainArena = found->second;
+    s.terrain.revision = in.terrain_revision();
+    s.terrain.health.assign(in.terrain_health().begin(), in.terrain_health().end());
+    if (s.terrain.health.size() != terrainArena.terrain.size())
+        return {};
+    for (std::size_t i = 0; i < s.terrain.health.size(); ++i)
+        if (s.terrain.health[i] > terrainArena.terrain[i].maximum)
+            return {};
     std::set<std::uint64_t> fires;
     for (const auto& f : in.fires())
     {
@@ -302,7 +339,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         if (!validNickname(in.names(i)))
             return {};
         s.names[i] = in.names(i);
-        if (in.score(i) > Match::winsRequired)
+        if (in.score(i) > s.rules.wins)
             return {};
         if (in.loadout(i) >= weaponCount || in.rolled(i) >= weaponCount || in.weapon_choice(i) > 2 ||
             !std::isfinite(in.spin_remaining(i)) || in.spin_remaining(i) < 0 ||
@@ -349,6 +386,16 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             !std::isfinite(v.jetpack_fuel()) || v.jetpack_fuel() < 0 || v.jetpack_fuel() > 2.001f ||
             (v.jetpack_active() && !p.abilities.level(AbilityKind::Jetpack)))
             return {};
+        if (v.air_jumps() > 1 || !std::isfinite(v.invulnerability()) || v.invulnerability() < 0 ||
+            v.invulnerability() > .501f || !std::isfinite(v.damage_quiet()) || v.damage_quiet() < 0 ||
+            v.damage_quiet() > 60 || !std::isfinite(v.healing_remainder()) || v.healing_remainder() < 0 ||
+            v.healing_remainder() >= 1.001f)
+            return {};
+        p.airJumps = v.air_jumps();
+        p.secondChanceUsed = v.second_chance_used();
+        p.invulnerability = v.invulnerability();
+        p.damageQuiet = v.damage_quiet();
+        p.healingRemainder = v.healing_remainder();
         p.shields = v.shields();
         p.jetpackFuel = v.jetpack_fuel();
         p.jetpackActive = v.jetpack_active();
@@ -425,7 +472,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         if (!v.id() || !bullets.insert(v.id()).second || !finite(v.position()) || !finite(v.velocity()) ||
             v.shooter() < 1 || v.shooter() > 2 || !std::isfinite(v.lifetime()) || v.lifetime() <= 0 ||
             v.lifetime() > 8.01f || v.weapon() >= weaponCount || !v.damage() || v.damage() > 100 ||
-            !std::isfinite(v.gravity()) || v.gravity() < -35 || v.gravity() > 500)
+            !std::isfinite(v.gravity()) || v.gravity() < -35 || v.gravity() > 900)
             return {};
         if (!std::isfinite(v.age()) || v.age() < 0 || v.age() > 8.01f || v.hit_mask() > 0x6)
             return {};
@@ -447,6 +494,20 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         b.collisionRadius = v.radius();
         b.ignites = v.ignites();
+        auto validFactor = [](float f, float lo, float hi)
+        { return std::isfinite(f) && f >= lo - .001f && f <= hi + .001f; };
+        if (v.ricochets() > 1 || v.penetrations() > 2 || !validFactor(v.power(), 1, 1.45f) ||
+            !validFactor(v.terrain_power(), 1, 2.5f) || !validFactor(v.blast_scale(), 1, 1.4f) ||
+            !validFactor(v.range_scale(), 1, 1.75f) || !validFactor(v.spread_scale(), .421875f, 1))
+            return {};
+        b.ricochets = v.ricochets();
+        b.penetrations = v.penetrations();
+        b.power = v.power();
+        b.terrainPower = v.terrain_power();
+        b.blastScale = v.blast_scale();
+        b.rangeScale = v.range_scale();
+        b.spreadScale = v.spread_scale();
+        b.twinned = v.twinned();
         b.travelled = v.travelled();
         b.age = v.age();
         b.returning = v.returning();
@@ -493,6 +554,7 @@ wire::Events encodeEvents(const std::vector<GameEvent>& events)
         vec(v->mutable_local(), e.local);
         v->set_surface_revision(e.surfaceRevision);
         v->set_volley_damage(e.volleyDamage);
+        v->set_radius(e.radius);
         vec(v->mutable_position(), e.position);
         vec(v->mutable_direction(), e.direction);
     }
@@ -506,15 +568,17 @@ std::optional<std::vector<GameEvent>> decodeEvents(const wire::Events& in)
     std::vector<GameEvent> result;
     for (const auto& e : in.events())
     {
-        if (!e.id() || !e.round() || e.kind() > static_cast<unsigned>(EventKind::ShieldBlock) ||
+        if (!e.id() || !e.round() || e.kind() > static_cast<unsigned>(EventKind::ElectricArc) ||
             e.actor() < 1 || e.actor() > 2 || e.target() > 2 || !finite(e.position()) ||
             !validAim(e.direction()) || e.damage() > 1000 || e.weapon() >= weaponCount ||
-            !finite(e.local()) || e.volley_damage() > 1000)
+            !finite(e.local()) || !std::isfinite(e.radius()) || e.radius() < 0 || e.radius() > 400 ||
+            e.volley_damage() > 1000)
             return {};
         result.push_back({e.id(), e.tick(), e.shot_sequence(), e.round(), static_cast<EventKind>(e.kind()),
                           e.actor(), e.target(), vec(e.position()), vec(e.direction()),
                           static_cast<int>(e.damage()), static_cast<WeaponKind>(e.weapon()), e.volley(),
-                          vec(e.local()), e.surface_revision(), static_cast<int>(e.volley_damage())});
+                          vec(e.local()), e.surface_revision(), static_cast<int>(e.volley_damage()),
+                          e.radius()});
     }
     return result;
 }

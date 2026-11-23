@@ -1,6 +1,7 @@
 #include "game/Prediction.h"
 #include "game/BodyPhysics.h"
 #include "game/Collision.h"
+#include "game/ProjectileMotion.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -33,6 +34,7 @@ void Prediction::simulate(const PredictedCommand& command, bool visuals)
     for (const auto& a : actions_)
         if (a.input == command.sequence)
             player_->requestAction(a.jump, a.shoot, a.aim, a.sequence, a.reload);
+    const int authoritativeHealth = player_->health;
     auto bodies = others_;
     bodies.push_back(*player_);
     simulateBodies(bodies, arena_, step);
@@ -44,6 +46,7 @@ void Prediction::simulate(const PredictedCommand& command, bool visuals)
         else
             others_.push_back(p);
     }
+    player_->health = authoritativeHealth;
     advanceRockets();
     // The same weapon function consumes ammo and adds recoil during prediction/replay.
     if (auto bullet = player_->takeShot())
@@ -62,7 +65,7 @@ void Prediction::simulate(const PredictedCommand& command, bool visuals)
             {
                 auto e = blastEffect({b.position.x + (end.x - b.position.x) * fraction,
                                       b.position.y + (end.y - b.position.y) * fraction},
-                                     *player_, arena_);
+                                     *player_, arena_, 0, explosionRadius * b.blastScale);
                 if (phase_ == MatchPhase::Round && e.damage < player_->health)
                     player_->applyImpulse(e.impulse);
             }
@@ -105,7 +108,8 @@ void Prediction::advanceRockets()
                            {
                                Vec2 at{from.x + (b.position.x - from.x) * std::min(1.f, fraction),
                                        from.y + (b.position.y - from.y) * std::min(1.f, fraction)};
-                               auto effect = blastEffect(at, *player_, arena_);
+                               auto effect =
+                                   blastEffect(at, *player_, arena_, 0, explosionRadius * b.blastScale);
                                if (phase_ == MatchPhase::Round && effect.damage < player_->health)
                                    player_->applyImpulse(effect.impulse);
                                return true;
@@ -145,6 +149,7 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
         events_.clear();
         offset_ = {};
     }
+    arena_.applyTerrain(snapshot.terrain);
     waitingForSnapshot_ = false;
     round_ = snapshot.round;
     phase_ = snapshot.phase;
@@ -217,14 +222,18 @@ void Prediction::advance(PlayerInput input)
                                                  (at.y - from.y) / distance * 700};
                                }
                            }
+                           if (b.weapon != WeaponKind::FireBoomerang)
+                               return !advanceProjectileTerrain(b, arena_, step);
                            b.update(step);
-                           if (b.lifetime <= 0 || b.position.x < arena_.bounds.position.x ||
-                               b.position.x > arena_.bounds.size.x ||
-                               b.position.y < arena_.bounds.position.y || b.position.y > arena_.bounds.size.y)
+                           if (b.lifetime <= 0)
                                return true;
                            for (const auto& rect : arena_.platforms)
                                if (collision::segmentHit(from, b.position, rect, b.collisionRadius))
-                                   return true;
+                               {
+                                   b.returning = true;
+                                   b.position = from;
+                                   break;
+                               }
                            return false;
                        }),
         bullets_.end());
@@ -243,7 +252,7 @@ std::optional<GameEvent> Prediction::action(std::uint64_t sequence, bool jump, b
         visual.requestAction(false, true, aim, sequence);
         if (auto bullet = visual.takeShot())
         {
-            visualCooldown_ = visual.weapon.shotInterval;
+            visualCooldown_ = visual.weapon.cooldown;
             return presentShot(*bullet);
         }
     }
@@ -259,19 +268,48 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
     const float speed = std::hypot(prototype.velocity.x, prototype.velocity.y);
     const auto& definition = weaponDefinition(prototype.weapon);
     const Vec2 direction{prototype.velocity.x / speed, prototype.velocity.y / speed};
-    const Vec2 muzzle{prototype.position.x + direction.x * definition.barrel,
-                      prototype.position.y + direction.y * definition.barrel};
+    float barrel = player_ ? player_->weapon.barrel() : definition.barrel;
+    const Vec2 muzzle{prototype.position.x + direction.x * barrel,
+                      prototype.position.y + direction.y * barrel};
     bool blocked = false;
     for (const auto& rect : arena_.platforms)
         if (collision::segmentHit(prototype.position, muzzle, rect, prototype.collisionRadius))
             blocked = true;
-    if (!blocked && !meleeWeapon(prototype.weapon))
+    if (prototype.weapon == WeaponKind::Electric)
+    {
+        Vec2 end{prototype.position.x + direction.x * 600 * prototype.rangeScale,
+                 prototype.position.y + direction.y * 600 * prototype.rangeScale};
+        float fraction = 1;
+        for (auto& r : arena_.platforms)
+            if (auto hit = collision::segmentHit(prototype.position, end, r, 0))
+                fraction = std::min(fraction, *hit);
+        for (auto& other : others_)
+            if (other.alive())
+                if (auto hit = collision::segmentHit(prototype.position, end, other.bounds(), 0))
+                    fraction = std::min(fraction, *hit);
+        GameEvent arc{0,
+                      0,
+                      prototype.shotSequence,
+                      round_,
+                      EventKind::ElectricArc,
+                      prototype.shooterId,
+                      0,
+                      {prototype.position.x + (end.x - prototype.position.x) * fraction,
+                       prototype.position.y + (end.y - prototype.position.y) * fraction},
+                      direction,
+                      prototype.damage,
+                      prototype.weapon,
+                      prototype.volley};
+        arc.local = prototype.position;
+        events_.push_back(arc);
+    }
+    if (!blocked && !meleeWeapon(prototype.weapon) && prototype.weapon != WeaponKind::Electric)
     {
         unsigned pellet = 0;
         for (auto bullet : scatterShot(prototype))
         {
-            bullet.id =
-                std::numeric_limits<BulletId>::max() - static_cast<BulletId>(prototype.volley) * 8 - pellet++;
+            bullet.id = std::numeric_limits<BulletId>::max() - static_cast<BulletId>(prototype.volley) * 32 -
+                        pellet++;
             bullet.position = muzzle;
             if (bullets_.size() < 256)
                 bullets_.push_back(bullet);

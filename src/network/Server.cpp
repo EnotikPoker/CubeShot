@@ -267,6 +267,12 @@ struct Server::Impl
             match.setReady(peer.id, e.ready().ready());
             broadcast(true);
         }
+        else if (e.has_rule_choice())
+        {
+            match.selectRules(peer.id, MatchRules{e.rule_choice().wins()},
+                              e.rule_choice().selection_revision());
+            broadcast(true);
+        }
         else if (e.has_map_choice())
         {
             const auto& choice = e.map_choice();

@@ -257,6 +257,19 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
     if (kind == WeaponKind::FireBoomerang)
         return part(8, -4, 23, 7, {1, .36f, .05f, 1}, mirror) &&
                part(24, -19, 7, 22, {1, .7f, .15f, 1}, mirror);
+    if (kind == WeaponKind::Crossbow)
+        return part(0, -4, 40, 8, {.5f, .3f, .16f, 1}, mirror) &&
+               part(25, -23, 5, 46, {.6f, .7f, .76f, 1}, mirror) &&
+               part(39, -2, 12, 4, {.9f, .95f, 1, 1}, mirror);
+    if (kind == WeaponKind::GrenadeLauncher)
+        return part(4, -12, 36, 22, {.27f, .34f, .25f, 1}, mirror) &&
+               part(15, -17, 14, 34, {.2f, .25f, .3f, 1}, mirror) &&
+               part(10, 9, 8, 14, {.4f, .26f, .15f, 1}, mirror);
+    if (kind == WeaponKind::Electric)
+        return part(0, -9, 26, 18, {.2f, .3f, .4f, 1}, mirror) &&
+               part(21, -12, 6, 24, {.3f, .8f, 1, 1}, mirror) &&
+               part(32, -12, 6, 24, {.3f, .8f, 1, 1}, mirror) &&
+               part(24, -3, 20, 6, {.8f, .95f, 1, 1}, mirror);
     if (kind == WeaponKind::Rpg)
         return part(0, -10, length, 20, {.3f, .42f, .2f, 1}, mirror) &&
                part(16, 8, 10, 15, {.3f, .24f, .16f, 1}, mirror) &&
@@ -338,19 +351,56 @@ void staticScene(const Painter& p, const Arena& arena)
 {
     const auto theme = mapInfo(arena.map).theme;
     background(p, arena);
-    for (const auto& box : arena.platforms)
+    for (std::size_t index = 0; index < arena.platforms.size(); ++index)
     {
+        const auto& box = arena.platforms[index];
+        const auto material = index < arena.materials.size() ? arena.materials[index] : Material::Fixed;
         p.rect({{box.position.x + 3, box.position.y + 5}, box.size}, {12, 22, 33, 130});
-        p.rect(box, {45, 61, 75, 255});
-        const unsigned tile = theme == MapTheme::Nature ? 3 : theme == MapTheme::Ruins ? 1 : 0;
+        const SDL_Color color = material == Material::Wood    ? SDL_Color{126, 89, 53, 255}
+                                : material == Material::Glass ? SDL_Color{90, 157, 179, 180}
+                                : material == Material::Stone ? SDL_Color{107, 102, 106, 255}
+                                : material == Material::Metal ? SDL_Color{69, 111, 137, 255}
+                                                              : SDL_Color{45, 61, 75, 255};
+        p.rect(box, color);
+        const unsigned tile = material == Material::Stone ? 1
+                              : theme == MapTheme::Nature ? 3
+                              : theme == MapTheme::Ruins  ? 1
+                                                          : 0;
         p.tile(tile,
                {{box.position.x + 2, box.position.y + 2},
                 {std::max(0.f, box.size.x - 4), std::max(0.f, box.size.y - 4)}},
-               {1, 1, 1, .23f});
-        if (theme == MapTheme::Nature)
+               {1, 1, 1, material == Material::Fixed ? .23f : .1f});
+        if (material == Material::Wood)
+        {
+            for (float y = box.position.y + 8; y < box.position.y + box.size.y; y += 12)
+                p.rect({{box.position.x + 2, y}, {std::max(0.f, box.size.x - 4), 1}}, {75, 48, 30, 160});
+            if (box.size.x <= 64 && box.size.y <= 64)
+            {
+                p.line({box.position.x + 4, box.position.y + 4},
+                       {box.position.x + box.size.x - 4, box.position.y + box.size.y - 4}, 2,
+                       {.3f, .2f, .1f, .7f});
+                p.line({box.position.x + box.size.x - 4, box.position.y + 4},
+                       {box.position.x + 4, box.position.y + box.size.y - 4}, 2, {.3f, .2f, .1f, .7f});
+            }
+        }
+        else if (material == Material::Glass)
+        {
+            p.line({box.position.x + 3, box.position.y + 3},
+                   {box.position.x + box.size.x - 3, box.position.y + box.size.y - 3}, 1,
+                   {.7f, .9f, 1, .65f});
+        }
+        else if (material == Material::Metal)
+        {
+            p.rect({{box.position.x + 2, box.position.y + 2}, {std::max(0.f, box.size.x - 4), 2}},
+                   {125, 200, 230, 255});
+            if (box.size.x > 12 && box.size.y > 12)
+                for (float x : {box.position.x + 4, box.position.x + box.size.x - 6})
+                    p.rect({{x, box.position.y + box.size.y - 6}, {2, 2}}, {177, 207, 216, 255});
+        }
+        else if (theme == MapTheme::Nature && material == Material::Fixed)
             p.tile(2, {box.position, {box.size.x, 7}});
         else
-            p.rect({{box.position.x + 2, box.position.y + 2}, {box.size.x - 4, 2}},
+            p.rect({{box.position.x + 2, box.position.y + 2}, {std::max(0.f, box.size.x - 4), 2}},
                    theme == MapTheme::Ruins ? SDL_Color{166, 161, 157, 255} : SDL_Color{143, 168, 186, 255});
     }
 }
@@ -453,6 +503,7 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         key = (key ^ bits) * 1099511628211ull;
     };
     mix(static_cast<float>(arena.map));
+    mix(static_cast<float>(arena.geometryRevision));
     mix(arena.bounds.position.x);
     mix(arena.bounds.position.y);
     mix(arena.bounds.size.x);
@@ -507,6 +558,13 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
     for (const auto& fire : fires)
         p.sprite(14 + static_cast<unsigned>(fire.id % 3), {fire.position.x, fire.position.y - 42},
                  {fire.radius * 1.5f, 62}, 0, {1, 1, 1, .2f});
+    for (const auto& cell : arena.terrain)
+        if (cell.health && cell.health < cell.maximum)
+        {
+            Vec2 at{cell.bounds.position.x + cell.bounds.size.x * .5f,
+                    cell.bounds.position.y + cell.bounds.size.y * .5f};
+            p.line({at.x - 2, at.y - 2}, {at.x + 2, at.y + 2}, 1, {.05f, .08f, .1f, .7f});
+        }
     for (const auto& corpse : corpses)
         remains(p, corpse.body, own, blood, false);
     for (const auto& piece : pieces)
@@ -518,6 +576,8 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         static const Pose empty;
         const auto& pose = effects ? effects->pose(player.id) : empty;
         auto color = ownerColor(player.id, own);
+        if (player.invulnerability > 0)
+            color = {1, .88f, .4f, 1};
         const float hit = pose.hit / .12f * .3f;
         color.r += (1 - color.r) * hit;
         color.g += (1 - color.g) * hit;
@@ -600,6 +660,19 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         const float scale = b.collisionRadius / Bullet::radius;
         const float speed = std::hypot(b.velocity.x, b.velocity.y);
         const Vec2 dir = speed > .001f ? Vec2{b.velocity.x / speed, b.velocity.y / speed} : Vec2{1, 0};
+        if (b.weapon == WeaponKind::GrenadeLauncher)
+        {
+            p.ellipse(b.position, 6 * scale, 6 * scale, {99, 128, 68, 255});
+            p.ellipse({b.position.x - 2, b.position.y - 2}, 2, 2, {255, 204, 79, 255});
+            continue;
+        }
+        if (b.weapon == WeaponKind::Crossbow)
+        {
+            p.line({b.position.x - dir.x * 20, b.position.y - dir.y * 20}, b.position, 2,
+                   {.75f, .55f, .3f, 1});
+            p.part(b.position, dir, -3, -3, 7, 6, {.8f, .9f, 1, 1});
+            continue;
+        }
         if (b.weapon == WeaponKind::Flamethrower)
         {
             p.sprite(static_cast<unsigned>(time * 15 + b.id) % 6, b.position,
@@ -632,13 +705,27 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                  {fire.radius * 2.1f, 48}, 0, {1, 1, 1, std::min(1.f, fire.life * 3)});
     if (effects)
     {
+        for (const auto& arc : effects->arcs())
+        {
+            Vec2 previous = arc.from;
+            for (int i = 1; i <= 8; ++i)
+            {
+                float t = i / 8.f;
+                Vec2 at{arc.from.x + (arc.to.x - arc.from.x) * t,
+                        arc.from.y + (arc.to.y - arc.from.y) * t +
+                            (i == 8 ? 0 : std::sin(i * 7.1f + time * 60) * 6)};
+                p.line(previous, at, 4, {.25f, .65f, 1, arc.life / .12f});
+                p.line(previous, at, 1.5f, {.85f, .98f, 1, 1});
+                previous = at;
+            }
+        }
         for (const auto& b : effects->blasts())
         {
             float age = 1 - b.life / .45f;
             auto wave = [&](float a)
             {
-                Vec2 end{b.position.x + std::cos(a) * explosionRadius * age,
-                         b.position.y + std::sin(a) * explosionRadius * age};
+                Vec2 end{b.position.x + std::cos(a) * b.radius * age,
+                         b.position.y + std::sin(a) * b.radius * age};
                 float fraction = 1;
                 for (const auto& wall : arena.platforms)
                     if (auto t = collision::segmentHit(b.position, end, wall, 0))
@@ -651,7 +738,7 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                        {1, .73f, .3f, (1 - age) * .8f});
             for (int n = 0; n < 6; ++n)
             {
-                float a = n * 6.2831853f / 6, spread = age * explosionRadius * .65f;
+                float a = n * 6.2831853f / 6, spread = age * b.radius * .65f;
                 p.sprite(static_cast<unsigned>(time * 18 + n) % 6,
                          {b.position.x + std::cos(a) * spread, b.position.y + std::sin(a) * spread},
                          {65 * (1 - age) + 20, 85 * (1 - age) + 20}, a, {1, 1, 1, 1 - age});
@@ -675,6 +762,11 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
             if (particle.chip)
             {
                 auto tint = particle.blood ? SDL_FColor{1, 1, 1, 1} : ownerColor(particle.owner, own);
+                if (particle.material != Material::Fixed)
+                    tint = particle.material == Material::Wood    ? SDL_FColor{.6f, .4f, .23f, 1}
+                           : particle.material == Material::Glass ? SDL_FColor{.45f, .85f, .95f, .8f}
+                           : particle.material == Material::Metal ? SDL_FColor{.4f, .6f, .7f, 1}
+                                                                  : SDL_FColor{.65f, .6f, .6f, 1};
                 if (particle.blood)
                     p.sprite(particle.sprite, particle.position, {particle.size, particle.size},
                              particle.angle, tint);
@@ -764,6 +856,7 @@ bool renderSnapshot(SDL_Renderer* r, const WorldSnapshot& s, PlayerId own, const
     thread_local Arena cached = Arena::create(s.map);
     if (cached.map != s.map)
         cached = Arena::create(s.map);
+    cached.applyTerrain(s.terrain);
     return renderWorld(r, cached, s.players, s.bullets, own, false, effects, s.corpses, s.pieces, s.fires);
 }
 } // namespace cubeshot::client

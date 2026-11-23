@@ -140,10 +140,15 @@ bool Application::handle(MenuAction action)
         effects_.clear();
         lastRound_ = 0;
     }
-    if (action == MenuAction::StartTest)
+    if (action == MenuAction::StartTest || action == MenuAction::ApplyTest)
     {
         world_ = World{Arena::create(menu_.selectedMap(), true), 4};
         world_.equip(1, menu_.testWeapon());
+        for (unsigned i = 0; i < 4; ++i)
+        {
+            world_.setAbilities(i + 1, menu_.testConfiguration().abilities[i]);
+            world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
+        }
         effects_.clear();
     }
     if ((!connections_.session() && !bots_.match()) ||
@@ -272,10 +277,11 @@ int Application::run()
     double accumulator = 0;
     Uint64 previousTime = SDL_GetTicksNS();
     Arena effectArena = Arena::create(MapId::Duel);
-    auto arenaForEffects = [&](MapId map) -> const Arena&
+    auto arenaForEffects = [&](const WorldSnapshot& state) -> const Arena&
     {
-        if (effectArena.map != map)
-            effectArena = Arena::create(map);
+        if (effectArena.map != state.map)
+            effectArena = Arena::create(state.map);
+        effectArena.applyTerrain(state.terrain);
         return effectArena;
     };
     bool running = true;
@@ -372,6 +378,11 @@ int Application::run()
                 {
                     world_ = World{Arena::create(menu_.selectedMap(), true), 4};
                     world_.equip(1, menu_.testWeapon());
+                    for (unsigned i = 0; i < 4; ++i)
+                    {
+                        world_.setAbilities(i + 1, menu_.testConfiguration().abilities[i]);
+                        world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
+                    }
                     effects_.clear();
                 }
                 inputGate_.reset(rawInput());
@@ -509,7 +520,7 @@ int Application::run()
                                     menu_.screen() == Screen::Armory
                                 ? static_cast<float>(elapsed)
                                 : 0.f,
-                            s.players, arenaForEffects(s.map), bots_.match()->takeEvents(), 1,
+                            s.players, arenaForEffects(s), bots_.match()->takeEvents(), 1,
                             settings_.active().blood, settings_.active().shake);
             const auto previousScreen = menu_.screen();
             bots_.synchronize(menu_);
@@ -523,7 +534,7 @@ int Application::run()
                                         [&](const auto& e) { return e.round != s.round; }),
                          events.end());
             const auto visual = session->interpolated();
-            effects_.update(static_cast<float>(elapsed), visual.players, arenaForEffects(s.map), events,
+            effects_.update(static_cast<float>(elapsed), visual.players, arenaForEffects(s), events,
                             session->playerId(), settings_.active().blood, settings_.active().shake);
         }
         else if (!bots_.match())
@@ -557,9 +568,7 @@ int Application::run()
             else if (bots_.match())
             {
                 const auto s = bots_.match()->snapshot();
-                rendered = renderSnapshot(renderer_, s, 1, &effects_) && renderMatchHud(renderer_, s, 1) &&
-                           drawText(renderer_, botDifficultyName(menu_.botDifficulty()), {12, 500}, 1,
-                                    {137, 153, 175, 255});
+                rendered = renderSnapshot(renderer_, s, 1, &effects_) && renderMatchHud(renderer_, s, 1);
             }
             else
                 rendered = renderScene(renderer_, world_, false, &effects_) &&

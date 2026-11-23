@@ -25,6 +25,7 @@ public:
     void chooseWeapon(bool reroll);
     void chooseUpgrade(UpgradeKind kind);
     void selectMap(MapId map);
+    void selectRules(unsigned wins);
     void changeMap();
     std::vector<GameEvent> takeEvents();
     bool connected() const;

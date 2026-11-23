@@ -36,6 +36,16 @@ enum class UpgradeKind
     Ability
 };
 
+struct MatchRules
+{
+    unsigned wins = 15;
+
+    bool valid() const
+    {
+        return wins == 5 || wins == 10 || wins == 15 || wins == 20;
+    }
+};
+
 struct WorldSnapshot
 {
     std::uint64_t tick = 0;
@@ -63,13 +73,14 @@ struct WorldSnapshot
     std::array<Abilities, 2> abilities{};
     std::array<UpgradeKind, 2> upgrade{};
     std::array<AbilityKind, 2> rolledAbility{{AbilityKind::None, AbilityKind::None}};
+    MatchRules rules;
+    TerrainState terrain;
 };
 
 // Чистые правила дуэли. Сеть назначает слоты; только сервер меняет Match.
 class Match
 {
 public:
-    static constexpr unsigned winsRequired = 5;
     static constexpr float aftermathSeconds = 4, spinSeconds = 3.2f, wheelSeconds = 2.4f;
 
     explicit Match(bool voting = false, std::uint32_t seed = 0)
@@ -79,6 +90,7 @@ public:
         world_.setVisualSeed(visualSeed_);
     }
 
+    bool selectRules(PlayerId id, MatchRules rules, std::uint64_t revision);
     bool selectMap(PlayerId id, MapId map, std::uint64_t revision);
     bool changeMap(PlayerId id, std::uint64_t revision);
     std::vector<GameEvent> takeEvents();
@@ -118,7 +130,8 @@ private:
     std::array<Abilities, 2> abilities_{};
     std::array<UpgradeKind, 2> upgrade_{};
     std::array<AbilityKind, 2> rolledAbility_{{AbilityKind::None, AbilityKind::None}};
-    World world_{Arena::createDuel(), 2};
+    MatchRules rules_;
+    World world_{Arena::create(MapId::Duel), 2};
     bool voting_ = false, rematch_ = false;
     std::array<int, 2> votes_{{-1, -1}};
     std::uint64_t selectionRevision_ = 0;

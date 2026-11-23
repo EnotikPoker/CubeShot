@@ -25,7 +25,9 @@ struct Bullet
     float age = 0;
     float travelled = 0;
     float collisionRadius = radius;
-    bool ignites = false;
+    bool ignites = false, twinned = false;
+    unsigned ricochets = 0, penetrations = 0;
+    float power = 1, terrainPower = 1, blastScale = 1, rangeScale = 1, spreadScale = 1;
     int impactDamage() const;
     bool returning = false;
     std::uint32_t hitMask = 0;

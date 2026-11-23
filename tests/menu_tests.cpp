@@ -71,7 +71,7 @@ void testNavigation()
     expect(menu.screen() == Screen::Main, "Escape backs out of mode selection");
     startTest(menu);
     menu.escape();
-    expect(menu.screen() == Screen::Paused && !menu.playing() && menu.buttons().size() == 4,
+    expect(menu.screen() == Screen::Paused && !menu.playing() && menu.buttons().size() == 5,
            "Escape opens pause and stops gameplay");
     menu.moveSelection(1);
     expect(menu.activate() == MenuAction::OpenSettings, "Pause requests settings");
@@ -270,7 +270,7 @@ void testMenuRendering()
     const auto capture = SDL_getenv("CUBESHOT_CAPTURE_DIR");
     for (auto screen : {Screen::Online, Screen::OnlineBrowser, Screen::Lan, Screen::Browser, Screen::Address,
                         Screen::Connecting, Screen::Lobby, Screen::Result, Screen::Paused, Screen::BotSetup,
-                        Screen::BotResult})
+                        Screen::BotResult, Screen::TestSetup})
     {
         menu.open(screen);
         if (screen == Screen::OnlineBrowser)
@@ -339,6 +339,54 @@ void testArsenalSelection()
     }
 }
 
+void testAbilityLaboratory()
+{
+    Menu menu;
+    menu.open(Screen::Maps);
+    menu.moveSelection(5);
+    menu.activate();
+    expect(menu.screen() == Screen::TestSetup && menu.buttons().size() == 24,
+           "Map picker opens ability laboratory");
+    auto activate = [&](int index)
+    {
+        menu.moveSelection(index - menu.selection());
+        return menu.activate();
+    };
+    activate(5);
+    expect(menu.testDraft().abilities[0].level(AbilityKind::SmallBody) == 1, "Plus changes only the draft");
+    expect(menu.testConfiguration().abilities[0].level(AbilityKind::SmallBody) == 0,
+           "Unapplied draft does not change the test");
+    activate(1);
+    activate(5);
+    activate(18);
+    expect(menu.testDraft().abilities[1].level(AbilityKind::SmallBody) == 1 &&
+               menu.testDraft().healthPercent[1] == 90,
+           "Every target has its own upgrades and starting HP");
+    for (unsigned page = 1; page < (abilityCount + 5) / 6; ++page)
+        activate(17);
+    expect(menu.testPage() == 5, "All 31 abilities are reachable by pagination");
+    activate(5);
+    expect(menu.testDraft().abilities[1].level(AbilityKind::SecondChance) == 1, "Last passive is editable");
+    expect(activate(22) == MenuAction::ApplyTest && menu.playing(),
+           "Apply explicitly restarts with committed configuration");
+    expect(menu.testConfiguration().abilities[0].level(AbilityKind::SmallBody) == 1 &&
+               menu.testConfiguration().abilities[1].level(AbilityKind::SecondChance) == 1,
+           "Applied builds persist for F5");
+    menu.escape();
+    activate(4);
+    expect(menu.screen() == Screen::TestSetup, "Test pause opens the same editor");
+    activate(21);
+    menu.escape();
+    expect(menu.screen() == Screen::Paused &&
+               menu.testConfiguration().abilities[1].level(AbilityKind::SecondChance) == 1,
+           "Cancel discards reset without altering the applied builds");
+    activate(4);
+    activate(21);
+    activate(22);
+    expect(menu.testConfiguration().abilities[1].levels == Abilities{}.levels,
+           "Reset all clears every build on apply");
+}
+
 } // namespace
 
 int main()
@@ -355,6 +403,7 @@ int main()
         testHeldInput();
         testMenuRendering();
         testArsenalSelection();
+        testAbilityLaboratory();
         std::cout << "Menu tests passed\n";
     }
     catch (const std::exception& error)
