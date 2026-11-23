@@ -26,6 +26,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
     auto& p = players_[edit.actor];
     auto clearHazards = [&]
     {
+        testActiveRequests_ = {};
         bullets_.clear();
         fires_.clear();
         debris_.clear();
@@ -66,6 +67,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                 if (next.actives[slot].kind != config.actives[edit.actor][slot])
                 {
                     auto old = next.actives[slot].kind;
+                    testActiveRequests_[edit.actor] &= ~(1u << slot);
                     if (old == ActiveKind::Barrier)
                         next.barrier = next.barrierTime = 0;
                     if (old == ActiveKind::Dash)
@@ -103,6 +105,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                 return false;
             fresh.grounded = collision::isSupported(fresh.bounds(), arena_.bounds, arena_.platforms);
             p = std::move(fresh);
+            testActiveRequests_[edit.actor] = 0;
             debris_.eraseOwner(p.id);
             bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
                                           [&](auto& b) { return b.shooterId == p.id; }),
@@ -173,10 +176,10 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                 slot.cooldown = 0;
             break;
         case TestOperation::UseQ:
-            p.activeRequests |= 1;
+            testActiveRequests_[edit.actor] |= 1;
             break;
         case TestOperation::UseE:
-            p.activeRequests |= 2;
+            testActiveRequests_[edit.actor] |= 2;
             break;
         case TestOperation::Clear:
             clearHazards();

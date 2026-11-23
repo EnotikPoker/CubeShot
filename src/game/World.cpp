@@ -24,6 +24,7 @@ World::World(Arena arena, std::size_t playerCount)
 
 void World::resetPlayers(bool swapSpawns)
 {
+    testActiveRequests_ = {};
     arena_.restoreTerrain();
     debris_.clear();
     fires_.clear();
@@ -127,6 +128,11 @@ void World::update(float deltaSeconds, bool damageLiving)
         for (auto& p : players_)
         {
             auto requests = p.activeRequests;
+            if (p.id <= testActiveRequests_.size())
+            {
+                requests |= testActiveRequests_[p.id - 1];
+                testActiveRequests_[p.id - 1] = 0;
+            }
             p.activeRequests = 0;
             for (unsigned slot = 0; slot < 2; ++slot)
                 if (requests & (1u << slot))

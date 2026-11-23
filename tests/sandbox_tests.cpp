@@ -32,6 +32,7 @@ int main()
                "Build preserves map and feet");
         expect(world.players()[0].actives[0].kind == ActiveKind::Barrier, "Live build equips active slots");
         world.editTest({TestOperation::UseQ, 0}, config);
+        world.clearPlayerInput(1); // The client gates held input when closing Tab.
         world.update(1.f / 120);
         expect(world.players()[0].barrier > 0 && world.players()[0].actives[0].cooldown > 0,
                "Queued sandbox cast executes on resume");

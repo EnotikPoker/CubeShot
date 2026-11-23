@@ -7,6 +7,7 @@
 #include "game/Events.h"
 #include "game/Player.h"
 
+#include <array>
 #include <random>
 #include <vector>
 
@@ -55,6 +56,7 @@ public:
     }
 
 private:
+    std::array<unsigned, 4> testActiveRequests_{};
     void castActive(Player& player, unsigned slot);
     void radialActive(Player& player, ActiveKind kind);
     void updateBleeding(float dt);
