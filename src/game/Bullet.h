@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/ActiveAbilities.h"
 #include "game/Types.h"
 #include "game/Weapon.h"
 #include <vector>
@@ -29,6 +30,10 @@ struct Bullet
     unsigned ricochets = 0, penetrations = 0;
     float power = 1, terrainPower = 1, blastScale = 1, rangeScale = 1, spreadScale = 1;
     int impactDamage() const;
+    ActiveKind active = ActiveKind::None;
+    float boomOutSpeed = 560, boomReturnSpeed = 700, boomRange = 308, returnPower = 1, legTravel = 0;
+    Vec2 launchDirection{1, 0};
+    unsigned circuits = 0;
     bool returning = false;
     std::uint32_t hitMask = 0;
 

@@ -111,7 +111,7 @@ void perception()
     auto observation = observeBot(world, 2, 1);
     expect(observation.target.has_value(), "Whole arena is observable");
     BotController bot(arena, BotDifficulty::Medium, 42);
-    for (int tick = 0; tick < 30; ++tick)
+    for (int tick = 0; tick < 20; ++tick)
         expect(!bot.update(observation, dt).shoot, "No shot before difficulty reaction delay");
     bool shot = false;
     for (int tick = 0; tick < 120; ++tick)

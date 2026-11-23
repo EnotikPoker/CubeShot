@@ -42,6 +42,6 @@ public:
     PlayerInput filter(PlayerInput input);
 
 private:
-    bool blockJump_ = false, blockShoot_ = false;
+    bool blockJump_ = false, blockShoot_ = false, blockQ_ = false, blockE_ = false;
 };
 } // namespace cubeshot::client

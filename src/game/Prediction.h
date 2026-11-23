@@ -21,7 +21,7 @@ public:
     void advance(PlayerInput input);
     std::vector<GameEvent> takeEvents();
     std::optional<GameEvent> action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
-                                    bool reload = false);
+                                    bool reload = false, unsigned activeMask = 0);
 
     const std::optional<Player>& player() const
     {
@@ -55,6 +55,7 @@ private:
         bool jump, shoot;
         bool reload;
         Vec2 aim;
+        unsigned activeMask = 0;
     };
 
     void simulate(const PredictedCommand& command, bool visuals = false);

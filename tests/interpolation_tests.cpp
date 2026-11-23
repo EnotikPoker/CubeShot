@@ -39,6 +39,13 @@ void interpolationBoundaries()
     expect(std::abs(sample.bullets[0].position.x - 170) < .001f, "Interpolate bullet position by ID");
     expect(sample.players[0].health == 80, "Health always comes from authoritative latest snapshot");
 
+    auto teleported = latest;
+    teleported.players[0].teleportRevision = 1;
+    SnapshotInterpolation jumps;
+    jumps.add(first, start);
+    jumps.add(teleported, start + 20ms);
+    expect(jumps.sample(teleported, start + 43ms).players[0].position.x == 200,
+           "Teleport positions never interpolate through walls");
     auto boundary = latest;
     boundary.round = 2;
     expect(history.sample(boundary, start + 43ms).players[0].position.x == 200,

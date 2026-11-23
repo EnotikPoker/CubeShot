@@ -99,7 +99,9 @@ std::vector<MenuButton> Menu::buttons() const
                       {U"Способность", {}, choice != WeaponChoice::Pending},
                       {choice == WeaponChoice::Ready ? U"Готов" : U"Продолжить",
                        {},
-                       choice != WeaponChoice::Pending}};
+                       choice != WeaponChoice::Pending},
+                      {U"Активная Q", {}, choice != WeaponChoice::Pending},
+                      {U"Активная E", {}, choice != WeaponChoice::Pending}};
             break;
         }
         case Screen::BotSetup:
@@ -168,7 +170,8 @@ std::vector<MenuButton> Menu::buttons() const
             result[i].bounds = {{264, 214.f + i * 56}, {432, 46}};
     if (screen_ == Screen::Armory)
         for (unsigned i = 0; i < result.size(); ++i)
-            result[i].bounds = {{166.f + i * 214, 432}, {200, 48}};
+            result[i].bounds = i < 3 ? Rect{{166.f + i * 214, 432}, {200, 30}}
+                                     : Rect{{166.f + (i - 3) * 320, 472}, {308, 30}};
     return result;
 }
 
@@ -436,6 +439,8 @@ MenuAction Menu::activate()
     else if (screen_ == Screen::Armory)
         return selection_ == 0   ? MenuAction::RollWeapon
                : selection_ == 1 ? MenuAction::RollAbility
+               : selection_ == 3 ? MenuAction::RollActiveQ
+               : selection_ == 4 ? MenuAction::RollActiveE
                                  : MenuAction::KeepWeapon;
     else if (screen_ == Screen::BotSetup)
     {

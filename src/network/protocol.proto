@@ -4,8 +4,11 @@ message Vec { float x = 1; float y = 2; }
 message DamageMark { Vec local = 1; float width = 2; float depth = 3; uint32 weapon = 4; uint32 shooter = 5; uint32 volley = 6; }
 message Surface { reserved 1; uint32 revision = 2; bool charred = 3; repeated Vec outline = 4; repeated DamageMark marks = 5; float scorch = 6; }
 message Abilities { repeated uint32 levels = 1; }
-message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; float spin = 12; float heat = 13; bool overheated = 14; float burning = 15; uint32 burn_owner = 16; reserved 17; Surface surface = 18; float motion_phase = 19; float landing = 20; float lean = 21; uint32 ammo = 22; bool reloading = 23; float reload_remaining = 24; float push_x = 25; bool driven = 26; Abilities abilities = 27; float jetpack_fuel = 28; bool jetpack_active = 29; uint32 shields = 30; uint32 air_jumps = 31; bool second_chance_used = 32; float invulnerability = 33; float damage_quiet = 34; float healing_remainder = 35; }
-message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; uint32 weapon = 7; uint32 damage = 8; float gravity = 9; uint32 volley = 10; float age = 11; bool returning = 12; uint32 hit_mask = 13; float travelled = 14; float radius = 15; bool ignites = 16; uint32 ricochets = 17; uint32 penetrations = 18; float power = 19; float terrain_power = 20; float blast_scale = 21; float range_scale = 22; float spread_scale = 23; bool twinned = 24; }
+message ActiveSlot { uint32 kind=1; float cooldown=2; }
+message Player { uint32 id = 1; Vec position = 2; Vec velocity = 3; Vec aim = 4; uint32 health = 5; bool grounded = 6; float cooldown = 7; uint32 weapon = 8; float preparation = 9; bool charging = 10; uint32 shots = 11; float spin = 12; float heat = 13; bool overheated = 14; float burning = 15; uint32 burn_owner = 16; reserved 17; Surface surface = 18; float motion_phase = 19; float landing = 20; float lean = 21; uint32 ammo = 22; bool reloading = 23; float reload_remaining = 24; float push_x = 25; bool driven = 26; Abilities abilities = 27; float jetpack_fuel = 28; bool jetpack_active = 29; uint32 shields = 30; uint32 air_jumps = 31; bool second_chance_used = 32; float invulnerability = 33; float damage_quiet = 34; float healing_remainder = 35;
+ repeated ActiveSlot active_slots=36; float barrier=37; float barrier_time=38; float bleeding=39; float bleed_tick=40; float bleed_power=41; uint32 bleed_owner=42;
+ float dash_time=43; Vec dash_direction=44; bool slamming=45; float slam_time=46; float lunge_cooldown=47; uint32 combo_hits=48; uint32 combo_target=49; float combo_time=50; uint32 teleport_revision=51; uint32 active_serial=52; uint32 slam_volley=53; uint64 slam_sequence=54; }
+message Bullet { uint64 id = 1; Vec position = 2; Vec velocity = 3; uint32 shooter = 4; float lifetime = 5; uint64 shot_sequence = 6; uint32 weapon = 7; uint32 damage = 8; float gravity = 9; uint32 volley = 10; float age = 11; bool returning = 12; uint32 hit_mask = 13; float travelled = 14; float radius = 15; bool ignites = 16; uint32 ricochets = 17; uint32 penetrations = 18; float power = 19; float terrain_power = 20; float blast_scale = 21; float range_scale = 22; float spread_scale = 23; bool twinned = 24; uint32 active=25; float boom_out=26; float boom_return=27; float boom_range=28; float return_power=29; float leg_travel=30; Vec launch_direction=31; uint32 circuits=32; }
 message Piece { uint64 id = 1; uint32 owner = 2; Vec position = 3; Vec velocity = 4; Vec size = 5; float angle = 6; float spin = 7; repeated Vec outline = 8; Vec skin_offset = 9; uint32 integrity = 10; uint32 revision = 11; bool charred = 12; uint32 kind = 13; bool eye_attached = 14; Vec eye = 15; float life = 16; float visual_scale = 17; }
 message Fire { uint64 id = 1; uint32 owner = 2; Vec position = 3; float life = 4; float radius = 5; }
 message Corpse { Piece body = 1; uint32 integrity = 2; reserved 3; uint32 cause = 4; }
@@ -18,16 +21,16 @@ message Snapshot {
   uint32 map = 15; bool voting = 16; repeated sint32 votes = 17; uint64 selection_revision = 18; uint64 state_sequence = 19;
   repeated Corpse corpses = 20; repeated Piece pieces = 21;
   repeated uint32 loadout = 22; repeated uint32 rolled = 23;
-  repeated uint32 weapon_choice = 24; repeated float spin_remaining = 25; repeated Fire fires = 26; repeated Abilities abilities = 27; repeated uint32 upgrade = 28; repeated uint32 rolled_ability = 29; uint32 wins = 30; bytes terrain_health = 31; uint64 terrain_revision = 32;
+  repeated uint32 weapon_choice = 24; repeated float spin_remaining = 25; repeated Fire fires = 26; repeated Abilities abilities = 27; repeated uint32 upgrade = 28; repeated uint32 rolled_ability = 29; uint32 wins = 30; bytes terrain_health = 31; uint64 terrain_revision = 32; repeated uint32 active_loadout=33; repeated uint32 rolled_active=34;
 }
 message Hello { string owner_token = 1; string nickname = 2; string reservation_token = 3; }
 message Welcome { uint32 player_id = 1; }
 message InputCommand { uint64 sequence = 1; float movement = 2; Vec aim = 3; bool fire_held = 4; bool jump_held = 5; }
 message Control { uint64 sequence = 1; uint32 round = 2; float movement = 3; Vec aim = 4; repeated InputCommand commands = 5; }
-message Action { uint64 sequence = 1; uint32 round = 2; bool jump = 3; bool shoot = 4; Vec aim = 5; uint64 input_sequence = 6; bool reload = 7; }
+message Action { uint64 sequence = 1; uint32 round = 2; bool jump = 3; bool shoot = 4; Vec aim = 5; uint64 input_sequence = 6; bool reload = 7; uint32 active_mask=8; }
 message Ready { bool ready = 1; uint64 selection_revision = 2; }
 message MapChoice { uint32 map = 1; bool change = 2; uint64 selection_revision = 3; }
-message GameEvent { uint64 id = 1; uint64 tick = 2; uint64 shot_sequence = 3; uint32 round = 4; uint32 kind = 5; uint32 actor = 6; uint32 target = 7; Vec position = 8; Vec direction = 9; uint32 damage = 10; uint32 weapon = 11; uint32 volley = 12; Vec local = 13; uint32 surface_revision = 14; uint32 volley_damage = 15; float radius = 16; }
+message GameEvent { uint64 id = 1; uint64 tick = 2; uint64 shot_sequence = 3; uint32 round = 4; uint32 kind = 5; uint32 actor = 6; uint32 target = 7; Vec position = 8; Vec direction = 9; uint32 damage = 10; uint32 weapon = 11; uint32 volley = 12; Vec local = 13; uint32 surface_revision = 14; uint32 volley_damage = 15; float radius = 16; uint32 active=17; }
 message Events { repeated GameEvent events = 1; }
 message WeaponChoice { bool reroll = 1; uint32 round = 2; uint64 selection_revision = 3; uint32 upgrade = 4; }
 message Empty {}

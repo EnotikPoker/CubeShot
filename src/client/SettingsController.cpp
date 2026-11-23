@@ -145,10 +145,10 @@ std::vector<SettingsItem> SettingsController::items() const
                 out.push_back({Kind::Binding,
                                a,
                                slot,
-                               {{350.f + slot * 260, 142.f + a * 40}, {192, 36}},
+                               {{350.f + slot * 260, 142.f + a * 34}, {192, 30}},
                                capturing ? U"Нажмите..." : bindingName(binding)});
                 out.push_back(
-                    {Kind::ClearBinding, a, slot, {{548.f + slot * 260, 142.f + a * 40}, {42, 36}}, U"X"});
+                    {Kind::ClearBinding, a, slot, {{548.f + slot * 260, 142.f + a * 34}, {42, 30}}, U"X"});
             }
     out.push_back({Kind::Apply, 0, 0, {{40, 434}, {270, 42}}, U"Применить"});
     out.push_back({Kind::Cancel, 0, 0, {{345, 434}, {270, 42}}, U"Отмена"});

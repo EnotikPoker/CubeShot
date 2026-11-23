@@ -10,6 +10,7 @@ struct TestConfiguration
     std::array<Abilities, 4> abilities{};
     std::array<unsigned, 4> healthPercent{{100, 100, 100, 100}};
     std::array<WeaponKind, 4> weapons{};
+    std::array<ActiveLoadout, 4> actives{};
 };
 
 enum class TestOperation
@@ -31,7 +32,10 @@ enum class TestOperation
     Cool,
     Extinguish,
     RestoreMap,
-    Clear
+    Clear,
+    ReadyActives,
+    UseQ,
+    UseE
 };
 
 struct TestEdit

@@ -193,6 +193,18 @@ std::u32string abilityTotal(AbilityKind kind, const Abilities& a)
             return U"Всего: " + number(4 * n) + U" HP/с после 3 с без урона";
         case AbilityKind::ToughSkin:
             return U"Всего: −" + number(10 * n) + U"% входящего урона";
+        case AbilityKind::WideSwing:
+            return U"Угол взмаха: +" + number(30 * n) + U"° (до 180°)";
+        case AbilityKind::Lunge:
+            return U"Импульс выпада: " + number(120 * n);
+        case AbilityKind::Bleeding:
+            return U"4 HP/с в течение 3 секунд";
+        case AbilityKind::Combo:
+            return U"Серия попаданий: до +" + number(30) + U"% урона";
+        case AbilityKind::ReturnStrike:
+            return U"Урон на возврате: +" + number(25 * n) + U"%";
+        case AbilityKind::SecondCircuit:
+            return U"Один дополнительный вылет и возврат";
         default:
             return U"Способность активна";
     }
@@ -205,10 +217,12 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     const auto slot = own - 1;
     const bool spinning = state.weaponChoice[slot] == WeaponChoice::Spinning;
     const bool ability = state.upgrade[slot] == UpgradeKind::Ability;
-    const unsigned count = ability ? abilityCount : weaponCount;
-    const unsigned result = ability
-                                ? static_cast<unsigned>(state.rolledAbility[slot])
-                                : static_cast<unsigned>(spinning ? state.rolled[slot] : state.loadout[slot]);
+    const bool active =
+        state.upgrade[slot] == UpgradeKind::ActiveQ || state.upgrade[slot] == UpgradeKind::ActiveE;
+    const unsigned count = active ? activeCount : ability ? abilityCount : weaponCount;
+    const unsigned result = active    ? unsigned(state.rolledActive[slot]) - 1
+                            : ability ? unsigned(state.rolledAbility[slot])
+                                      : unsigned(spinning ? state.rolled[slot] : state.loadout[slot]);
     const float elapsed = Match::wheelSeconds - state.spinRemaining[slot];
     const float progress = spinning ? std::clamp(elapsed / Match::wheelSeconds, 0.f, 1.f) : 1.f;
     const float destination = count * 4.f + result;
@@ -232,11 +246,13 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
             rectangle(renderer, {{x - 70, 211}, {140, 124}}, selected ? color : SDL_Color{40, 50, 66, 255}) &&
             rectangle(renderer, {{x - 67, 214}, {134, 118}}, {23, 31, 45, 255}) &&
             rectangle(renderer, {{x - 67, 323}, {134, 9}}, color);
-        ok = ok &&
-             (ability ? drawAbilityIcon(renderer, static_cast<AbilityKind>(index), {{x - 27, 228}, {54, 54}})
-                      : weaponCard(renderer, kind, x));
-        const auto name =
-            ability ? abilityDefinition(static_cast<AbilityKind>(index)).name : weaponDefinition(kind).name;
+        ok = ok && (active    ? drawActiveIcon(renderer, ActiveKind(index + 1), {{x - 27, 228}, {54, 54}})
+                    : ability ? drawAbilityIcon(renderer, static_cast<AbilityKind>(index),
+                                                {{x - 27, 228}, {54, 54}})
+                              : weaponCard(renderer, kind, x));
+        const auto name = active    ? activeDefinition(ActiveKind(index + 1)).name
+                          : ability ? abilityDefinition(static_cast<AbilityKind>(index)).name
+                                    : weaponDefinition(kind).name;
         if (textWidth(renderer, name, 1) > 128 && name.find(U' ') != std::u32string_view::npos)
         {
             auto space = name.find(U' ');
@@ -250,11 +266,13 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     SDL_SetRenderClipRect(renderer, nullptr);
     const auto shown =
         spinning && progress < 1 ? static_cast<unsigned>(std::lround(position)) % count : result;
-    const auto name = ability ? abilityDefinition(static_cast<AbilityKind>(shown)).name
-                              : weaponDefinition(static_cast<WeaponKind>(shown)).name;
-    if (ability)
+    const auto name = active    ? activeDefinition(ActiveKind(shown + 1)).name
+                      : ability ? abilityDefinition(static_cast<AbilityKind>(shown)).name
+                                : weaponDefinition(static_cast<WeaponKind>(shown)).name;
+    if (ability || active)
     {
-        const auto text = abilityDefinition(static_cast<AbilityKind>(shown)).description;
+        const auto text = active ? activeDefinition(ActiveKind(shown + 1)).description
+                                 : abilityDefinition(static_cast<AbilityKind>(shown)).description;
         if (!centeredText(renderer, text, 386, 1, muted))
             return false;
     }
@@ -266,6 +284,17 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
         if (state.weaponChoice[slot] == WeaponChoice::Revealing)
             info += U" · " +
                     asciiText(std::to_string(static_cast<int>(std::ceil(state.spinRemaining[slot])))) + U" с";
+        if (!centeredText(renderer, info, 409, 1, blue))
+            return false;
+    }
+    if (active && !spinning)
+    {
+        auto info = U"Перезарядка: " +
+                    asciiText(std::to_string(int(activeDefinition(state.rolledActive[slot]).cooldown))) +
+                    U" с";
+        if (state.weaponChoice[slot] == WeaponChoice::Revealing)
+            info += U" · Просмотр " + asciiText(std::to_string(int(std::ceil(state.spinRemaining[slot])))) +
+                    U" с";
         if (!centeredText(renderer, info, 409, 1, blue))
             return false;
     }

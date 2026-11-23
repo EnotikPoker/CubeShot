@@ -1,4 +1,5 @@
 #include "game/AttackQueries.h"
+#include "game/AttackStats.h"
 #include "game/BodyPhysics.h"
 #include "game/BotController.h"
 #include "game/BotQueries.h"
@@ -76,7 +77,7 @@ BotWeaponProfile abilityProfile(WeaponKind kind, const Abilities& abilities)
         profile.minimum *= abilities.blastRadius();
         profile.maximum *= abilities.projectileSpeed();
     }
-    else if (!meleeWeapon(kind) && kind != WeaponKind::FireBoomerang)
+    else
     {
         profile.minimum *= abilities.range();
         profile.maximum *= abilities.range();
@@ -302,14 +303,15 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
         auto at = center(target);
         float angle = std::atan2(at.y - origin.y, at.x - origin.x) + error;
         Vec2 direction{std::cos(angle), std::sin(angle)};
-        auto contact =
-            meleeContact(origin, direction, weaponDefinition(self.weapon.kind).barrel, opponent, arena);
+        auto contact = meleeContact(origin, direction, attackStats(self.weapon.kind, self.abilities).reach,
+                                    opponent, arena, attackStats(self.weapon.kind, self.abilities).halfAngle);
         if (!contact)
             return {};
         // Aim at the contacted skin, including an opponent standing on our head.
         angle = std::atan2(contact->point.y - origin.y, contact->point.x - origin.x) + error;
         direction = {std::cos(angle), std::sin(angle)};
-        if (!meleeContact(origin, direction, weaponDefinition(self.weapon.kind).barrel, opponent, arena))
+        if (!meleeContact(origin, direction, attackStats(self.weapon.kind, self.abilities).reach, opponent,
+                          arena, attackStats(self.weapon.kind, self.abilities).halfAngle))
             return {};
         return BotAim{direction, 0,
                       static_cast<float>(healthDamage(self.weapon.damage, self.abilities.power(), opponent,

@@ -68,6 +68,8 @@ PlayerInput readPlayerInput(SDL_Window* window, SDL_Renderer* renderer, const Pl
     input.jump = actionHeld(InputAction::Jump, bindings, keys, count, buttons);
     input.jetpackHeld = input.jump;
     input.shoot = actionHeld(InputAction::Shoot, bindings, keys, count, buttons);
+    input.activeQ = actionHeld(InputAction::ActiveQ, bindings, keys, count, buttons);
+    input.activeE = actionHeld(InputAction::ActiveE, bindings, keys, count, buttons);
     return input;
 }
 
@@ -111,12 +113,20 @@ InputEventState::press(const SDL_Event& event, const InputBindings& bindings)
 
 void GameplayInputGate::reset(const PlayerInput& heldInput)
 {
+    blockQ_ = heldInput.activeQ;
+    blockE_ = heldInput.activeE;
     blockJump_ = heldInput.jump;
     blockShoot_ = heldInput.shoot;
 }
 
 PlayerInput GameplayInputGate::filter(PlayerInput input)
 {
+    if (!input.activeQ)
+        blockQ_ = false;
+    if (!input.activeE)
+        blockE_ = false;
+    input.activeQ = input.activeQ && !blockQ_;
+    input.activeE = input.activeE && !blockE_;
     if (!input.jump)
         blockJump_ = false;
     if (!input.shoot)

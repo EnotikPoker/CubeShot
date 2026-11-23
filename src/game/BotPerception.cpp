@@ -35,7 +35,7 @@ BotTuning botTuning(BotDifficulty difficulty)
         case BotDifficulty::Hard:
             return {.1f, .75f, .25f, .65f};
         default:
-            return {.3f, 4, .45f, .45f};
+            return {.18f, 1.75f, .25f, .55f};
     }
 }
 
@@ -71,7 +71,15 @@ BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent)
                                       p.lean,
                                       p.invulnerability,
                                       p.airJumps,
-                                      p.secondChanceUsed};
+                                      p.secondChanceUsed,
+                                      p.actives,
+                                      p.barrier,
+                                      p.bleeding,
+                                      p.dashTime,
+                                      p.dashDirection,
+                                      p.barrierTime,
+                                      p.slamTime,
+                                      p.slamming};
     }
     for (const auto& b : world.bullets())
         if (b.shooterId != self || explosiveWeapon(b.weapon))
@@ -101,6 +109,14 @@ Player predictedTarget(const BotTarget& target)
     p.size = target.size;
     p.health = target.health;
     p.shields = target.shields;
+    p.actives = target.actives;
+    p.barrier = target.barrier;
+    p.bleeding = target.bleeding;
+    p.dashTime = target.dashTime;
+    p.dashDirection = target.dashDirection;
+    p.barrierTime = target.barrierTime;
+    p.slamTime = target.slamTime;
+    p.slamming = target.slamming;
     p.jetpackFuel = target.jetpackFuel;
     PlayerInput input;
     input.moveDirection = (target.velocity.x - target.pushX) / p.movementSpeed();

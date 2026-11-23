@@ -1,4 +1,5 @@
 #include "game/Player.h"
+#include "game/AttackStats.h"
 
 #include "game/Arena.h"
 #include "game/Collision.h"
@@ -117,6 +118,12 @@ std::optional<Bullet> Player::takeShot()
     weapon.cooldown = std::max(.03f, weapon.cooldown / (abilities.fireRate() * (1 + .15f * adrenaline())));
     applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil(),
                   -shotAim_.y * definition.recoil * abilities.recoil()});
+    if (meleeWeapon(weapon.kind) && lungeCooldown <= 0 && abilities.level(AbilityKind::Lunge))
+    {
+        float force = 120 * abilities.level(AbilityKind::Lunge);
+        applyImpulse({shotAim_.x * force, shotAim_.y * force});
+        lungeCooldown = .5f;
+    }
     return bullet;
 }
 
@@ -137,25 +144,39 @@ Bullet Player::shotPrototype(Vec2 direction, std::uint64_t sequence) const
         Bullet::radius *
         (abilities.level(AbilityKind::LargeBullets) && !meleeWeapon(weapon.kind) ? 1.5f : 1.f);
     bullet.ignites = abilities.level(AbilityKind::Incendiary) > 0;
-    bullet.power = abilities.power();
+    bullet.power =
+        abilities.power() *
+        (meleeWeapon(weapon.kind) && abilities.level(AbilityKind::Combo) ? 1 + .1f * comboHits : 1);
     bullet.terrainPower = abilities.demolition();
     bullet.blastScale = abilities.blastRadius();
     bullet.rangeScale = abilities.range();
     bullet.spreadScale = abilities.accuracy();
-    if (ballisticWeapon(weapon.kind))
+    if (ballisticWeapon(weapon.kind) || weapon.kind == WeaponKind::FireBoomerang)
     {
         bullet.twinned = abilities.level(AbilityKind::TwinShot) > 0;
         bullet.ricochets = abilities.level(AbilityKind::Ricochet);
         bullet.penetrations =
             abilities.level(AbilityKind::Penetration) + (weapon.kind == WeaponKind::Crossbow ? 1 : 0);
     }
-    if (ballisticWeapon(weapon.kind) || explosiveWeapon(weapon.kind))
+    if (ballisticWeapon(weapon.kind) || explosiveWeapon(weapon.kind) ||
+        weapon.kind == WeaponKind::FireBoomerang)
     {
         bullet.velocity.x *= abilities.projectileSpeed();
         bullet.velocity.y *= abilities.projectileSpeed();
     }
     if (weapon.kind == WeaponKind::Flamethrower)
         bullet.lifetime *= abilities.range();
+    if (weapon.kind == WeaponKind::FireBoomerang)
+    {
+        auto stats = attackStats(weapon.kind, abilities);
+        bullet.boomOutSpeed = stats.boomOut;
+        bullet.boomReturnSpeed = stats.boomReturn;
+        bullet.boomRange = stats.boomRange;
+        bullet.returnPower = stats.returnPower;
+        bullet.circuits = stats.circuits;
+        bullet.launchDirection = direction;
+        bullet.lifetime = 2.4f * abilities.range() * (1 + stats.circuits) / abilities.projectileSpeed();
+    }
     return bullet;
 }
 
@@ -261,6 +282,12 @@ void Player::applyInput(const PlayerInput& input)
     {
         return;
     }
+    if (input.activeQ && !activeHeldQ_)
+        activeRequests |= 1;
+    if (input.activeE && !activeHeldE_)
+        activeRequests |= 2;
+    activeHeldQ_ = input.activeQ;
+    activeHeldE_ = input.activeE;
     velocity.x = std::clamp(input.moveDirection, -1.0f, 1.0f) * movementSpeed() + pushX;
     jetpackHeld_ = input.jetpackHeld || input.jump;
     if (input.reload)
@@ -280,10 +307,20 @@ void Player::applyInput(const PlayerInput& input)
         shotAim_ = aimDirection;
 }
 
-void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload)
+void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload,
+                           unsigned activeMask)
 {
     if (!alive())
         return;
+    activeRequests |= activeMask & 3;
+    if (activeMask)
+        activeSequence = sequence;
+    if (activeMask)
+    {
+        float n = std::hypot(aim.x, aim.y);
+        if (n > .001f)
+            aimDirection = {aim.x / n, aim.y / n};
+    }
     if (reload)
         weapon.startReload();
     jumpRequested_ = jumpRequested_ || jump;
@@ -300,6 +337,8 @@ void Player::requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequen
 
 void Player::clearInput()
 {
+    activeRequests = 0;
+    activeHeldQ_ = activeHeldE_ = false;
     velocity.x = pushX;
     jetpackHeld_ = false;
     jetpackActive = false;
@@ -317,6 +356,30 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         return;
     }
 
+    for (auto& slot : actives)
+        slot.cooldown = std::max(0.f, slot.cooldown - deltaSeconds);
+    barrierTime = std::max(0.f, barrierTime - deltaSeconds);
+    if (barrierTime == 0)
+        barrier = 0;
+    lungeCooldown = std::max(0.f, lungeCooldown - deltaSeconds);
+    comboTime = std::max(0.f, comboTime - deltaSeconds);
+    if (comboTime == 0)
+    {
+        comboHits = 0;
+        comboTarget = 0;
+    }
+    slamTime = std::max(0.f, slamTime - deltaSeconds);
+    if (slamTime == 0)
+        slamming = false;
+    if (slamming)
+        velocity.y = fallSpeed;
+    const bool dash = dashTime > 0;
+    if (dash)
+    {
+        float ratio = std::min(dashTime, deltaSeconds) / deltaSeconds;
+        velocity = {dashDirection.x * 1250 * ratio + pushX, dashDirection.y * 1250 * ratio};
+        dashTime = std::max(0.f, dashTime - deltaSeconds);
+    }
     grounded = playerSupport || collision::isSupported(bounds(), arena.bounds, arena.platforms);
     invulnerability = std::max(0.f, invulnerability - deltaSeconds);
     damageQuiet += deltaSeconds;
@@ -365,16 +428,19 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         position.x = collision::moveHorizontally(bounds(), velocity.x * step, arena.bounds, *solids);
         const bool thrust =
             abilities.level(AbilityKind::Jetpack) && jetpackHeld_ && !grounded && jetpackFuel > 0;
-        if (thrust)
+        if (thrust && !dash)
         {
             float burn = std::min(step, jetpackFuel);
             velocity.y = std::max(-1100.f, velocity.y - 2600 * burn);
             jetpackFuel = std::max(0.f, jetpackFuel - burn);
             jetpackActive = true;
         }
-        velocity.y += gravity * step;
-        velocity.y =
-            std::min(velocity.y, fallSpeed * (abilities.level(AbilityKind::FeatherFall) ? .6f : 1.f));
+        if (!dash)
+        {
+            velocity.y += gravity * step;
+            velocity.y =
+                std::min(velocity.y, fallSpeed * (abilities.level(AbilityKind::FeatherFall) ? .6f : 1.f));
+        }
         const auto movement = collision::moveVertically(bounds(), velocity.y * step, arena.bounds, *solids);
         position.y = movement.y;
         grounded = movement.blocked && velocity.y > 0.0f;
@@ -394,7 +460,26 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         landing = std::max(0.f, landing - step * 6);
         lean += (std::clamp(velocity.x / movementSpeed(), -1.f, 1.f) - lean) * std::min(1.f, step * 14);
     }
+    if (dash)
+    {
+        velocity.x = pushX;
+        velocity.y = 0;
+    }
     weapon.update(deltaSeconds);
 }
 
+} // namespace cubeshot
+
+namespace cubeshot
+{
+void Player::setActives(const ActiveLoadout& loadout)
+{
+    if (!validActiveLoadout(loadout))
+        return;
+    for (unsigned i = 0; i < 2; ++i)
+        actives[i] = {loadout[i], 0};
+    activeRequests = 0;
+    dashTime = barrier = barrierTime = 0;
+    slamming = false;
+}
 } // namespace cubeshot

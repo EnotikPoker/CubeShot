@@ -1,4 +1,5 @@
 #include "game/AttackQueries.h"
+#include "game/AttackStats.h"
 #include "game/Collision.h"
 #include "game/World.h"
 #include <algorithm>
@@ -49,7 +50,7 @@ BlastEffect blastEffect(Vec2 at, const Player& p, const Arena& arena, PlayerId d
         effect.impulse = {dir.x / n * force, dir.y / n * force};
     }
     if (p.id == direct)
-        effect.damage = std::max(maximumDamage == 90 ? 90 : 100, effect.damage);
+        effect.damage = std::max(std::min(100, maximumDamage), effect.damage);
     return effect;
 }
 
@@ -66,7 +67,22 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
             emit(EventKind::ShieldBlock, bullet, at, player.id);
         return false;
     }
-    amount = healthDamage(amount, reflected ? 1.f : bullet.power, player, bullet.weapon, periodic);
+    amount = healthDamage(amount, reflected ? 1.f : bullet.power, player, bullet.weapon,
+                          periodic && !flags.bleeding);
+    if (player.barrier > 0)
+    {
+        float absorbed = std::min(float(amount), player.barrier);
+        player.barrier -= absorbed;
+        amount -= int(absorbed);
+        if (absorbed > 0)
+        {
+            auto shield = bullet;
+            shield.active = ActiveKind::Barrier;
+            emit(EventKind::ShieldBlock, shield, at, player.id);
+        }
+        if (amount <= 0)
+            return false;
+    }
     // Segment tracing returns the projectile centre. With a large projectile and a
     // small player that centre can be nine canonical pixels outside the skin.
     // Damage marks and blood must attach to the real posed contour, not that centre.
@@ -106,6 +122,15 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
         for (auto& attacker : players_)
             if (attacker.id == bullet.shooterId && attacker.alive())
             {
+                if (bullet.active == ActiveKind::None && meleeWeapon(bullet.weapon) &&
+                    attacker.abilities.level(AbilityKind::Bleeding))
+                {
+                    if (player.bleeding <= 0)
+                        player.bleedTick = 0;
+                    player.bleeding = 3;
+                    player.bleedPower = bullet.power;
+                    player.bleedOwner = attacker.id;
+                }
                 if (attacker.abilities.level(AbilityKind::Vampirism))
                     attacker.heal(actual * .15f);
                 if (player.abilities.level(AbilityKind::Thorns))
@@ -174,8 +199,8 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
 
 void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
 {
-    const float radius =
-        (bullet.weapon == WeaponKind::GrenadeLauncher ? 180.f : explosionRadius) * bullet.blastScale;
+    const auto explosion = explosionStats(bullet);
+    const float radius = explosion.radius;
     emit(EventKind::Explosion, bullet, at);
     events_.back().radius = radius;
     debris_.blast(at, radius);
@@ -183,8 +208,7 @@ void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
     {
         if (!player.alive())
             continue;
-        auto effect = blastEffect(at, player, arena_, direct, radius,
-                                  bullet.weapon == WeaponKind::GrenadeLauncher ? 90 : 120);
+        auto effect = blastEffect(at, player, arena_, direct, radius, explosion.damage);
         if (bullet.shooterId != player.id && player.abilities.level(AbilityKind::Stability))
         {
             effect.impulse.x *= .5f;
@@ -212,9 +236,9 @@ void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
         emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, impact, corpse.body.position,
              corpse.body.owner);
     }
-    const bool broken = arena_.damageTerrain(
-        at, (bullet.weapon == WeaponKind::GrenadeLauncher ? 96.f : 144.f) * bullet.blastScale,
-        static_cast<int>((bullet.weapon == WeaponKind::GrenadeLauncher ? 140 : 200) * bullet.terrainPower));
+    const bool broken =
+        arena_.damageTerrain(at, explosion.terrainRadius,
+                             static_cast<int>(explosion.terrainDamage * bullet.terrainPower), false, true);
     if (broken)
         emit(EventKind::SurfaceImpact, bullet, at);
 }
@@ -304,16 +328,43 @@ void World::updateFire(float dt)
 
 void World::melee(const Bullet& attack)
 {
-    const float reach = weaponDefinition(attack.weapon).barrel;
+    Abilities traits;
+    for (auto& p : players_)
+        if (p.id == attack.shooterId)
+            traits = p.abilities;
+    auto stats = attackStats(attack.weapon, traits);
+    const float reach = stats.reach;
+    bool hitHealth = false;
+    PlayerId hitTarget = 0;
     const float speed = std::hypot(attack.velocity.x, attack.velocity.y);
     const Vec2 aim{attack.velocity.x / speed, attack.velocity.y / speed};
     for (auto& player : players_)
     {
         if (!player.alive() || player.id == attack.shooterId)
             continue;
-        if (auto contact = meleeContact(attack.position, aim, reach, player, arena_))
-            damage(player, attack, contact->point, attack.damage);
+        if (auto contact = meleeContact(attack.position, aim, reach, player, arena_, stats.halfAngle))
+            if (damage(player, attack, contact->point, attack.damage))
+            {
+                hitHealth = true;
+                hitTarget = player.id;
+            }
     }
+    for (auto& owner : players_)
+        if (owner.id == attack.shooterId && owner.abilities.level(AbilityKind::Combo))
+        {
+            if (hitHealth)
+            {
+                owner.comboHits = owner.comboTarget == hitTarget ? std::min(3u, owner.comboHits + 1) : 1;
+                owner.comboTarget = hitTarget;
+                owner.comboTime = 2;
+            }
+            else
+            {
+                owner.comboHits = 0;
+                owner.comboTarget = 0;
+                owner.comboTime = 0;
+            }
+        }
     const Vec2 end{attack.position.x + aim.x * reach, attack.position.y + aim.y * reach};
     float nearestTerrain = 2;
     Vec2 at{};

@@ -177,7 +177,7 @@ bool Arena::applyTerrain(const TerrainState& state)
     return true;
 }
 
-bool Arena::damageTerrain(Vec2 at, float radius, int damage, bool fire)
+bool Arena::damageTerrain(Vec2 at, float radius, int damage, bool fire, bool explosion)
 {
     bool changed = false, topology = false;
     for (auto& c : terrain)
@@ -190,7 +190,9 @@ bool Arena::damageTerrain(Vec2 at, float radius, int damage, bool fire)
         if (distance > radius)
             continue;
         int amount =
-            std::max(1, static_cast<int>(std::lround(damage * (1 - distance / std::max(radius, .01f)))));
+            std::max(1, static_cast<int>(std::lround(
+                            damage * (c.material == Material::Metal && !fire && !explosion ? 1.25f : 1.f) *
+                            (1 - distance / std::max(radius, .01f)))));
         c.health = static_cast<std::uint8_t>(std::max(0, int(c.health) - amount));
         changed = true;
         topology |= c.health == 0;

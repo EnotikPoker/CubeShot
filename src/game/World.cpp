@@ -1,4 +1,6 @@
 #include "game/World.h"
+#include "game/AttackStats.h"
+#include "game/BoomerangMotion.h"
 
 #include "game/BodyPhysics.h"
 #include "game/Collision.h"
@@ -67,12 +69,13 @@ void World::setAbilities(PlayerId id, const Abilities& abilities)
             p.setAbilities(abilities);
 }
 
-void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload)
+void World::requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence, bool reload,
+                          unsigned activeMask)
 {
     for (auto& player : players_)
     {
         if (player.id == id)
-            player.requestAction(jump, shoot, aim, sequence, reload);
+            player.requestAction(jump, shoot, aim, sequence, reload, activeMask);
     }
 }
 
@@ -121,7 +124,22 @@ void World::update(float deltaSeconds, bool damageLiving)
         for (auto& contacts : pendingContacts_)
             contacts.clear();
         ++tick_;
+        for (auto& p : players_)
+        {
+            auto requests = p.activeRequests;
+            p.activeRequests = 0;
+            for (unsigned slot = 0; slot < 2; ++slot)
+                if (requests & (1u << slot))
+                    castActive(p, slot);
+        }
         simulateBodies(players_, arena_, step);
+        for (auto& p : players_)
+            if (p.slamming && p.grounded)
+            {
+                p.slamming = false;
+                radialActive(p, ActiveKind::Slam);
+            }
+        updateBleeding(step);
         debris_.update(step, arena_, players_);
         updateFire(step);
         updateBullets(step);
@@ -273,27 +291,46 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             bounceProjectile(bullet, at, hitBox, .55f);
             return true;
         }
-        bullet.damage = bullet.impactDamage();
+        auto impact = bullet;
+        impact.damage = bullet.impactDamage();
         bool applied = true;
         if (remains)
         {
             const auto owner = remains->fragment ? debris_.pieces()[remains->index].owner
                                                  : debris_.corpses()[remains->index].body.owner;
-            const bool broken = debris_.hit(*remains, bullet, at);
-            emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, bullet, at, owner);
+            const bool broken = debris_.hit(*remains, impact, at);
+            emit(broken ? EventKind::CorpseBreak : EventKind::CorpseHit, impact, at, owner);
         }
         else if (victim)
-            applied = damage(*victim, bullet, at, bullet.damage, incendiaryWeapon(bullet.weapon));
+        {
+            applied = damage(*victim, impact, at, impact.damage, incendiaryWeapon(bullet.weapon));
+            if (bullet.active == ActiveKind::Harpoon && damageLiving_)
+            {
+                for (const auto& owner : players_)
+                    if (owner.id == bullet.shooterId)
+                    {
+                        Vec2 delta{owner.position.x - victim->position.x,
+                                   owner.position.y - victim->position.y};
+                        float n = std::max(.01f, std::hypot(delta.x, delta.y));
+                        float force = 650 * (victim->abilities.level(AbilityKind::Stability) ? .5f : 1);
+                        victim->applyImpulse({delta.x / n * force, delta.y / n * force});
+                        emit(EventKind::ActiveCast, bullet, at, victim->id);
+                        events_.back().local = owner.weaponOrigin();
+                        events_.back().radius = 0;
+                    }
+            }
+        }
         else
         {
-            emit(EventKind::SurfaceImpact, bullet, at);
+            emit(EventKind::SurfaceImpact, impact, at);
             const auto* cell = arena_.terrainAt(at, bullet.collisionRadius + 1);
             unsigned group = cell ? cell->group : 0;
             Material material = cell ? cell->material : Material::Fixed;
             Vec2 materialContact{std::clamp(at.x, hitBox.position.x, hitBox.position.x + hitBox.size.x),
                                  std::clamp(at.y, hitBox.position.y, hitBox.position.y + hitBox.size.y)};
-            arena_.damageTerrain(materialContact, bullet.collisionRadius + 2,
-                                 static_cast<int>(bullet.damage * bullet.terrainPower),
+            arena_.damageTerrain(materialContact,
+                                 bullet.collisionRadius + (material == Material::Metal ? 4 : 2),
+                                 static_cast<int>(impact.damage * bullet.terrainPower),
                                  bullet.weapon == WeaponKind::Flamethrower);
             if (tunnelProjectile(bullet, arena_, at, group, material))
                 return true;
@@ -351,29 +388,17 @@ void World::updateBullets(float deltaSeconds)
     bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
                                   [&](Bullet& bullet)
                                   {
-                                      const Vec2 start = bullet.position;
                                       if (bullet.weapon == WeaponKind::FireBoomerang)
                                       {
-                                          if (!bullet.returning && bullet.age >= .55f)
-                                          {
-                                              bullet.returning = true;
-                                              bullet.hitMask = 0;
-                                          }
-                                          if (bullet.returning)
-                                          {
-                                              const auto owner = std::find_if(
-                                                  players_.begin(), players_.end(),
-                                                  [&](const auto& p) { return p.id == bullet.shooterId; });
-                                              if (owner == players_.end() || !owner->alive())
-                                                  return true;
-                                              const auto at = owner->weaponOrigin();
-                                              const float dx = at.x - start.x, dy = at.y - start.y;
-                                              const float distance = std::hypot(dx, dy);
-                                              if (distance < 24)
-                                                  return true;
-                                              bullet.velocity = {dx / distance * 700, dy / distance * 700};
-                                          }
+                                          const Player* owner = nullptr;
+                                          for (const auto& p : players_)
+                                              if (p.id == bullet.shooterId)
+                                                  owner = &p;
+                                          if (owner &&
+                                              !steerBoomerang(bullet, owner->weaponOrigin(), owner->alive()))
+                                              return true;
                                       }
+                                      const Vec2 start = bullet.position;
                                       bullet.update(deltaSeconds);
                                       const Vec2 destination = bullet.position;
                                       bullet.position = start;
@@ -397,6 +422,7 @@ void World::emit(EventKind kind, const Bullet& bullet, Vec2 at, PlayerId target)
     events_.push_back({nextEvent_++, tick_, bullet.shotSequence, 0, kind, bullet.shooterId, target, at,
                        len > 0 ? Vec2{bullet.velocity.x / len, bullet.velocity.y / len} : Vec2{1, 0},
                        bullet.damage, bullet.weapon, bullet.volley});
+    events_.back().active = bullet.active;
     if (target)
         for (const auto& player : players_)
             if (player.id == target)

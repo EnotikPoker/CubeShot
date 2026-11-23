@@ -166,6 +166,9 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         encodeAbilities(out.add_abilities(), s.abilities[i]);
         out.add_upgrade(static_cast<unsigned>(s.upgrade[i]));
         out.add_rolled_ability(static_cast<unsigned>(s.rolledAbility[i]));
+        for (auto kind : s.activeLoadout[i])
+            out.add_active_loadout(unsigned(kind));
+        out.add_rolled_active(unsigned(s.rolledActive[i]));
     }
     for (const auto& fire : s.fires)
     {
@@ -211,6 +214,31 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_invulnerability(p.invulnerability);
         v->set_damage_quiet(std::min(p.damageQuiet, 60.f));
         v->set_healing_remainder(p.healingRemainder);
+        for (auto slot : p.actives)
+        {
+            auto a = v->add_active_slots();
+            a->set_kind(unsigned(slot.kind));
+            a->set_cooldown(slot.cooldown);
+        }
+        v->set_barrier(p.barrier);
+        v->set_barrier_time(p.barrierTime);
+        v->set_bleeding(p.bleeding);
+        v->set_bleed_tick(p.bleedTick);
+        v->set_bleed_power(p.bleedPower);
+        v->set_bleed_owner(p.bleedOwner);
+        v->set_dash_time(p.dashTime);
+        vec(v->mutable_dash_direction(), p.dashDirection);
+        v->set_slamming(p.slamming);
+        v->set_slam_time(p.slamTime);
+        v->set_lunge_cooldown(p.lungeCooldown);
+        v->set_combo_hits(p.comboHits);
+        v->set_combo_target(p.comboTarget);
+        v->set_combo_time(p.comboTime);
+        v->set_teleport_revision(p.teleportRevision);
+        v->set_active_serial(p.activeSerial);
+        v->set_slam_volley(p.slamVolley);
+        v->set_slam_sequence(p.slamSequence);
+
         v->set_ammo(p.weapon.ammo);
         v->set_reloading(p.weapon.reloading);
         v->set_reload_remaining(p.weapon.reloadRemaining);
@@ -272,6 +300,17 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         v->set_twinned(b.twinned);
         v->set_returning(b.returning);
         v->set_hit_mask(b.hitMask);
+        v->set_active(unsigned(b.active));
+        if (b.weapon == WeaponKind::FireBoomerang)
+        {
+            v->set_boom_out(b.boomOutSpeed);
+            v->set_boom_return(b.boomReturnSpeed);
+            v->set_boom_range(b.boomRange);
+            v->set_return_power(b.returnPower);
+            v->set_leg_travel(b.legTravel);
+            vec(v->mutable_launch_direction(), b.launchDirection);
+            v->set_circuits(b.circuits);
+        }
     }
     return out;
 }
@@ -289,7 +328,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     for (auto vote : in.votes())
         if (vote < -1 || (vote >= 0 && !validMap(static_cast<MapId>(vote))))
             return {};
-    if (in.abilities_size() != 2 || in.upgrade_size() != 2 || in.rolled_ability_size() != 2)
+    if (in.active_loadout_size() != 4 || in.rolled_active_size() != 2 || in.abilities_size() != 2 ||
+        in.upgrade_size() != 2 || in.rolled_ability_size() != 2)
         return {};
     if (in.loadout_size() != 2 || in.rolled_size() != 2 || in.weapon_choice_size() != 2 ||
         in.spin_remaining_size() != 2 || in.corpses_size() > 2 || in.pieces_size() > Debris::maxPieces)
@@ -347,7 +387,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         s.loadout[i] = static_cast<WeaponKind>(in.loadout(i));
         auto abilities = decodeAbilities(in.abilities(i));
-        if (!abilities || in.upgrade(i) > 2 || in.rolled_ability(i) > abilityCount)
+        if (!abilities || in.upgrade(i) > 4 || in.rolled_ability(i) > abilityCount)
             return {};
         s.abilities[i] = *abilities;
         s.upgrade[i] = static_cast<UpgradeKind>(in.upgrade(i));
@@ -361,10 +401,19 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
              s.spinRemaining[i] > Match::wheelSeconds + .01f) ||
             (s.weaponChoice[i] == WeaponChoice::Revealing &&
              (s.upgrade[i] == UpgradeKind::Continue ||
-              s.spinRemaining[i] > (s.upgrade[i] == UpgradeKind::Ability
+              s.spinRemaining[i] > (s.upgrade[i] != UpgradeKind::Weapon
                                         ? Match::abilityReviewSeconds
                                         : Match::spinSeconds - Match::wheelSeconds) +
                                        .01f)))
+            return {};
+        for (unsigned j = 0; j < 2; ++j)
+            s.activeLoadout[i][j] = ActiveKind(in.active_loadout(i * 2 + j));
+        s.rolledActive[i] = ActiveKind(in.rolled_active(i));
+        if (!validActiveLoadout(s.activeLoadout[i]) || !validActive(s.rolledActive[i]))
+            return {};
+        if ((s.upgrade[i] == UpgradeKind::ActiveQ || s.upgrade[i] == UpgradeKind::ActiveE) &&
+            (!validActive(s.rolledActive[i], false) ||
+             s.rolledActive[i] == s.activeLoadout[i][s.upgrade[i] == UpgradeKind::ActiveQ ? 1 : 0]))
             return {};
         s.inputAck[i] = in.input_ack(i);
         s.actionAck[i] = in.action_ack(i);
@@ -400,6 +449,45 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             v.damage_quiet() > 60 || !std::isfinite(v.healing_remainder()) || v.healing_remainder() < 0 ||
             v.healing_remainder() >= 1.001f)
             return {};
+        if (v.active_slots_size() != 2)
+            return {};
+        ActiveLoadout active{};
+        for (unsigned i = 0; i < 2; ++i)
+        {
+            auto a = v.active_slots(i);
+            active[i] = ActiveKind(a.kind());
+            if (!validActive(active[i]) || !std::isfinite(a.cooldown()) || a.cooldown() < 0 ||
+                a.cooldown() > activeDefinition(active[i]).cooldown + .001f)
+                return {};
+            p.actives[i] = {active[i], a.cooldown()};
+        }
+        if (!validActiveLoadout(active))
+            return {};
+        auto bounded = [](float f, float hi) { return std::isfinite(f) && f >= 0 && f <= hi + .001f; };
+        if (!bounded(v.barrier(), 60) || !bounded(v.barrier_time(), 2) || !bounded(v.bleeding(), 3) ||
+            !bounded(v.bleed_tick(), 1) || !bounded(v.bleed_power(), 1.886f) || v.bleed_power() < 1 ||
+            v.bleed_owner() > 2 || !bounded(v.dash_time(), .16f) || !validAim(v.dash_direction()) ||
+            !bounded(v.slam_time(), 2) || !bounded(v.lunge_cooldown(), .5f) || v.combo_hits() > 3 ||
+            v.combo_target() > 2 || !bounded(v.combo_time(), 2))
+            return {};
+        p.barrier = v.barrier();
+        p.barrierTime = v.barrier_time();
+        p.bleeding = v.bleeding();
+        p.bleedTick = v.bleed_tick();
+        p.bleedPower = v.bleed_power();
+        p.bleedOwner = v.bleed_owner();
+        p.dashTime = v.dash_time();
+        p.dashDirection = vec(v.dash_direction());
+        p.slamming = v.slamming();
+        p.slamTime = v.slam_time();
+        p.lungeCooldown = v.lunge_cooldown();
+        p.comboHits = v.combo_hits();
+        p.comboTarget = v.combo_target();
+        p.comboTime = v.combo_time();
+        p.teleportRevision = v.teleport_revision();
+        p.activeSerial = v.active_serial();
+        p.slamVolley = v.slam_volley();
+        p.slamSequence = v.slam_sequence();
         p.airJumps = v.air_jumps();
         p.secondChanceUsed = v.second_chance_used();
         p.invulnerability = v.invulnerability();
@@ -480,10 +568,10 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     {
         if (!v.id() || !bullets.insert(v.id()).second || !finite(v.position()) || !finite(v.velocity()) ||
             v.shooter() < 1 || v.shooter() > 2 || !std::isfinite(v.lifetime()) || v.lifetime() <= 0 ||
-            v.lifetime() > 8.01f || v.weapon() >= weaponCount || !v.damage() || v.damage() > 100 ||
+            v.lifetime() > 10.01f || v.weapon() >= weaponCount || !v.damage() || v.damage() > 100 ||
             !std::isfinite(v.gravity()) || v.gravity() < -35 || v.gravity() > 900)
             return {};
-        if (!std::isfinite(v.age()) || v.age() < 0 || v.age() > 8.01f || v.hit_mask() > 0x6)
+        if (!std::isfinite(v.age()) || v.age() < 0 || v.age() > 10.01f || v.hit_mask() > 0x6)
             return {};
         Bullet b;
         b.id = v.id();
@@ -499,7 +587,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         if (!std::isfinite(v.travelled()) || v.travelled() < 0 || v.travelled() > 100000)
             return {};
         if (!std::isfinite(v.radius()) ||
-            (std::abs(v.radius() - 3.f) > .001f && std::abs(v.radius() - 4.5f) > .001f))
+            (std::abs(v.radius() - 3.f) > .001f && std::abs(v.radius() - 4.5f) > .001f &&
+             !(v.active() == unsigned(ActiveKind::Bomb) && std::abs(v.radius() - 5.f) < .001f)))
             return {};
         b.collisionRadius = v.radius();
         b.ignites = v.ignites();
@@ -521,6 +610,25 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         b.age = v.age();
         b.returning = v.returning();
         b.hitMask = v.hit_mask();
+        b.active = ActiveKind(v.active());
+        if (b.active != ActiveKind::None && b.active != ActiveKind::Bomb && b.active != ActiveKind::Harpoon)
+            return {};
+        if (b.weapon == WeaponKind::FireBoomerang)
+        {
+            if (!validFactor(v.boom_out(), 560, 980) || !validFactor(v.boom_return(), 700, 1225) ||
+                !validFactor(v.boom_range(), 308, 539) || !validFactor(v.return_power(), 1, 1.5f) ||
+                !validFactor(v.leg_travel(), 0, 100000) || !validAim(v.launch_direction()) ||
+                v.circuits() > 1)
+                return {};
+            b.boomOutSpeed = v.boom_out();
+            b.boomReturnSpeed = v.boom_return();
+            b.boomRange = v.boom_range();
+            b.returnPower = v.return_power();
+            b.legTravel = v.leg_travel();
+            b.launchDirection = vec(v.launch_direction());
+            b.circuits = v.circuits();
+        }
+
         s.bullets.push_back(b);
     }
     std::set<std::uint64_t> pieces;
@@ -555,6 +663,7 @@ wire::Events encodeEvents(const std::vector<GameEvent>& events)
         v->set_shot_sequence(e.shotSequence);
         v->set_round(e.round);
         v->set_kind(static_cast<unsigned>(e.kind));
+        v->set_active(unsigned(e.active));
         v->set_actor(e.actor);
         v->set_target(e.target);
         v->set_damage(e.damage);
@@ -577,17 +686,17 @@ std::optional<std::vector<GameEvent>> decodeEvents(const wire::Events& in)
     std::vector<GameEvent> result;
     for (const auto& e : in.events())
     {
-        if (!e.id() || !e.round() || e.kind() > static_cast<unsigned>(EventKind::ElectricArc) ||
-            e.actor() < 1 || e.actor() > 2 || e.target() > 2 || !finite(e.position()) ||
-            !validAim(e.direction()) || e.damage() > 1000 || e.weapon() >= weaponCount ||
-            !finite(e.local()) || !std::isfinite(e.radius()) || e.radius() < 0 || e.radius() > 400 ||
-            e.volley_damage() > 1000)
+        if (!e.id() || !e.round() || e.kind() > static_cast<unsigned>(EventKind::ActiveCast) ||
+            !validActive(ActiveKind(e.active())) || e.actor() < 1 || e.actor() > 2 || e.target() > 2 ||
+            !finite(e.position()) || !validAim(e.direction()) || e.damage() > 1000 ||
+            e.weapon() >= weaponCount || !finite(e.local()) || !std::isfinite(e.radius()) || e.radius() < 0 ||
+            e.radius() > 400 || e.volley_damage() > 1000)
             return {};
         result.push_back({e.id(), e.tick(), e.shot_sequence(), e.round(), static_cast<EventKind>(e.kind()),
                           e.actor(), e.target(), vec(e.position()), vec(e.direction()),
                           static_cast<int>(e.damage()), static_cast<WeaponKind>(e.weapon()), e.volley(),
                           vec(e.local()), e.surface_revision(), static_cast<int>(e.volley_damage()),
-                          e.radius()});
+                          e.radius(), ActiveKind(e.active())});
     }
     return result;
 }

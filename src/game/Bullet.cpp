@@ -13,7 +13,7 @@ void Bullet::update(float deltaSeconds)
     }
     float remaining = deltaSeconds;
     const auto& d = weaponDefinition(weapon);
-    const bool ordinary = ballisticWeapon(weapon);
+    const bool ordinary = active == ActiveKind::None && ballisticWeapon(weapon);
     while (remaining > 0)
     {
         const float dt = std::min(remaining, 1.f / 120);
@@ -30,6 +30,8 @@ void Bullet::update(float deltaSeconds)
         position.x += delta.x;
         position.y += delta.y;
         travelled += std::hypot(delta.x, delta.y);
+        if (!returning)
+            legTravel += std::hypot(delta.x, delta.y);
         velocity.y += g * dt;
         lifetime -= dt;
         age += dt;
@@ -42,10 +44,12 @@ int Bullet::impactDamage() const
     float factor = 1;
     if (weapon == WeaponKind::Flamethrower)
         factor = std::clamp(lifetime / .12f, 0.f, 1.f);
-    else if (ballisticWeapon(weapon) && d.effectiveRange > 0)
+    else if (active == ActiveKind::None && ballisticWeapon(weapon) && d.effectiveRange > 0)
         factor = std::clamp(1 - .9f * (travelled - d.effectiveRange * rangeScale) /
                                     (.75f * d.effectiveRange * rangeScale),
                             .1f, 1.f);
+    if (weapon == WeaponKind::FireBoomerang && returning)
+        factor *= returnPower;
     return std::max(1, static_cast<int>(std::lround(damage * factor)));
 }
 
@@ -69,6 +73,8 @@ std::vector<Bullet> scatterShot(const Bullet& prototype)
         if (prototype.twinned)
             bullet.damage = std::max(1, static_cast<int>(std::lround(bullet.damage * .65f)));
         bullet.velocity = {std::cos(angle) * speed, std::sin(angle) * speed};
+        if (bullet.weapon == WeaponKind::FireBoomerang)
+            bullet.launchDirection = {std::cos(angle), std::sin(angle)};
         result.push_back(bullet);
     }
     return result;

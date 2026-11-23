@@ -9,35 +9,45 @@
 namespace cubeshot
 {
 std::optional<MeleeContact> meleeContact(Vec2 origin, Vec2 direction, float reach, const Player& target,
-                                         const Arena& arena)
+                                         const Arena& arena, float halfAngle)
 {
-    const auto outline = target.bodyContour();
-    Vec2 at{};
-    float nearest = 1e9f;
-    for (std::size_t n = 0; n < outline.size(); ++n)
+    auto polygon = target.bodyContour();
+    std::optional<MeleeContact> result;
+    auto consider = [&](Vec2 point)
     {
-        Vec2 a{outline[n].x + target.position.x, outline[n].y + target.position.y},
-            b{outline[(n + 1) % outline.size()].x + target.position.x,
-              outline[(n + 1) % outline.size()].y + target.position.y};
+        float dx = point.x - origin.x, dy = point.y - origin.y, n = std::hypot(dx, dy);
+        if (n > reach ||
+            (n > .001f && (dx * direction.x + dy * direction.y) / n < std::cos(halfAngle) - .0001f))
+            return;
+        for (auto& wall : arena.platforms)
+            if (auto t = collision::segmentHit(origin, point, wall, 0); t && *t < .98f)
+                return;
+        if (!result || n < result->distance)
+            result = MeleeContact{point, n};
+    };
+    for (std::size_t i = 0; i < polygon.size(); ++i)
+    {
+        Vec2 a{polygon[i].x + target.position.x, polygon[i].y + target.position.y},
+            b{polygon[(i + 1) % polygon.size()].x + target.position.x,
+              polygon[(i + 1) % polygon.size()].y + target.position.y};
         float dx = b.x - a.x, dy = b.y - a.y;
         float t = std::clamp(
-            ((origin.x - a.x) * dx + (origin.y - a.y) * dy) / std::max(.00001f, dx * dx + dy * dy), 0.f, 1.f);
-        Vec2 point{a.x + dx * t, a.y + dy * t};
-        float d = std::hypot(point.x - origin.x, point.y - origin.y);
-        if (d < nearest)
+            ((origin.x - a.x) * dx + (origin.y - a.y) * dy) / std::max(.0001f, dx * dx + dy * dy), 0.f, 1.f);
+        consider(a);
+        consider({a.x + dx * t, a.y + dy * t});
+        for (float sign : {-1.f, 1.f})
         {
-            nearest = d;
-            at = point;
+            float angle = std::atan2(direction.y, direction.x) + sign * halfAngle;
+            Vec2 ray{std::cos(angle), std::sin(angle)};
+            float den = dx * ray.y - dy * ray.x;
+            if (std::abs(den) < .00001f)
+                continue;
+            float fraction = ((origin.x - a.x) * ray.y - (origin.y - a.y) * ray.x) / den;
+            if (fraction >= 0 && fraction <= 1)
+                consider({a.x + dx * fraction, a.y + dy * fraction});
         }
     }
-    if (nearest > reach ||
-        (nearest > .001f &&
-         ((at.x - origin.x) * direction.x + (at.y - origin.y) * direction.y) / nearest < .7f))
-        return {};
-    for (const auto& wall : arena.platforms)
-        if (auto t = collision::segmentHit(origin, at, wall, 0); t && *t < .98f)
-            return {};
-    return MeleeContact{at, nearest};
+    return result;
 }
 
 int healthDamage(int amount, float power, const Player& target, WeaponKind weapon, bool periodic)

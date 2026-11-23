@@ -34,7 +34,9 @@ enum class UpgradeKind
 {
     Continue,
     Weapon,
-    Ability
+    Ability,
+    ActiveQ,
+    ActiveE
 };
 
 struct MatchRules
@@ -76,6 +78,8 @@ struct WorldSnapshot
     std::array<AbilityKind, 2> rolledAbility{{AbilityKind::None, AbilityKind::None}};
     MatchRules rules;
     TerrainState terrain;
+    std::array<ActiveLoadout, 2> activeLoadout{};
+    std::array<ActiveKind, 2> rolledActive{};
 };
 
 // Чистые правила дуэли. Сеть назначает слоты; только сервер меняет Match.
@@ -102,7 +106,7 @@ public:
     void setInput(PlayerId id, const PlayerInput& input);
     void clearInput(PlayerId id);
     bool action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
-                bool reload = false);
+                bool reload = false, unsigned activeMask = 0);
     void update(float dt);
     bool chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision);
     bool chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, std::uint64_t revision);
@@ -132,6 +136,8 @@ private:
     std::array<Abilities, 2> abilities_{};
     std::array<UpgradeKind, 2> upgrade_{};
     std::array<AbilityKind, 2> rolledAbility_{{AbilityKind::None, AbilityKind::None}};
+    std::array<ActiveLoadout, 2> activeLoadout_{};
+    std::array<ActiveKind, 2> rolledActive_{};
     MatchRules rules_;
     World world_{Arena::create(MapId::Duel), 2};
     bool voting_ = false, rematch_ = false;

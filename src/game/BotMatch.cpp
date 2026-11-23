@@ -32,9 +32,9 @@ void BotMatch::control(const PlayerInput& input)
     match_.setInput(1, input);
 }
 
-void BotMatch::action(bool jump, bool shoot, Vec2 aim, bool reload)
+void BotMatch::action(bool jump, bool shoot, Vec2 aim, bool reload, unsigned activeMask)
 {
-    match_.action(1, match_.round(), ++humanSequence_, jump, shoot, aim, reload);
+    match_.action(1, match_.round(), ++humanSequence_, jump, shoot, aim, reload, activeMask);
 }
 
 bool BotMatch::chooseWeapon(bool reroll)
@@ -75,9 +75,10 @@ void BotMatch::update(float dt)
             match_.setInput(2, input);
             if (input.reload)
                 match_.action(2, match_.round(), ++botSequence_, false, false, input.aimDirection, true);
-            if (input.jump || (input.shoot && !botHeld_))
+            unsigned activeMask = (input.activeQ ? 1 : 0) | (input.activeE ? 2 : 0);
+            if (input.jump || (input.shoot && !botHeld_) || activeMask)
                 match_.action(2, match_.round(), ++botSequence_, input.jump, input.shoot && !botHeld_,
-                              input.aimDirection);
+                              input.aimDirection, false, activeMask);
             botHeld_ = input.shoot;
         }
         if (match_.phase() == MatchPhase::Armory)
@@ -85,13 +86,39 @@ void BotMatch::update(float dt)
             auto state = match_.snapshot();
             if (state.weaponChoice[1] == WeaponChoice::Pending)
             {
-                bool weapon = std::bernoulli_distribution(state.winner == 2 ? .25 : .65)(upgradeRandom_);
-                auto kind = weapon ? UpgradeKind::Weapon : UpgradeKind::Ability;
+                auto kind = chooseBotUpgrade(state, 2, history_);
                 if (!match_.chooseUpgrade(2, kind, state.round, state.selectionRevision))
                     match_.chooseWeapon(2, false, state.round, state.selectionRevision);
             }
         }
+        auto beforePhase = match_.phase();
+        auto before = match_.world().players();
+        if (beforePhase == MatchPhase::Round)
+        {
+            roundStats_.seconds += delta;
+            auto a = before[1].weaponOrigin(), b = before[0].weaponOrigin();
+            if (std::hypot(a.x - b.x, a.y - b.y) <
+                botWeaponProfile(before[1].weapon.kind).maximum * before[1].abilities.range())
+                roundStats_.inReach += delta;
+        }
         match_.update(delta);
+        if (beforePhase == MatchPhase::Round)
+        {
+            auto after = match_.world().players();
+            roundStats_.damage += std::max(0, before[0].health - after[0].health);
+            auto lost = std::max(0, before[1].health - after[1].health);
+            roundStats_.taken += lost;
+            if (after[1].lastDamageActor == 2)
+                roundStats_.selfDamage += lost;
+            roundStats_.shots += after[1].weapon.shots - before[1].weapon.shots;
+            if (match_.phase() != MatchPhase::Round)
+            {
+                history_.push_back(roundStats_);
+                if (history_.size() > 3)
+                    history_.pop_front();
+                roundStats_ = {};
+            }
+        }
     }
 }
 
@@ -100,6 +127,8 @@ void BotMatch::rematch(const std::string& nickname)
     if (!nickname.empty())
         nickname_ = nickname;
     accumulator_ = 0;
+    history_.clear();
+    roundStats_ = {};
     match_.setReady(1, true);
     match_.setReady(2, true);
     bot_.reset();

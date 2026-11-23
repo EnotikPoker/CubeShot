@@ -263,19 +263,23 @@ void liveRoundChange()
         }
         if (state.phase == MatchPhase::Round && state.round >= 2)
         {
-            rolled = rolled || state.players[1].weapon.kind != WeaponKind::Pistol;
+            rolled = rolled || state.players[1].weapon.kind != WeaponKind::Pistol ||
+                     state.activeLoadout[1][0] != ActiveKind::None ||
+                     state.activeLoadout[1][1] != ActiveKind::None ||
+                     std::any_of(state.abilities[1].levels.begin(), state.abilities[1].levels.end(),
+                                 [](auto n) { return n > 0; });
             secondHit = secondHit || state.players[0].health < 100;
         }
         game.update(dt);
         for (const auto& event : game.takeEvents())
-            if (event.kind == EventKind::Shot && event.actor == 2 && event.weapon != WeaponKind::Pistol)
+            if (event.kind == EventKind::Shot && event.actor == 2)
             {
                 secondShot = secondShot || event.round >= 2;
                 thirdShot = thirdShot || event.round >= 3;
             }
     }
     expect(rolled && secondShot && secondHit && thirdShot,
-           "A real bot match loses the pistol round, rolls a new weapon, attacks in round two and correctly "
+           "A real bot match loses the pistol round, improves its build, attacks in round two and correctly "
            "reuses it after the next reset");
 }
 

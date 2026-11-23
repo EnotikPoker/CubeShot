@@ -1,8 +1,10 @@
 #include "client/SceneRenderer.h"
+#include "client/AbilityUI.h"
 #include "client/Effects.h"
 #include "client/UiText.h"
 #include "client/VisualAssets.h"
 #include "client/WorldView.h"
+#include "game/AttackStats.h"
 #include "game/Collision.h"
 #include "game/Match.h"
 #include "game/World.h"
@@ -240,10 +242,13 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
         return false;
     if (meleeWeapon(kind))
     {
-        const float swing = pose.shot > 0 ? std::sin(pose.shot / .1f * 3.14159f) * 1.4f - .7f : -.5f;
+        const float swing = pose.shot > 0 ? std::sin(pose.shot / .1f * 3.14159f) *
+                                                    attackStats(kind, player.abilities).halfAngle * 2 -
+                                                attackStats(kind, player.abilities).halfAngle
+                                          : -.5f;
         const float angle = std::atan2(aim.y, aim.x) + (mirror ? -swing : swing);
         aim = {std::cos(angle), std::sin(angle)};
-        const float drawn = kind == WeaponKind::Knife ? 26 : kind == WeaponKind::Katana ? 64 : 51;
+        const float drawn = attackStats(kind, player.abilities).reach / player.bodyScale();
         if (!part(-1, -5, 18, 10, {.04f, .06f, .08f, 1}, mirror) ||
             !part(13, kind == WeaponKind::Bat ? -8.f : -4.f, drawn - 12, kind == WeaponKind::Bat ? 16.f : 8.f,
                   {.04f, .06f, .08f, 1}, mirror))
@@ -582,6 +587,15 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         color.r += (1 - color.r) * hit;
         color.g += (1 - color.g) * hit;
         color.b += (1 - color.b) * hit;
+        if (player.barrier > 0)
+        {
+            auto at = player.position;
+            float w = player.size.x, h = player.size.y;
+            p.line({at.x - 3, at.y - 3}, {at.x + w + 3, at.y - 3}, 2, {103, 211, 245, 210});
+            p.line({at.x - 3, at.y + h + 3}, {at.x + w + 3, at.y + h + 3}, 2, {103, 211, 245, 210});
+            p.line({at.x - 3, at.y - 3}, {at.x - 3, at.y + h + 3}, 2, {103, 211, 245, 210});
+            p.line({at.x + w + 3, at.y - 3}, {at.x + w + 3, at.y + h + 3}, 2, {103, 211, 245, 210});
+        }
         const auto shape = player.bodyContour();
         p.ellipse({player.position.x + player.size.x / 2, player.position.y + player.size.y + 1},
                   player.size.x / 2, 3, {7, 17, 26, 90});
@@ -660,6 +674,13 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         const float scale = b.collisionRadius / Bullet::radius;
         const float speed = std::hypot(b.velocity.x, b.velocity.y);
         const Vec2 dir = speed > .001f ? Vec2{b.velocity.x / speed, b.velocity.y / speed} : Vec2{1, 0};
+        if (b.active == ActiveKind::Harpoon)
+        {
+            p.line({b.position.x - dir.x * 24, b.position.y - dir.y * 24}, b.position, 2,
+                   {.5f, .85f, .95f, 1});
+            p.part(b.position, dir, -2, -5, 8, 10, {.8f, .95f, 1, 1});
+            continue;
+        }
         if (b.weapon == WeaponKind::GrenadeLauncher)
         {
             p.ellipse(b.position, 6 * scale, 6 * scale, {99, 128, 68, 255});
@@ -793,6 +814,8 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
             p.rect({{hp.x - 1, hp.y - 1}, {player.size.x + 2, 8}}, {10, 20, 30, 255});
             p.rect({hp, {player.size.x, 6}}, {80, 35, 45, 255});
             p.rect({hp, {player.size.x * fraction, 6}}, {85, 210, 125, 255});
+            if (player.barrier > 0)
+                p.rect({{hp.x, hp.y - 5}, {player.size.x * player.barrier / 60, 3}}, {103, 211, 245, 255});
             if (player.abilities.level(AbilityKind::Jetpack))
             {
                 p.rect({{hp.x, hp.y - 25}, {player.size.x, 3}}, {26, 48, 62, 255});
@@ -840,6 +863,28 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
             at.x = std::clamp(at.x, 2.f, std::max(2.f, 958 - textWidth(renderer, label, 1)));
             at.y = std::clamp(at.y, 2.f, 522.f);
             labels = labels && drawText(renderer, label, at, 1, {207, 233, 249, 255});
+        }
+    for (const auto& player : players)
+        if (player.alive())
+        {
+            auto at = p.view.toScreen(
+                {player.position.x,
+                 player.position.y - (player.abilities.level(AbilityKind::Jetpack) ? 80.f : 60.f)});
+            at.y = std::max(1.f, at.y);
+            at.x = std::clamp(at.x, 1.f, 928.f);
+            for (unsigned i = 0; i < 2; ++i)
+                if (player.actives[i].kind != ActiveKind::None)
+                {
+                    Rect box{{at.x + i * 17, at.y}, {13, 13}};
+                    labels = labels && drawActiveIcon(renderer, player.actives[i].kind, box);
+                    SDL_SetRenderDrawColor(renderer, player.actives[i].cooldown > 0 ? 90 : 100,
+                                           player.actives[i].cooldown > 0 ? 100 : 210,
+                                           player.actives[i].cooldown > 0 ? 110 : 240, 255);
+                    float ready = 1 - player.actives[i].cooldown /
+                                          std::max(.01f, activeDefinition(player.actives[i].kind).cooldown);
+                    SDL_FRect bar{box.position.x, box.position.y + 14, 13 * ready, 2};
+                    SDL_RenderFillRect(renderer, &bar);
+                }
         }
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
     return labels && rendered && (!present || SDL_RenderPresent(renderer));

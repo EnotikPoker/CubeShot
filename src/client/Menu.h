@@ -44,6 +44,8 @@ enum class MenuAction
     BotRematch,
     RollWeapon,
     RollAbility,
+    RollActiveQ,
+    RollActiveE,
     KeepWeapon,
     Quit,
     CreateRoom,
@@ -110,6 +112,11 @@ public:
 
     void openTestPanel(bool live, Screen returnScreen);
     void completeTestEdit(bool success);
+
+    void testActiveStatus(std::u32string text)
+    {
+        testPanel_.activeState(std::move(text));
+    }
 
     void testStatus(std::u32string value)
     {

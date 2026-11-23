@@ -7,6 +7,7 @@ namespace cubeshot::client
 {
 void Effects::clear()
 {
+    predictedActives_.clear();
     *this = Effects{};
 }
 
@@ -163,6 +164,34 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
             poses_[e.actor].shot = .1f;
             if (shake && e.actor == own)
                 shake_ = std::max(shake_, meleeWeapon(e.weapon) ? 1.5f : 2.5f);
+        }
+        else if (e.kind == EventKind::ActiveCast)
+        {
+            auto key = std::make_tuple(e.round, e.actor, e.shotSequence, unsigned(e.active), e.radius > 0);
+            if (e.actor == own && e.shotSequence)
+            {
+                if (e.id && predictedActives_.erase(key))
+                    continue;
+                if (!e.id && !predictedActives_.insert(key).second)
+                    continue;
+                if (predictedActives_.size() > 128)
+                    predictedActives_.erase(predictedActives_.begin());
+            }
+            if (e.active == ActiveKind::Blink || e.active == ActiveKind::Dash ||
+                e.active == ActiveKind::Harpoon)
+            {
+                if (arcs_.size() < 16)
+                    arcs_.push_back({e.local, e.position, .18f});
+            }
+            else if ((e.active == ActiveKind::Wave || e.active == ActiveKind::Slam) && e.radius > 0)
+            {
+                if (blasts_.size() < 16)
+                    blasts_.push_back({e.position, .3f, e.radius});
+                if (shake && e.actor == own)
+                    shake_ = std::max(shake_, 2.f);
+            }
+            else if (e.active == ActiveKind::Heal || e.active == ActiveKind::Barrier)
+                poses_[e.actor].shield = .3f;
         }
         else if (e.kind == EventKind::ElectricArc)
         {

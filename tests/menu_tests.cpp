@@ -324,9 +324,19 @@ void testArsenalSelection()
                    SDL_RenderPresent(renderer.get()),
                "Every roulette result fits the clipped card strip");
     }
+    state.upgrade[0] = UpgradeKind::ActiveQ;
+    for (unsigned i = 1; i <= activeCount; ++i)
+    {
+        state.rolledActive[0] = ActiveKind(i);
+        state.weaponChoice[0] = WeaponChoice::Revealing;
+        state.spinRemaining[0] = 5;
+        menu.networkState(state, 1);
+        expect(renderMenu(renderer.get(), menu) && SDL_RenderPresent(renderer.get()),
+               "Every active result and description renders");
+    }
     state.weaponChoice[0] = WeaponChoice::Pending;
     menu.networkState(state, 1);
-    expect(menu.buttons().size() == 3, "Intermission offers weapon, ability or continue");
+    expect(menu.buttons().size() == 5, "Intermission offers weapon, passive, Q, E or continue");
     menu.moveSelection(1);
     expect(menu.activate() == MenuAction::RollAbility, "Ability button sends the distinct upgrade choice");
     state.upgrade[0] = UpgradeKind::Ability;
@@ -377,12 +387,22 @@ void testAbilityLaboratory()
                 return click(i);
         throw std::runtime_error("Missing test control");
     };
-    click(9);
+    label(U"Активные");
+    label(U"Рывок");
+    expect(menu.testDraft().actives[0][0] == ActiveKind::Dash, "Test editor equips Q");
+    label(U"E · Пусто");
+    label(U"Лечение");
+    expect(menu.testDraft().actives[0][1] == ActiveKind::Heal, "Test editor equips independent E");
+    for (auto button : menu.buttons())
+        if (button.label == U"Рывок")
+            expect(button.placeholder, "Other active slot cannot duplicate Q");
+    label(U"Способности");
+    click(10);
     expect(menu.testDraft().abilities[0].level(AbilityKind::SmallBody) == 1 &&
                menu.testConfiguration().abilities[0].level(AbilityKind::SmallBody) == 0,
            "Pre-match panel edits a transactional draft");
     click(1);
-    click(9);
+    click(10);
     click(6);
     label(U"HP −10%");
     expect(menu.testDraft().abilities[1].level(AbilityKind::SmallBody) == 1 &&
@@ -395,7 +415,7 @@ void testAbilityLaboratory()
     click(4);
     for (unsigned i = 0; i < 5; ++i)
         label(U"Следующая");
-    click(9);
+    click(10);
     expect(menu.testDraft().abilities[1].level(AbilityKind::SecondChance) == 1, "Last passive is editable");
     expect(label(U"Применить и начать") == MenuAction::ApplyTest && menu.playing(),
            "Apply starts committed setup");

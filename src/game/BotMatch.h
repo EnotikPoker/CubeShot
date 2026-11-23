@@ -1,5 +1,6 @@
 #pragma once
 #include "game/BotController.h"
+#include "game/BotUpgrades.h"
 #include "game/Match.h"
 #include <random>
 #include <string>
@@ -12,7 +13,7 @@ public:
     BotMatch(MapId map, BotDifficulty difficulty, std::string nickname, std::uint32_t seed,
              MatchRules rules = {});
     void control(const PlayerInput& input);
-    void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
+    void action(bool jump, bool shoot, Vec2 aim, bool reload = false, unsigned activeMask = 0);
     void clearInput();
     bool chooseWeapon(bool reroll);
     bool chooseUpgrade(UpgradeKind kind);
@@ -31,5 +32,7 @@ private:
     std::uint32_t round_ = 0;
     double accumulator_ = 0;
     bool botHeld_ = false;
+    std::deque<BotRoundStats> history_;
+    BotRoundStats roundStats_;
 };
 } // namespace cubeshot

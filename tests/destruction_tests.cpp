@@ -35,7 +35,7 @@ void shoot(World& w, float duration = 1)
 
 int main()
 {
-    expect(abilityCount == 31 && weaponCount == 17, "Expanded content catalog");
+    expect(abilityCount == 37 && weaponCount == 17, "Expanded content catalog");
     for (auto id : playableMaps(true))
     {
         auto a = Arena::create(id, true);
@@ -168,8 +168,8 @@ int main()
         World chain(metal, 2);
         chain.equip(1, WeaponKind::Electric);
         shoot(chain, .1f);
-        expect(chain.players()[1].health == 64 && chain.arena().terrain[0].health == 5,
-               "Metal relays a weakened electrical hit behind the cover");
+        expect(chain.players()[1].health == 64 && chain.arena().terrain[0].health == 0,
+               "Metal relays a weakened electrical hit while the stronger direct impact destroys its cover");
         auto wood = metal;
         for (auto& c : wood.terrain)
         {

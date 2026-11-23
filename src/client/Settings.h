@@ -15,6 +15,8 @@ enum class InputAction
     Shoot,
     Restart,
     Reload,
+    ActiveQ,
+    ActiveE,
     Count
 };
 enum class BindingDevice
