@@ -38,7 +38,8 @@ WorldSnapshot SnapshotInterpolation::sample(const WorldSnapshot& latest, Clock::
             auto to = std::find_if(b.second.players.begin(), b.second.players.end(),
                                    [&](const auto& v) { return v.id == p.id; });
             if (from != a.second.players.end() && to != b.second.players.end() && p.alive() &&
-                from->teleportRevision == to->teleportRevision)
+                from->teleportRevision == to->teleportRevision && from->lifeRevision == to->lifeRevision &&
+                from->alive() && to->alive())
             {
                 p.position = lerp(from->position, to->position);
                 p.velocity = lerp(from->velocity, to->velocity);

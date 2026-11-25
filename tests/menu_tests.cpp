@@ -1,3 +1,5 @@
+#include "client/AbilityUI.h"
+#include "client/BuildInspector.h"
 #include "client/Input.h"
 #include "client/Menu.h"
 #include "client/MenuRenderer.h"
@@ -438,6 +440,41 @@ void testAbilityLaboratory()
            "Pre-match cancel discards draft");
 }
 
+void compactHud()
+{
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface(
+        SDL_CreateSurface(960, 540, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
+    std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer(
+        SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
+    VisualAssets art(renderer.get());
+    Player p;
+    p.id = 1;
+    Abilities maximum;
+    for (unsigned i = 0; i < abilityCount; ++i)
+        maximum.levels[i] = abilityDefinition(AbilityKind(i)).maximum;
+    p.setAbilities(maximum);
+    p.setActives({ActiveKind::IceGrenade, ActiveKind::Screen});
+    p.actives[0].cooldown = 8;
+    SDL_SetRenderDrawColor(renderer.get(), 31, 47, 65, 255);
+    SDL_RenderClear(renderer.get());
+    expect(drawWeaponHud(renderer.get(), p) && drawActiveHud(renderer.get(), p, {U"Mouse 5", U"Left Shift"}),
+           "Full build and long bindings fit compact HUD");
+    SDL_RenderPresent(renderer.get());
+    for (int y = 0; y < 476; ++y)
+        for (int x = 0; x < 960; x += 11)
+        {
+            SDL_Color c;
+            SDL_ReadSurfacePixel(surface.get(), x, y, &c.r, &c.g, &c.b, &c.a);
+            expect(c.r == 31 && c.g == 47 && c.b == 65,
+                   "HUD never paints over scene, even with all passives at max level");
+        }
+    std::vector<Player> players{p, p};
+    players[1].id = 2;
+    expect(drawBuildInspector(renderer.get(), players, {U"ОченьДлинныйНик", U"AnotherLongName"}, {37, 0},
+                              {100, 100}),
+           "Both build columns render independently at different scroll offsets");
+}
+
 } // namespace
 
 int main()
@@ -455,6 +492,7 @@ int main()
         testMenuRendering();
         testArsenalSelection();
         testAbilityLaboratory();
+        compactHud();
         std::cout << "Menu tests passed\n";
     }
     catch (const std::exception& error)

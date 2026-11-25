@@ -46,6 +46,13 @@ void interpolationBoundaries()
     jumps.add(teleported, start + 20ms);
     expect(jumps.sample(teleported, start + 43ms).players[0].position.x == 200,
            "Teleport positions never interpolate through walls");
+    auto respawned = latest;
+    respawned.players[0].lifeRevision = 1;
+    SnapshotInterpolation lives;
+    lives.add(first, start);
+    lives.add(respawned, start + 20ms);
+    expect(lives.sample(respawned, start + 43ms).players[0].position.x == 200,
+           "New-life positions never interpolate from the previous body");
     auto boundary = latest;
     boundary.round = 2;
     expect(history.sample(boundary, start + 43ms).players[0].position.x == 200,

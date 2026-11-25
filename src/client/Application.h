@@ -54,6 +54,7 @@ private:
     Effects effects_;
     bool wasConnected_ = false;
     Menu menu_;
+    std::array<int, 2> buildScroll_{};
     GameplayInputGate inputGate_;
     InputEventState eventInput_;
     SettingsController settings_;

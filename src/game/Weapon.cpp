@@ -17,13 +17,28 @@ bool explosiveWeapon(WeaponKind kind)
 
 bool ballisticWeapon(WeaponKind kind)
 {
-    return static_cast<unsigned>(kind) <= static_cast<unsigned>(WeaponKind::Minigun) ||
-           kind == WeaponKind::Crossbow;
+    switch (kind)
+    {
+        case WeaponKind::Pistol:
+        case WeaponKind::Shotgun:
+        case WeaponKind::Automatic:
+        case WeaponKind::Smg:
+        case WeaponKind::Revolver:
+        case WeaponKind::Rifle:
+        case WeaponKind::Sniper:
+        case WeaponKind::Minigun:
+        case WeaponKind::Crossbow:
+        case WeaponKind::Disc:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool meleeWeapon(WeaponKind kind)
 {
-    return kind == WeaponKind::Bat || kind == WeaponKind::Katana || kind == WeaponKind::Knife;
+    return kind == WeaponKind::Bat || kind == WeaponKind::Katana || kind == WeaponKind::Knife ||
+           kind == WeaponKind::Hammer;
 }
 
 bool incendiaryWeapon(WeaponKind kind)
@@ -50,7 +65,11 @@ const WeaponDefinition& weaponDefinition(WeaponKind kind)
          {U"Огненный бумеранг", 20, 1, 1.8f, 560, 2.4f, 0, 0, 30, 0, false},
          {U"Гранатомёт", 90, 1, .9f, 420, 1.5f, 0, 900, 42, 0, false, 4, 2.6f, 0, 100},
          {U"Арбалет", 65, 1, 1.f, 1300, 8, .1f, 180, 48, 0, false, 5, 2.4f, 1500, 60},
-         {U"Электропушка", 55, 1, .7f, 1800, .1f, 0, 0, 42, 0, false, 8, 2.4f, 600, 30}}};
+         {U"Электропушка", 55, 1, .7f, 1800, .1f, 0, 0, 42, 0, false, 8, 2.4f, 600, 30},
+         {U"Лучемёт", 3, 1, .05f, 1800, .1f, 0, 0, 40, 0, true, 60, 2.2f, 560, 0},
+         {U"Дискомёт", 32, 1, .55f, 800, 2, 0, 0, 34, 0, false, 8, 1.8f, 1100, 30},
+         {U"Тяжёлый молот", 45, 1, .85f, 1000, .1f, 0, 0, 108, 0, false},
+         {U"Липкомёт", 5, 1, .75f, 520, 2.5f, 0, 650, 40, 0, false, 4, 2.4f, 0, 45}}};
     return definitions[validWeapon(kind) ? static_cast<unsigned>(kind) : 0];
 }
 
@@ -86,12 +105,12 @@ int Weapon::capacity() const
 
 float Weapon::reloadDuration() const
 {
-    return weaponDefinition(kind).reloadTime / (1 + .25f * reloadLevel);
+    return weaponDefinition(kind).reloadTime * reloadFactor / (1 + .25f * reloadLevel);
 }
 
 float Weapon::reloadSetup() const
 {
-    return kind == WeaponKind::Shotgun ? .35f / (1 + .25f * reloadLevel) : 0;
+    return kind == WeaponKind::Shotgun ? .35f * reloadFactor / (1 + .25f * reloadLevel) : 0;
 }
 
 bool Weapon::startReload()

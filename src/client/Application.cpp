@@ -1,11 +1,13 @@
 #include "client/Application.h"
 #include "client/AbilityUI.h"
+#include "client/BuildInspector.h"
 #include "client/MenuRenderer.h"
 #include "client/SceneRenderer.h"
 #include "client/SettingsRenderer.h"
 #include "client/SettingsStore.h"
 #include "client/UiText.h"
 #include "client/WorldView.h"
+#include "network/Identity.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -328,6 +330,17 @@ int Application::run()
                 settings_.event(event, window_, renderer_);
             if ((SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) == 0)
                 continue;
+            if (event.type == SDL_EVENT_MOUSE_WHEEL && SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] &&
+                (connections_.session() || bots_.match()))
+            {
+                float mx = 0, my = 0;
+                SDL_GetMouseState(&mx, &my);
+                Vec2 logical;
+                SDL_RenderCoordinatesFromWindow(renderer_, mx, my, &logical.x, &logical.y);
+                auto slot = logical.x < 480 ? 0 : 1;
+                buildScroll_[slot] =
+                    std::clamp(buildScroll_[slot] - int(event.wheel.y), 0, int(abilityCount) - 10);
+            }
             const Screen before = menu_.screen();
             if (before == Screen::Settings)
             {
@@ -642,6 +655,18 @@ int Application::run()
             rendered = renderSettings(renderer_, settings_, SDL_GetTicks(), menu_.lan());
         else if (!menu_.playing())
             rendered = rendered && renderMenu(renderer_, menu_);
+        if (sceneVisible && (session || bots_.match()) && SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB])
+        {
+            auto state = session ? *session->snapshot() : bots_.match()->snapshot();
+            float mx = 0, my = 0;
+            SDL_GetMouseState(&mx, &my);
+            Vec2 logical;
+            SDL_RenderCoordinatesFromWindow(renderer_, mx, my, &logical.x, &logical.y);
+            rendered = rendered && drawBuildInspector(renderer_, state.players,
+                                                      {network::nicknameText(state.names[0]),
+                                                       network::nicknameText(state.names[1])},
+                                                      buildScroll_, logical);
+        }
         if (!rendered || !SDL_RenderPresent(renderer_))
         {
             SDL_Log("Rendering failed: %s", SDL_GetError());

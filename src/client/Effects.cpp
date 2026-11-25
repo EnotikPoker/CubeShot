@@ -142,6 +142,21 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
     }
     for (const auto& e : events)
     {
+        if (e.target && e.kind != EventKind::CorpseHit && e.kind != EventKind::CorpseBreak)
+        {
+            auto target =
+                std::find_if(players.begin(), players.end(), [&](auto& p) { return p.id == e.target; });
+            if (target != players.end() && target->lifeRevision != e.targetLife)
+                continue;
+        }
+        if (e.kind == EventKind::Shot || e.kind == EventKind::ActiveCast || e.kind == EventKind::ElectricArc)
+        {
+            auto source =
+                std::find_if(players.begin(), players.end(), [&](auto& p) { return p.id == e.actor; });
+            if (source != players.end() && source->lifeRevision != e.ownerLife)
+                continue;
+        }
+
         if (e.id && !seen_.insert({e.round, e.id}).second)
             continue;
         if (seen_.size() > 512)
@@ -190,7 +205,9 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
                 if (shake && e.actor == own)
                     shake_ = std::max(shake_, 2.f);
             }
-            else if (e.active == ActiveKind::Heal || e.active == ActiveKind::Barrier)
+            else if (e.active == ActiveKind::Heal || e.active == ActiveKind::Barrier ||
+                     e.active == ActiveKind::Parry || e.active == ActiveKind::Cleanse ||
+                     e.active == ActiveKind::Overdrive)
                 poses_[e.actor].shield = .3f;
         }
         else if (e.kind == EventKind::ElectricArc)

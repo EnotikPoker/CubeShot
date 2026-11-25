@@ -4,6 +4,8 @@
 
 namespace cubeshot
 {
+Arena createExpansionMap(MapId, bool);
+
 const std::vector<MapInfo>& mapCatalog()
 {
     static const std::vector<MapInfo> maps{
@@ -20,14 +22,19 @@ const std::vector<MapInfo>& mapCatalog()
         {MapId::Test, U"Первый полигон", MapTheme::Classic},
         {MapId::FactoryPartitions, U"Завод: Перегородки", MapTheme::Factory},
         {MapId::RuinsBreach, U"Руины: Пролом", MapTheme::Ruins},
-        {MapId::NatureCrossing, U"Природа: Переправа", MapTheme::Nature}};
+        {MapId::NatureCrossing, U"Природа: Переправа", MapTheme::Nature},
+        {MapId::LabSectors, U"Лаборатория: Сектора", MapTheme::Laboratory},
+        {MapId::LabReactor, U"Лаборатория: Реактор", MapTheme::Laboratory},
+        {MapId::DocksLoading, U"Доки: Погрузочная", MapTheme::Docks},
+        {MapId::DocksContainers, U"Доки: Контейнеры", MapTheme::Docks},
+        {MapId::Foundry, U"Литейная", MapTheme::Foundry},
+        {MapId::Mine, U"Литейная: Шахта", MapTheme::Foundry}};
     return maps;
 }
 
 bool validMap(MapId id, bool test)
 {
-    return static_cast<unsigned>(id) <= static_cast<unsigned>(MapId::NatureCrossing) &&
-           (test || id != MapId::Test);
+    return static_cast<unsigned>(id) <= static_cast<unsigned>(MapId::Mine) && (test || id != MapId::Test);
 }
 
 std::vector<MapId> playableMaps(bool test)
@@ -54,7 +61,9 @@ Arena Arena::create(MapId id, bool test)
         a.decorate();
         return a;
     }
-    if (static_cast<unsigned>(id) >= 11)
+    if (unsigned(id) >= unsigned(MapId::LabSectors))
+        return createExpansionMap(id, test);
+    if (id == MapId::FactoryPartitions || id == MapId::RuinsBreach || id == MapId::NatureCrossing)
     {
         MapId base = id == MapId::FactoryPartitions ? MapId::FactorySmall
                      : id == MapId::RuinsBreach     ? MapId::RuinsMedium

@@ -1,4 +1,5 @@
 #pragma once
+#include "game/Modes.h"
 #include "game/World.h"
 #include <array>
 #include <random>
@@ -42,11 +43,31 @@ enum class UpgradeKind
 struct MatchRules
 {
     unsigned wins = 15;
+    GameMode mode = GameMode::Duel;
+    unsigned stages = 14, controlGoal = 180;
 
     bool valid() const
     {
-        return wins == 5 || wins == 10 || wins == 15 || wins == 20;
+        return unsigned(mode) < 4 && (wins == 5 || wins == 10 || wins == 15 || wins == 20) &&
+               (stages == 7 || stages == 14 || stages == 21) &&
+               (controlGoal == 120 || controlGoal == 180 || controlGoal == 240);
     }
+};
+
+struct RespawnState
+{
+    unsigned life = 0;
+    float remaining = 0, decisionTime = 0;
+    bool choosing = false;
+};
+
+struct ModeState
+{
+    ChaosKind chaos = ChaosKind::None, nextChaos = ChaosKind::None;
+    double elapsed = 0, zoneRemaining = 30;
+    unsigned zone = 0;
+    std::array<double, 2> control{};
+    std::array<RespawnState, 2> respawn{};
 };
 
 struct WorldSnapshot
@@ -77,6 +98,8 @@ struct WorldSnapshot
     std::array<UpgradeKind, 2> upgrade{};
     std::array<AbilityKind, 2> rolledAbility{{AbilityKind::None, AbilityKind::None}};
     MatchRules rules;
+    ModeState mode;
+    std::vector<WorldEntity> entities;
     TerrainState terrain;
     std::array<ActiveLoadout, 2> activeLoadout{};
     std::array<ActiveKind, 2> rolledActive{};
@@ -106,10 +129,11 @@ public:
     void setInput(PlayerId id, const PlayerInput& input);
     void clearInput(PlayerId id);
     bool action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
-                bool reload = false, unsigned activeMask = 0);
+                bool reload = false, unsigned activeMask = 0, unsigned life = ~0u);
     void update(float dt);
     bool chooseWeapon(PlayerId id, bool reroll, std::uint32_t round, std::uint64_t revision);
-    bool chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, std::uint64_t revision);
+    bool chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, std::uint64_t revision,
+                       unsigned life = ~0u);
     WorldSnapshot snapshot() const;
 
     const World& world() const
@@ -129,6 +153,10 @@ public:
 
 private:
     void beginCountdown();
+    void updateChoices(float dt);
+    void updateControl(float dt);
+    void prepareChaos();
+    ModeState mode_;
     void collectEvents();
     std::array<WeaponKind, 2> loadout_{}, rolled_{};
     std::array<WeaponChoice, 2> weaponChoice_{};

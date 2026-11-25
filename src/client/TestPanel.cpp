@@ -109,7 +109,7 @@ std::vector<MenuButton> TestPanel::buttons() const
                 {{30.f + slot * 464, 150}, {437, 32}}, Kind::ActiveSlot, slot);
         for (unsigned k = 0; k <= activeCount; ++k)
             add(activeDefinition(ActiveKind(k)).name,
-                {{30.f + (k % 4) * 232, 196.f + (k / 4) * 42}, {213, 34}}, Kind::ActiveChoice, k,
+                {{30.f + (k % 4) * 232, 192.f + (k / 4) * 37}, {213, 30}}, Kind::ActiveChoice, k,
                 k && ActiveKind(k) == draft_.actives[target_][1 - activeSlot_]);
         add(U"Сбросить перезарядки", {{30, 365}, {285, 32}}, Kind::Operation,
             unsigned(TestOperation::ReadyActives), !live_);

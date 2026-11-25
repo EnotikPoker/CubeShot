@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/Modes.h"
 #include "game/Terrain.h"
 #include "game/Types.h"
 #include <map>
@@ -25,14 +26,23 @@ enum class MapId : std::uint32_t
     Test,
     FactoryPartitions,
     RuinsBreach,
-    NatureCrossing
+    NatureCrossing,
+    LabSectors,
+    LabReactor,
+    DocksLoading,
+    DocksContainers,
+    Foundry,
+    Mine
 };
 enum class MapTheme
 {
     Classic,
     Factory,
     Ruins,
-    Nature
+    Nature,
+    Laboratory,
+    Docks,
+    Foundry
 };
 
 struct MapInfo
@@ -47,6 +57,12 @@ bool validMap(MapId id, bool test = false);
 std::vector<MapId> playableMaps(bool test = false);
 const MapInfo& mapInfo(MapId id);
 
+struct MapHazard
+{
+    Rect bounds;
+    bool heat = false;
+};
+
 struct Arena
 {
     Rect bounds;
@@ -60,6 +76,12 @@ struct Arena
     std::uint64_t terrainRevision = 0, geometryRevision = 0;
     unsigned nextTerrainGroup = 1;
     std::map<std::pair<int, int>, std::vector<std::size_t>> spatial;
+    SimulationModifiers modifiers;
+    std::vector<MapHazard> hazards;
+    std::vector<Vec2> barrelSpawns;
+    std::vector<Rect> combatScreens;
+    std::vector<Vec2> controlAnchors() const;
+    std::vector<Vec2> respawnPoints() const;
     void addTerrain(Rect box, Material material, bool object = false);
     void decorate();
     void rebuildTerrain();

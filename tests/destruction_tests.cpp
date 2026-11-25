@@ -35,7 +35,7 @@ void shoot(World& w, float duration = 1)
 
 int main()
 {
-    expect(abilityCount == 37 && weaponCount == 17, "Expanded content catalog");
+    expect(abilityCount == 47 && weaponCount == 21, "Expanded content catalog");
     for (auto id : playableMaps(true))
     {
         auto a = Arena::create(id, true);

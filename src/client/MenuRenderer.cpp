@@ -74,6 +74,30 @@ bool weaponCard(SDL_Renderer* renderer, WeaponKind kind, float x)
         part(-20, 15, 8, 19, wood);
         return ok;
     }
+    if (kind == WeaponKind::Beam)
+    {
+        part(-30, -12, 50, 24, {40, 90, 100, 255});
+        part(20, -6, 24, 12, {100, 236, 209, 255});
+        return ok;
+    }
+    if (kind == WeaponKind::Disc)
+    {
+        part(-30, -10, 50, 20, dark);
+        round(25, 0, 16, steel);
+        return ok;
+    }
+    if (kind == WeaponKind::Hammer)
+    {
+        part(-35, -4, 65, 8, wood);
+        part(18, -24, 24, 48, steel);
+        return ok;
+    }
+    if (kind == WeaponKind::StickyLauncher)
+    {
+        part(-30, -12, 65, 24, {123, 67, 139, 255});
+        part(25, -6, 18, 12, steel);
+        return ok;
+    }
     if (kind == WeaponKind::Electric)
     {
         part(-35, -12, 49, 24, dark);
@@ -269,6 +293,10 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     const auto name = active    ? activeDefinition(ActiveKind(shown + 1)).name
                       : ability ? abilityDefinition(static_cast<AbilityKind>(shown)).name
                                 : weaponDefinition(static_cast<WeaponKind>(shown)).name;
+    if (state.rules.mode == GameMode::Chaos &&
+        !centeredText(renderer, U"Следующий раунд: " + std::u32string(chaosName(state.mode.nextChaos)), 181,
+                      1, muted))
+        return false;
     if (ability || active)
     {
         const auto text = active ? activeDefinition(ActiveKind(shown + 1)).description
@@ -410,7 +438,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     break;
                 case Screen::BotSetup:
                     title = U"Игра с ботом";
-                    hint = U"Выберите карту, сложность и цель побед";
+                    hint = U"Выберите карту, режим и сложность";
                     break;
                 case Screen::BotResult:
                     title = U"Матч завершён";
@@ -553,28 +581,30 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
 
 bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own)
 {
-    auto score = network::nicknameText(s.names[0]) + U" " + asciiText(std::to_string(s.score[0])) + U" : " +
-                 asciiText(std::to_string(s.score[1])) + U" " + network::nicknameText(s.names[1]);
-    if (!uiPanel(renderer, {{235, 8}, {490, 69}}, {30, 46, 66, 255}) ||
-        !centeredText(renderer, score, 14, textWidth(renderer, score, 2) > 466 ? 1 : 2, white) ||
-        !centeredText(renderer,
-                      U"Вы — игрок " + asciiText(std::to_string(own)) + U". До " +
-                          asciiText(std::to_string(s.rules.wins)) + U" побед",
-                      45, 1, muted))
-        return false;
+    auto score = std::u32string(modeName(s.rules.mode)) + U" · " + asciiText(std::to_string(s.score[0])) +
+                 U" : " + asciiText(std::to_string(s.score[1]));
+    if (s.rules.mode == GameMode::ArmsRace)
+        score += U" / " + asciiText(std::to_string(s.rules.stages));
+    else if (s.rules.mode == GameMode::Control)
+        score += U" / " + asciiText(std::to_string(s.rules.controlGoal)) + U" · " +
+                 asciiText(std::to_string(std::max(0, 480 - int(s.mode.elapsed)))) + U" с";
+    else
+        score += U" / " + asciiText(std::to_string(s.rules.wins));
     const auto player =
         std::find_if(s.players.begin(), s.players.end(), [own](const auto& p) { return p.id == own; });
     if (player != s.players.end())
     {
         if (!drawWeaponHud(renderer, *player))
             return false;
-        if (player->weapon.kind == WeaponKind::Sniper && !player->weapon.reloading &&
-            !drawText(renderer, U"Удерживайте огонь 0.3 с", {690, 522}, 1, muted))
-            return false;
     }
-    if (!drawText(renderer, mapInfo(s.map).name, {12, 520}, 1, muted))
+    if (!centeredText(renderer, score, 480, textWidth(renderer, score, 1) > 320 ? 1 : 1, white))
         return false;
     std::u32string status;
+    if (s.rules.mode == GameMode::Chaos)
+        status = std::u32string(chaosName(s.mode.chaos));
+    if (s.rules.mode == GameMode::Control && own && !s.players[own - 1].alive())
+        status =
+            U"Возрождение: " + asciiText(std::to_string(int(std::ceil(s.mode.respawn[own - 1].remaining))));
     if (s.phase == MatchPhase::Countdown)
         status = U"Начало через " + asciiText(std::to_string(static_cast<int>(std::ceil(s.remaining))));
     if (s.phase == MatchPhase::RoundEnd)
@@ -582,7 +612,7 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
                   : s.winner == own ? std::u32string(U"Раунд выигран")
                                     : std::u32string(U"Раунд проигран")) +
                  U" — " + asciiText(std::to_string(static_cast<int>(std::ceil(s.remaining))));
-    return status.empty() || centeredText(renderer, status, 125, 4, blue);
+    return status.empty() || centeredText(renderer, status, 450, 1, blue);
 }
 
 } // namespace cubeshot::client

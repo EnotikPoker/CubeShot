@@ -135,8 +135,10 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
         return;
     }
     const bool teleport = player_ && player_->teleportRevision != found->teleportRevision;
-    const bool boundary = arena_.map != snapshot.map || waitingForSnapshot_ || !player_ ||
-                          round_ != snapshot.round || phase_ != snapshot.phase || !found->alive();
+    const bool boundary =
+        (player_ && (player_->lifeRevision != found->lifeRevision || player_->alive() != found->alive())) ||
+        arena_.map != snapshot.map || waitingForSnapshot_ || !player_ || round_ != snapshot.round ||
+        phase_ != snapshot.phase || !found->alive();
     if (arena_.map != snapshot.map || !player_)
         arena_ = Arena::create(snapshot.map);
     others_.clear();
@@ -157,6 +159,11 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
         offset_ = {};
     }
     arena_.applyTerrain(snapshot.terrain);
+    arena_.modifiers = chaosModifiers(snapshot.mode.chaos);
+    arena_.combatScreens.clear();
+    for (auto e : snapshot.entities)
+        if (e.kind == EntityKind::Screen)
+            arena_.combatScreens.push_back(e.bounds());
     waitingForSnapshot_ = false;
     round_ = snapshot.round;
     phase_ = snapshot.phase;
@@ -207,6 +214,7 @@ void Prediction::advance(PlayerInput input)
         return;
     }
     visualCooldown_ = std::max(0.f, visualCooldown_ - step);
+    input.lifeRevision = player_->lifeRevision;
     PredictedCommand command{++sequence_, input};
     commands_.push_back(command);
     simulate(command, true);
@@ -238,6 +246,7 @@ std::optional<GameEvent> Prediction::action(std::uint64_t sequence, bool jump, b
             if (visual.activate(slot, arena_, others_))
             {
                 GameEvent event;
+                event.ownerLife = visual.lifeRevision;
                 event.round = round_;
                 event.actor = visual.id;
                 event.kind = EventKind::ActiveCast;
@@ -281,13 +290,18 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
     for (const auto& rect : arena_.platforms)
         if (collision::segmentHit(prototype.position, muzzle, rect, prototype.collisionRadius))
             blocked = true;
-    if (prototype.weapon == WeaponKind::Electric)
+    if (prototype.weapon == WeaponKind::Electric || prototype.weapon == WeaponKind::Beam)
     {
-        Vec2 end{prototype.position.x + direction.x * 600 * prototype.rangeScale,
-                 prototype.position.y + direction.y * 600 * prototype.rangeScale};
+        Vec2 end{prototype.position.x +
+                     direction.x * (prototype.weapon == WeaponKind::Beam ? 560 : 600) * prototype.rangeScale,
+                 prototype.position.y +
+                     direction.y * (prototype.weapon == WeaponKind::Beam ? 560 : 600) * prototype.rangeScale};
         float fraction = 1;
         for (auto& r : arena_.platforms)
             if (auto hit = collision::segmentHit(prototype.position, end, r, 0))
+                fraction = std::min(fraction, *hit);
+        for (auto screen : arena_.combatScreens)
+            if (auto hit = collision::segmentHit(prototype.position, end, screen, 0))
                 fraction = std::min(fraction, *hit);
         for (auto& other : others_)
             if (other.alive())
@@ -306,10 +320,12 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
                       prototype.damage,
                       prototype.weapon,
                       prototype.volley};
+        arc.ownerLife = prototype.ownerLife;
         arc.local = prototype.position;
         events_.push_back(arc);
     }
-    if (!blocked && !meleeWeapon(prototype.weapon) && prototype.weapon != WeaponKind::Electric)
+    if (!blocked && !meleeWeapon(prototype.weapon) && prototype.weapon != WeaponKind::Electric &&
+        prototype.weapon != WeaponKind::Beam)
     {
         unsigned pellet = 0;
         for (auto bullet : scatterShot(prototype))
@@ -321,9 +337,11 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
                 bullets_.push_back(bullet);
         }
     }
-    return GameEvent{
+    GameEvent shot{
         0,      0,         prototype.shotSequence, round_,           EventKind::Shot, prototype.shooterId, 0,
         muzzle, direction, prototype.damage,       prototype.weapon, prototype.volley};
+    shot.ownerLife = prototype.ownerLife;
+    return shot;
 }
 
 std::vector<GameEvent> Prediction::takeEvents()

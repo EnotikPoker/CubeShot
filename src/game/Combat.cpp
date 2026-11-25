@@ -18,6 +18,9 @@ Vec2 nearestPoint(Vec2 at, Rect box)
 
 bool blocked(Vec2 from, Vec2 to, const Arena& arena)
 {
+    for (auto screen : arena.combatScreens)
+        if (auto t = collision::segmentHit(from, to, screen, 0); t && *t < .98f)
+            return true;
     for (const auto& platform : arena.platforms)
         if (const auto hit = collision::segmentHit(from, to, platform, 0); hit && *hit < .98f)
             return true;
@@ -58,17 +61,48 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
                    DamageContext flags)
 {
     const bool periodic = flags.periodic, reflected = flags.reflected;
-    if (!damageLiving_ || amount <= 0 || !player.alive() || player.invulnerability > 0)
+    if (!damageLiving_ || amount <= 0 || !player.alive() || player.invulnerability > 0 ||
+        player.spawnProtection > 0)
         return false;
+    if (bullet.shooterId && bullet.shooterId != player.id && !flags.environmental)
+        player.lastHostileAgo = 0;
     const auto shields = player.shields;
-    if (!periodic && !reflected && player.absorb(bullet))
+    if (!periodic && !reflected && !flags.environmental && player.absorb(bullet))
     {
         if (player.shields != shields)
             emit(EventKind::ShieldBlock, bullet, at, player.id);
         return false;
     }
-    amount = healthDamage(amount, reflected ? 1.f : bullet.power, player, bullet.weapon,
-                          periodic && !flags.bleeding);
+    const bool hostile = bullet.shooterId && bullet.shooterId != player.id;
+    float factor = reflected ? 1.f : bullet.power;
+    if (!periodic && !reflected && !flags.environmental)
+    {
+        if (meleeWeapon(player.weapon.kind) && player.abilities.level(AbilityKind::Stance) && !bullet.area)
+        {
+            float n = std::max(.01f, std::hypot(bullet.velocity.x, bullet.velocity.y));
+            if ((-bullet.velocity.x * player.aimDirection.x - bullet.velocity.y * player.aimDirection.y) /
+                    n >=
+                .5f)
+                factor *= .8f;
+        }
+        if (player.parry > 0 && meleeWeapon(bullet.weapon) && !bullet.area)
+        {
+            float n = std::max(.01f, std::hypot(bullet.velocity.x, bullet.velocity.y));
+            if ((-bullet.velocity.x * player.aimDirection.x - bullet.velocity.y * player.aimDirection.y) /
+                    n >=
+                .5f)
+            {
+                emit(EventKind::ShieldBlock, bullet, at, player.id);
+                return false;
+            }
+        }
+        if (hostile && player.health * 10 < player.healthLimit() * 3)
+            for (auto& attacker : players_)
+                if (attacker.id == bullet.shooterId && attacker.abilities.level(AbilityKind::Executioner) &&
+                    attacker.lifeRevision == bullet.ownerLife)
+                    factor *= 1.15f;
+    }
+    amount = healthDamage(amount, factor, player, bullet.weapon, periodic && !flags.bleeding);
     if (player.barrier > 0)
     {
         float absorbed = std::min(float(amount), player.barrier);
@@ -117,13 +151,38 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
     const int actual = std::min(amount, std::max(0, player.health - pendingDamage_[index]));
     pendingDamage_[index] += amount;
     player.damageQuiet = 0;
-    if (!periodic && !reflected && bullet.shooterId != player.id && actual > 0)
+    if (hostile && !flags.environmental)
+        player.lastHostileAgo = 0;
+    if (hostile && !periodic && !reflected && !bullet.secondary)
+    {
+        if (player.abilities.level(AbilityKind::Tempering) && player.temperCooldown <= 0)
+        {
+            player.tempering = 1.5f;
+            player.temperCooldown = 5;
+        }
+        for (auto& attacker : players_)
+            if (attacker.id == bullet.shooterId && attacker.lifeRevision == bullet.ownerLife)
+            {
+                auto key = (std::uint64_t(bullet.ownerLife) << 32) ^ bullet.volley ^
+                           (std::uint64_t(player.id) << 60);
+                if (attacker.abilities.level(AbilityKind::Impulse) && attacker.impulseKey != key)
+                {
+                    attacker.impulseKey = key;
+                    float n = std::max(.01f, std::hypot(bullet.velocity.x, bullet.velocity.y));
+                    player.applyImpulse(
+                        {bullet.velocity.x / n * 80 * attacker.abilities.level(AbilityKind::Impulse),
+                         bullet.velocity.y / n * 80 * attacker.abilities.level(AbilityKind::Impulse)});
+                }
+            }
+    }
+    if (!periodic && !reflected && !bullet.secondary && bullet.shooterId != player.id && actual > 0)
     {
         for (auto& attacker : players_)
-            if (attacker.id == bullet.shooterId && attacker.alive())
+            if (attacker.id == bullet.shooterId && attacker.alive() &&
+                attacker.lifeRevision == bullet.ownerLife)
             {
                 if (bullet.active == ActiveKind::None && meleeWeapon(bullet.weapon) &&
-                    attacker.abilities.level(AbilityKind::Bleeding))
+                    attacker.abilities.level(AbilityKind::Bleeding) && player.cleanse <= 0)
                 {
                     if (player.bleeding <= 0)
                         player.bleedTick = 0;
@@ -149,7 +208,8 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
     const float speed = std::hypot(bullet.velocity.x, bullet.velocity.y);
     pendingImpact_[index] =
         speed > .001f ? Vec2{bullet.velocity.x / speed, bullet.velocity.y / speed} : Vec2{1, 0};
-    if (!reflected && (ignite || (!periodic && bullet.ignites && bullet.shooterId != player.id)))
+    if (player.cleanse <= 0 && !bullet.secondary && !reflected &&
+        (ignite || (!periodic && bullet.ignites && bullet.shooterId != player.id)))
     {
         player.burning = 2.5f;
         player.burnOwner = bullet.shooterId;
@@ -217,12 +277,32 @@ void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
         if (effect.damage > 0)
         {
             auto impact = bullet;
+            impact.area = true;
             impact.velocity = effect.impulse;
-            damage(player, impact, effect.contact, effect.damage);
-            if (damageLiving_)
+            bool dealt = damage(player, impact, effect.contact, effect.damage);
+            if (bullet.active == ActiveKind::IceGrenade && player.cleanse <= 0 && dealt)
+                player.slow = 2;
+            if (damageLiving_ && player.spawnProtection <= 0)
+            {
                 player.applyImpulse(effect.impulse);
+                if (bullet.shooterId && bullet.shooterId != player.id)
+                    player.lastHostileAgo = 0;
+            }
         }
     }
+    auto targets = entities_;
+    for (const auto& entity : targets)
+        if (entity.health > 0)
+        {
+            auto center = Vec2{entity.position.x + entity.size.x / 2, entity.position.y + entity.size.y / 2};
+            float d = std::hypot(center.x - at.x, center.y - at.y);
+            if (d < radius)
+            {
+                auto hit = bullet;
+                hit.damage = std::max(1, int(explosion.damage * (1 - d / radius)));
+                hitEntity(entity.id, hit, center);
+            }
+        }
     for (std::size_t i = 0; i < debris_.corpses().size(); ++i)
     {
         const auto corpse = debris_.corpses()[i];
@@ -289,7 +369,7 @@ void World::updateFire(float dt)
         for (auto& player : players_)
         {
             const auto point = nearestPoint(fire.position, player.bounds());
-            if (player.alive() &&
+            if (player.alive() && player.cleanse <= 0 &&
                 std::hypot(point.x - fire.position.x, point.y - fire.position.y) < fire.radius &&
                 damageLiving_)
             {
@@ -347,10 +427,26 @@ void World::melee(const Bullet& attack)
             {
                 hitHealth = true;
                 hitTarget = player.id;
+                if (attack.weapon == WeaponKind::Hammer && player.spawnProtection <= 0)
+                {
+                    player.applyImpulse({aim.x * 450, aim.y * 450});
+                    player.lastHostileAgo = 0;
+                }
             }
     }
     for (auto& owner : players_)
-        if (owner.id == attack.shooterId && owner.abilities.level(AbilityKind::Combo))
+        if (owner.id == attack.shooterId && !attack.secondary && hitHealth)
+        {
+            if (owner.abilities.level(AbilityKind::Echo) && ++owner.meleeSuccesses % 3 == 0)
+            {
+                auto echo = attack;
+                echo.secondary = true;
+                echo.damage = std::max(1, int(std::lround(attack.damage * .35f)));
+                echoes_.push_back({echo, .12f});
+            }
+        }
+    for (auto& owner : players_)
+        if (owner.id == attack.shooterId && !attack.secondary && owner.abilities.level(AbilityKind::Combo))
         {
             if (hitHealth)
             {
@@ -375,9 +471,14 @@ void World::melee(const Bullet& attack)
             at = {attack.position.x + (end.x - attack.position.x) * *hit,
                   attack.position.y + (end.y - attack.position.y) * *hit};
         }
+    if (auto object = traceEntities(attack.position, end, 0, attack);
+        object && object->first < nearestTerrain)
+        hitEntity(object->second, attack, end);
     if (nearestTerrain <= 1)
     {
-        arena_.damageTerrain(at, 14, static_cast<int>(attack.damage * attack.terrainPower));
+        arena_.damageTerrain(at, 14,
+                             static_cast<int>((attack.weapon == WeaponKind::Hammer ? 60 : attack.damage) *
+                                              attack.terrainPower));
         emit(EventKind::SurfaceImpact, attack, at);
     }
     if (!blocked(attack.position, end, arena_))

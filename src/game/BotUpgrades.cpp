@@ -12,6 +12,12 @@ float score(WeaponKind weapon, const Abilities& a, const ActiveLoadout& active, 
 {
     auto d = weaponDefinition(weapon);
     auto stats = attackStats(weapon, a);
+    // Include the delayed blast and the warmed-up beam, not just the projectile's
+    // contact damage. Both otherwise look like weaker versions of the pistol.
+    const float attackDamage = weapon == WeaponKind::StickyLauncher ? 60.f
+                               : weapon == WeaponKind::Beam         ? 4.5f
+                                                                    : float(d.damage);
+    const float cycleFloor = weapon == WeaponKind::Beam ? .03f : .1f;
     float reach = meleeWeapon(weapon)                   ? stats.reach
                   : weapon == WeaponKind::FireBoomerang ? stats.boomRange
                   : d.effectiveRange > 0                ? d.effectiveRange * a.range()
@@ -24,12 +30,17 @@ float score(WeaponKind weapon, const Abilities& a, const ActiveLoadout& active, 
     magazine.reloadLevel = a.level(AbilityKind::FastReload);
     magazine.equip(weapon);
     const float capacity = magazine.capacity();
-    float uptime = capacity ? capacity * interval / (capacity * interval + magazine.reloadDuration()) : 1;
+    const float rounds = capacity * (a.level(AbilityKind::Economy) ? 4.f / 3 : 1.f);
+    float uptime = rounds ? rounds * interval / (rounds * interval + magazine.reloadDuration()) : 1;
     float hit = meleeWeapon(weapon) ? 1.f : std::clamp(1 - d.spread * a.accuracy() * gap / 12000, .25f, 1.f);
     float approach =
         std::max(0.f, gap - reach) /
         (Player::moveSpeed * a.speed() + (meleeWeapon(weapon) ? 40 * a.level(AbilityKind::Lunge) : 0));
+    approach /= 1 + .06f * a.level(AbilityKind::AirManeuver);
     float health = float(a.health()) + a.shields() * 25;
+    health *= 1 + .10f * a.level(AbilityKind::Tempering);
+    if (meleeWeapon(weapon))
+        health *= 1 + .12f * a.level(AbilityKind::Stance);
     for (auto kind : active)
         switch (kind)
         {
@@ -66,13 +77,20 @@ float score(WeaponKind weapon, const Abilities& a, const ActiveLoadout& active, 
     if (meleeWeapon(enemy.weapon.kind) && !meleeWeapon(weapon))
         enemyDps *= enemyCloses ? .65f : .35f;
     float safety = std::clamp(1 - approach * enemyDps / health * .25f, .2f, 1.f);
-    float dps = d.damage * d.pellets * a.power() * hit / std::max(.1f, interval) * uptime;
+    float dps = attackDamage * d.pellets * a.power() * hit / std::max(cycleFloor, interval) * uptime;
+    dps *= 1 + .04f * a.level(AbilityKind::Executioner);
+    if (capacity && weapon != WeaponKind::Beam)
+        dps *= 1 + .25f * a.level(AbilityKind::FreshMagazine) / capacity;
+    if (active[0] != ActiveKind::None || active[1] != ActiveKind::None)
+        dps *= 1 + .04f * a.level(AbilityKind::Resonance) + .015f * a.level(AbilityKind::Transfer);
+    if (meleeWeapon(enemy.weapon.kind) && !meleeWeapon(weapon))
+        health *= 1 + .06f * a.level(AbilityKind::Impulse);
     if (weapon == WeaponKind::FireBoomerang)
         dps *= 2 * (1 + .25f * a.level(AbilityKind::ReturnStrike)) *
                (1 + .65f * a.level(AbilityKind::SecondCircuit));
     if (meleeWeapon(weapon))
         dps *= 1 + .12f * a.level(AbilityKind::Combo) + .10f * a.level(AbilityKind::Bleeding) +
-               .06f * a.level(AbilityKind::WideSwing);
+               .06f * a.level(AbilityKind::WideSwing) + .35f / 3 * a.level(AbilityKind::Echo);
     if (weapon == WeaponKind::Rpg || weapon == WeaponKind::GrenadeLauncher)
         dps *= gap < 200 ? .3f : 1.f;
     for (auto kind : active)
@@ -81,6 +99,12 @@ float score(WeaponKind weapon, const Abilities& a, const ActiveLoadout& active, 
             dps += gap < 300 ? 7 : 2;
         if (kind == ActiveKind::Slam)
             dps += gap < 300 ? 10 : 2;
+        if (kind == ActiveKind::Overdrive)
+            dps *= 1.12f;
+        if (kind == ActiveKind::Parry || kind == ActiveKind::Cleanse || kind == ActiveKind::Screen)
+            health += 15;
+        if (kind == ActiveKind::Mine || kind == ActiveKind::IceGrenade)
+            dps += 3;
         if (kind == ActiveKind::Bomb)
             dps += 6;
     }
@@ -93,7 +117,7 @@ float score(WeaponKind weapon, const Abilities& a, const ActiveLoadout& active, 
     for (auto r : arena.platforms)
         if (r.position.y < arena.bounds.size.y - 100 && r.size.x > 100)
             covered += .03f;
-    float alpha = d.damage * d.pellets * a.power();
+    float alpha = attackDamage * d.pellets * a.power();
     float hits = std::ceil(enemyHealth / std::max(1.f, alpha));
     float ttk = std::max(.3f, (hits - 1) * interval / std::max(.25f, hit) + d.preparation);
     float burst = enemyHealth / ttk;
@@ -141,7 +165,7 @@ UpgradeKind chooseBotUpgrade(const WorldSnapshot& state, PlayerId own,
     float expected = 0;
     for (unsigned w = 0; w < weaponCount; ++w)
         expected += utility(WeaponKind(w), traits, active) / weaponCount;
-    if (expected > best * 1.03f)
+    if (state.rules.mode != GameMode::ArmsRace && expected > best * 1.03f)
     {
         best = expected;
         choice = UpgradeKind::Weapon;

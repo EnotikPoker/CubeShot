@@ -19,6 +19,9 @@ std::optional<MeleeContact> meleeContact(Vec2 origin, Vec2 direction, float reac
         if (n > reach ||
             (n > .001f && (dx * direction.x + dy * direction.y) / n < std::cos(halfAngle) - .0001f))
             return;
+        for (auto screen : arena.combatScreens)
+            if (auto t = collision::segmentHit(origin, point, screen, 0); t && *t < .98f)
+                return;
         for (auto& wall : arena.platforms)
             if (auto t = collision::segmentHit(origin, point, wall, 0); t && *t < .98f)
                 return;
@@ -56,6 +59,10 @@ int healthDamage(int amount, float power, const Player& target, WeaponKind weapo
     if (target.abilities.level(AbilityKind::FireResistance) &&
         (periodic || weapon == WeaponKind::Flamethrower))
         multiplier *= .5f;
+    if (target.tempering > 0)
+        multiplier *= .8f;
+    if (target.cleanse > 0)
+        multiplier *= .8f;
     return std::max(1, static_cast<int>(std::lround(amount * multiplier)));
 }
 
@@ -84,6 +91,12 @@ std::vector<ElectricContact> electricContacts(const Bullet& attack, const Arena&
                 nearest = *hit;
                 conductor = cell;
                 victim = nullptr;
+            }
+        for (auto screen : arena.combatScreens)
+            if (auto t = collision::segmentHit(from, to, screen, 0); t && *t < nearest)
+            {
+                nearest = *t;
+                conductor = nullptr;
             }
         for (const auto& p : players)
             if (p.alive() && p.id != shot.shooterId)
@@ -116,6 +129,9 @@ std::vector<ElectricContact> electricContacts(const Bullet& attack, const Arena&
             float len = std::hypot(candidate.x - end.x, candidate.y - end.y);
             if (len >= distance)
                 return;
+            for (auto screen : arena.combatScreens)
+                if (auto t = collision::segmentHit(end, candidate, screen, 0); t && *t < .98f)
+                    return;
             for (auto& solid : arena.platforms)
                 if (auto hit = collision::segmentHit(end, candidate, solid, 0); hit && *hit < .98f)
                 {

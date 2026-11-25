@@ -106,7 +106,7 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
                                : action == MenuAction::RollAbility ? UpgradeKind::Ability
                                                                    : UpgradeKind::Continue);
     if (action == MenuAction::SelectRules && client_)
-        client_->selectRules(menu.wins());
+        client_->selectRules(menu.matchRules());
     if (action == MenuAction::SelectMap && client_)
         client_->selectMap(menu.selectedMap());
     if (action == MenuAction::ChangeMap && client_)

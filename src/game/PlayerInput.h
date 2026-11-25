@@ -10,5 +10,6 @@ struct PlayerInput
     Vec2 aimDirection{1, 0};
     bool triggerHeld = false, reload = false, jetpackHeld = false;
     bool activeQ = false, activeE = false;
+    unsigned lifeRevision = ~0u;
 };
 } // namespace cubeshot

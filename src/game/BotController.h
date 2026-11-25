@@ -61,6 +61,9 @@ struct BotTarget
     Vec2 dashDirection{1, 0};
     float barrierTime = 0, slamTime = 0;
     bool slamming = false;
+    SimulationModifiers modifiers;
+    float parry = 0, slow = 0, overdrive = 0, cleanse = 0, tempering = 0, spawnProtection = 0;
+    unsigned lifeRevision = 0;
 };
 
 struct BotObservation
@@ -70,6 +73,8 @@ struct BotObservation
     std::vector<Bullet> bullets;
     std::vector<FirePatch> fires;
     const Arena* geometry = nullptr;
+    std::optional<Vec2> objective;
+    std::vector<WorldEntity> entities;
 };
 
 BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent);
@@ -150,6 +155,7 @@ private:
         std::vector<Bullet> bullets;
         std::vector<FirePatch> fires;
         Player self;
+        std::vector<WorldEntity> entities;
     };
 
     std::deque<Perception> history_;

@@ -29,12 +29,17 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
         testActiveRequests_ = {};
         bullets_.clear();
         fires_.clear();
+        entities_.clear();
+        echoes_.clear();
+        syncScreens();
         debris_.clear();
         events_.clear();
         for (auto& actor : players_)
         {
             actor.burning = actor.burnTick = actor.bleeding = actor.bleedTick = actor.barrier =
                 actor.barrierTime = actor.dashTime = 0;
+            actor.slow = actor.parry = actor.overdrive = actor.cleanse = actor.tempering = actor.resonance =
+                0;
             actor.slamming = false;
         }
     };
@@ -72,6 +77,14 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                         next.barrier = next.barrierTime = 0;
                     if (old == ActiveKind::Dash)
                         next.dashTime = 0;
+                    if (old == ActiveKind::Mine || old == ActiveKind::Screen)
+                        removeOwnedEntities(next.id);
+                    if (old == ActiveKind::Parry)
+                        next.parry = 0;
+                    if (old == ActiveKind::Overdrive)
+                        next.overdrive = 0;
+                    if (old == ActiveKind::Cleanse)
+                        next.cleanse = 0;
                     if (old == ActiveKind::Slam)
                         next.slamming = false;
                     bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(), [&](auto& b)
@@ -94,6 +107,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
         {
             Player fresh;
             fresh.id = p.id;
+            fresh.lifeRevision = p.lifeRevision + 1;
             fresh.position = arena_.spawnPoints[edit.actor];
             fresh.setAbilities(config.abilities[edit.actor]);
             fresh.weapon.equip(config.weapons[edit.actor]);
@@ -140,6 +154,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
             {
                 p.weapon.ammo = p.weapon.capacity();
                 p.weapon.cancelReload();
+                p.freshMagazine = true;
             }
             break;
         case TestOperation::Overheat:
@@ -159,6 +174,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
         case TestOperation::RestoreMap:
             clearHazards();
             arena_.restoreTerrain();
+            resetEntities();
             for (unsigned i = 0; i < players_.size(); ++i)
             {
                 auto& actor = players_[i];

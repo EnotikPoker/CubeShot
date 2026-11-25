@@ -18,9 +18,10 @@ namespace botdetail
 {
 float shotSpeed(const Player& self)
 {
-    return self.weapon.bulletSpeed * ((ballisticWeapon(self.weapon.kind) || explosiveWeapon(self.weapon.kind))
-                                          ? self.abilities.projectileSpeed()
-                                          : 1.f);
+    return self.weapon.bulletSpeed * self.modifiers.projectiles *
+           ((ballisticWeapon(self.weapon.kind) || explosiveWeapon(self.weapon.kind))
+                ? self.abilities.projectileSpeed()
+                : 1.f);
 }
 
 // Solve actual drag and range falloff when aiming at an opening or target.
@@ -317,6 +318,26 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
                       static_cast<float>(healthDamage(self.weapon.damage, self.abilities.power(), opponent,
                                                       self.weapon.kind))};
     }
+    if (self.weapon.kind == WeaponKind::Beam)
+    {
+        auto point = center(target);
+        Vec2 delta{point.x - origin.x, point.y - origin.y};
+        float n = std::max(.01f, std::hypot(delta.x, delta.y));
+        if (n > 560 * self.abilities.range() || terrainHit(origin, point, arena, 0) <= 1)
+            return {};
+        float a = std::atan2(delta.y, delta.x) + error;
+        return BotAim{{std::cos(a), std::sin(a)}, 0, float(self.weapon.damage)};
+    }
+    if (self.weapon.kind == WeaponKind::StickyLauncher)
+    {
+        if (distance(origin, center(target)) < 200)
+            return {};
+        auto direction = aimAtPoint(self, center(target));
+        if (!direction || !clearShot(self, direction->direction, direction->flightTime, arena))
+            return {};
+        float a = std::atan2(direction->direction.y, direction->direction.x) + error;
+        return BotAim{{std::cos(a), std::sin(a)}, direction->flightTime, 55};
+    }
     if (self.weapon.kind == WeaponKind::Electric)
     {
         std::vector<Vec2> candidates{center(target)};
@@ -404,23 +425,10 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
 
 BotWeaponProfile botWeaponProfile(WeaponKind weapon)
 {
-    static constexpr std::array<BotWeaponProfile, weaponCount> profiles{{{220, 480},
-                                                                         {65, 180},
-                                                                         {230, 650},
-                                                                         {100, 270},
-                                                                         {300, 680},
-                                                                         {400, 1050},
-                                                                         {500, 1500},
-                                                                         {170, 390},
-                                                                         {240, 650},
-                                                                         {120, 330},
-                                                                         {35, 84},
-                                                                         {35, 92},
-                                                                         {22, 53},
-                                                                         {140, 280},
-                                                                         {240, 470},
-                                                                         {300, 950},
-                                                                         {180, 560}}};
+    static constexpr std::array<BotWeaponProfile, weaponCount> profiles{
+        {{220, 480}, {65, 180},  {230, 650}, {100, 270}, {300, 680}, {400, 1050}, {500, 1500},
+         {170, 390}, {240, 650}, {120, 330}, {35, 84},   {35, 92},   {22, 53},    {140, 280},
+         {240, 470}, {300, 950}, {180, 560}, {180, 480}, {180, 650}, {40, 110},   {240, 470}}};
     return profiles[validWeapon(weapon) ? static_cast<unsigned>(weapon) : 0];
 }
 

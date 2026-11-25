@@ -25,7 +25,7 @@ BotNavigation::BotNavigation(const Arena& arena, Abilities abilities,
                              std::shared_ptr<std::atomic_bool> cancel)
 {
     const float bodySize = Player::defaultSize * abilities.scale();
-    speed_ = Player::moveSpeed * abilities.speed();
+    speed_ = Player::moveSpeed * abilities.speed() * arena.modifiers.movement;
     for (std::size_t surface = 0; surface < arena.platforms.size(); ++surface)
     {
         const auto& r = arena.platforms[surface];
@@ -82,6 +82,7 @@ BotNavigation::BotNavigation(const Arena& arena, Abilities abilities,
                 continue;
             Player p;
             p.setAbilities(abilities);
+            p.modifiers = arena.modifiers;
             p.position = nodes_[from].position;
             const float dx = nodes_[to].position.x - p.position.x;
             const float end = collision::moveHorizontally(p.bounds(), dx, arena.bounds, arena.platforms);
@@ -100,6 +101,8 @@ BotNavigation::BotNavigation(const Arena& arena, Abilities abilities,
                             continue;
                         Player p;
                         p.setAbilities(abilities);
+                        p.modifiers = arena.modifiers;
+                        p.modifiers = arena.modifiers;
                         p.position = nodes_[from].position;
                         bool airborne = false;
                         for (int tick = 0; tick < (jet ? 360 : 180); ++tick)
@@ -159,9 +162,12 @@ std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena,
     {
         if (!abilities.level(AbilityKind::SmallBody) && !abilities.level(AbilityKind::Speed) &&
             !abilities.level(AbilityKind::Jump) && !abilities.level(AbilityKind::Jetpack) &&
-            !abilities.level(AbilityKind::DoubleJump) && !abilities.level(AbilityKind::FeatherFall))
+            !abilities.level(AbilityKind::DoubleJump) && !abilities.level(AbilityKind::FeatherFall) &&
+            !abilities.level(AbilityKind::AirManeuver) && arena.modifiers.gravity == 1 &&
+            arena.modifiers.movement == 1)
             return forMap(arena.map);
-        using Key = std::tuple<MapId, unsigned, unsigned, unsigned, unsigned, unsigned, unsigned>;
+        using Key = std::tuple<MapId, unsigned, unsigned, unsigned, unsigned, unsigned, unsigned, unsigned,
+                               float, float>;
         static std::map<Key, std::weak_ptr<const BotNavigation>> cache;
         Key key{arena.map,
                 abilities.level(AbilityKind::SmallBody),
@@ -169,7 +175,10 @@ std::shared_ptr<const BotNavigation> BotNavigation::forArena(const Arena& arena,
                 abilities.level(AbilityKind::Jump),
                 abilities.level(AbilityKind::Jetpack),
                 abilities.level(AbilityKind::DoubleJump),
-                abilities.level(AbilityKind::FeatherFall)};
+                abilities.level(AbilityKind::FeatherFall),
+                abilities.level(AbilityKind::AirManeuver),
+                arena.modifiers.gravity,
+                arena.modifiers.movement};
         if (auto graph = cache[key].lock())
             return graph;
         auto graph = std::make_shared<const BotNavigation>(arena, abilities);

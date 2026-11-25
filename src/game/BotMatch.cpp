@@ -62,16 +62,21 @@ void BotMatch::update(float dt)
     {
         const float delta = static_cast<float>(step);
         accumulator_ = std::max(0.0, accumulator_ - step);
-        if (round_ != match_.round())
+        if (round_ != match_.round() || life_ != match_.world().players()[1].lifeRevision)
         {
             round_ = match_.round();
+            life_ = match_.world().players()[1].lifeRevision;
             bot_.reset();
             bot_.prepare(match_.world().players()[1].abilities, &match_.world().arena());
             botHeld_ = false;
         }
         if (match_.phase() == MatchPhase::Round)
         {
-            const auto input = bot_.update(observeBot(match_.world(), 2, 1), delta);
+            auto observation = observeBot(match_.world(), 2, 1);
+            auto state = match_.snapshot();
+            if (state.rules.mode == GameMode::Control)
+                observation.objective = match_.world().arena().controlAnchors()[state.mode.zone];
+            const auto input = bot_.update(observation, delta);
             match_.setInput(2, input);
             if (input.reload)
                 match_.action(2, match_.round(), ++botSequence_, false, false, input.aimDirection, true);
@@ -81,7 +86,7 @@ void BotMatch::update(float dt)
                               input.aimDirection, false, activeMask);
             botHeld_ = input.shoot;
         }
-        if (match_.phase() == MatchPhase::Armory)
+        if (match_.phase() == MatchPhase::Armory || match_.snapshot().mode.respawn[1].choosing)
         {
             auto state = match_.snapshot();
             if (state.weaponChoice[1] == WeaponChoice::Pending)
@@ -111,7 +116,7 @@ void BotMatch::update(float dt)
             if (after[1].lastDamageActor == 2)
                 roundStats_.selfDamage += lost;
             roundStats_.shots += after[1].weapon.shots - before[1].weapon.shots;
-            if (match_.phase() != MatchPhase::Round)
+            if (match_.phase() != MatchPhase::Round || (before[1].alive() && !after[1].alive()))
             {
                 history_.push_back(roundStats_);
                 if (history_.size() > 3)

@@ -246,6 +246,7 @@ void Client::control(PlayerInput input)
         {
             const auto& command = commands[i];
             auto* out = control->add_commands();
+            out->set_life(command.input.lifeRevision);
             out->set_sequence(command.sequence);
             out->set_movement(command.input.moveDirection);
             out->set_fire_held(command.input.triggerHeld);
@@ -273,6 +274,9 @@ void Client::action(bool jump, bool shoot, Vec2 aim, bool reload, unsigned activ
             impl_->events.push_back(*event);
     }
     a->set_round(impl_->latest->round);
+    for (auto p : impl_->latest->players)
+        if (p.id == impl_->id)
+            a->set_life(p.lifeRevision);
     a->set_jump(jump);
     a->set_shoot(shoot);
     a->set_reload(reload);
@@ -289,13 +293,17 @@ void Client::chooseWeapon(bool reroll)
 
 void Client::chooseUpgrade(UpgradeKind kind)
 {
-    if (!connected() || !impl_->latest || impl_->latest->phase != MatchPhase::Armory)
+    if (!connected() || !impl_->latest ||
+        (impl_->latest->phase != MatchPhase::Armory &&
+         !(impl_->latest->rules.mode == GameMode::Control &&
+           impl_->latest->mode.respawn[impl_->id - 1].choosing)))
         return;
     auto e = envelope();
     auto* choice = e.mutable_weapon_choice();
     choice->set_reroll(kind == UpgradeKind::Weapon);
     choice->set_upgrade(static_cast<unsigned>(kind));
     choice->set_round(impl_->latest->round);
+    choice->set_life(impl_->latest->mode.respawn[impl_->id - 1].life);
     choice->set_selection_revision(impl_->latest->selectionRevision);
     send(impl_->connection, e, true);
 }
@@ -326,10 +334,20 @@ void Client::selectMap(MapId map)
 
 void Client::selectRules(unsigned wins)
 {
+    auto r = impl_->latest ? impl_->latest->rules : MatchRules{};
+    r.wins = wins;
+    selectRules(r);
+}
+
+void Client::selectRules(MatchRules rules)
+{
     if (!connected() || !impl_->latest || impl_->id != 1)
         return;
     auto e = envelope();
-    e.mutable_rule_choice()->set_wins(wins);
+    e.mutable_rule_choice()->set_wins(rules.wins);
+    e.mutable_rule_choice()->set_mode(unsigned(rules.mode));
+    e.mutable_rule_choice()->set_stages(rules.stages);
+    e.mutable_rule_choice()->set_control_goal(rules.controlGoal);
     e.mutable_rule_choice()->set_selection_revision(impl_->latest->selectionRevision);
     send(impl_->connection, e, true);
 }
