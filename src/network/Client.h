@@ -20,7 +20,7 @@ public:
     void disconnect();
     void poll();
     void control(PlayerInput input);
-    void action(bool jump, bool shoot, Vec2 aim, bool reload = false);
+    void action(bool jump, bool shoot, Vec2 aim, bool reload = false, unsigned activeMask = 0);
     void ready(bool value);
     void chooseWeapon(bool reroll);
     void chooseUpgrade(UpgradeKind kind);

@@ -1,5 +1,6 @@
 #include "game/BotController.h"
 #include "game/AttackQueries.h"
+#include "game/AttackStats.h"
 #include "game/BodyPhysics.h"
 #include "game/BotQueries.h"
 #include "game/Collision.h"
@@ -23,6 +24,7 @@ BotController::BotController(Arena arena, BotDifficulty difficulty, std::uint32_
 
 void BotController::reset()
 {
+    nextActive_ = progressBarrier_ = 0;
     intent_ = BotIntent::Approach;
     attack_.reset();
     nextAttack_ = 0;
@@ -147,15 +149,16 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
     if (perceived_.target)
     {
         float toGoal = distance(observation.self.position, goal_);
-        bool changed = perceived_.target->health != progressHealth_ ||
-                       perceived_.target->shields != progressShields_ ||
-                       arena_.terrainRevision != progressTerrain_;
+        bool changed =
+            perceived_.target->health != progressHealth_ || perceived_.target->shields != progressShields_ ||
+            perceived_.target->barrier != progressBarrier_ || arena_.terrainRevision != progressTerrain_;
         if (distance(goal_, lastGoal_) > 12)
         {
             progressDistance_ = toGoal;
             lastGoal_ = goal_;
         }
-        if (perceived_.target->health != progressHealth_ || perceived_.target->shields != progressShields_)
+        if (perceived_.target->health != progressHealth_ || perceived_.target->shields != progressShields_ ||
+            perceived_.target->barrier != progressBarrier_)
             enemyProgressAt_ = time_;
         if (changed || toGoal < progressDistance_ - 8 || observation.self.weapon.reloading ||
             observation.self.weapon.overheated || observation.self.weapon.charging)
@@ -165,6 +168,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
         }
         progressHealth_ = perceived_.target->health;
         progressShields_ = perceived_.target->shields;
+        progressBarrier_ = perceived_.target->barrier;
         progressTerrain_ = arena_.terrainRevision;
         if (time_ - progressTime_ > 2 || time_ - enemyProgressAt_ > 6)
         {
@@ -249,7 +253,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
                 const auto* cell = arena_.terrainAt(contact, 2);
                 float reach =
                     meleeWeapon(observation.self.weapon.kind)
-                        ? weaponDefinition(observation.self.weapon.kind).barrel
+                        ? attackStats(observation.self.weapon.kind, observation.self.abilities).reach
                         : abilityProfile(observation.self.weapon.kind, observation.self.abilities).maximum;
                 bool useful = cell && nearest * length <= reach &&
                               (observation.self.weapon.kind != WeaponKind::Flamethrower ||
@@ -295,7 +299,9 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
             bool valid =
                 demolitionShot || !meleeWeapon(observation.self.weapon.kind) ||
                 meleeContact(observation.self.weaponOrigin(), aim_,
-                             weaponDefinition(observation.self.weapon.kind).barrel, predicted, arena_)
+                             attackStats(observation.self.weapon.kind, observation.self.abilities).reach,
+                             predicted, arena_,
+                             attackStats(observation.self.weapon.kind, observation.self.abilities).halfAngle)
                     .has_value();
             alignedFire = std::abs(change) < .06f && valid;
             if (alignedFire)
@@ -385,6 +391,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
                               distance(observation.self.position, perceived_.target->position)
                       ? BotIntent::Retreat
                       : BotIntent::Approach;
+    useActives(observation, input);
     input.jetpackHeld = input.jetpackHeld || input.jump;
     return input;
 }

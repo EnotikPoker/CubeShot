@@ -1,5 +1,7 @@
 #include "game/AttackQueries.h"
+#include "game/AttackStats.h"
 #include "game/BodyPhysics.h"
+#include "game/BoomerangMotion.h"
 #include "game/BotController.h"
 #include "game/BotQueries.h"
 #include "game/Collision.h"
@@ -35,38 +37,9 @@ bool advanceKnownBullet(Bullet& bullet, float age, const Arena& arena, Vec2 owne
 {
     for (float elapsed = 0; elapsed < age; elapsed += step)
     {
-        const auto start = bullet.position;
-        if (bullet.weapon == WeaponKind::FireBoomerang)
-        {
-            if (bullet.age >= .55f)
-                bullet.returning = true;
-            if (bullet.returning)
-            {
-                float d = distance(bullet.position, owner);
-                if (d < 24)
-                    return false;
-                bullet.velocity = {(owner.x - bullet.position.x) / d * 700,
-                                   (owner.y - bullet.position.y) / d * 700};
-            }
-        }
-        if (bullet.weapon != WeaponKind::FireBoomerang)
-        {
-            if (!advanceProjectileTerrain(bullet, arena, std::min(step, age - elapsed)))
-                return false;
-            continue;
-        }
-        bullet.update(std::min(step, age - elapsed));
-        const float obstacle = terrainHit(start, bullet.position, arena, bullet.collisionRadius);
-        if (bullet.lifetime <= 0)
+        if (bullet.weapon == WeaponKind::FireBoomerang && !steerBoomerang(bullet, owner))
             return false;
-        if (bullet.weapon == WeaponKind::FireBoomerang && (obstacle <= 1 || outside(bullet.position, arena)))
-        {
-            bullet.returning = true;
-            bullet.position = obstacle <= 1 ? Vec2{start.x + (bullet.position.x - start.x) * obstacle,
-                                                   start.y + (bullet.position.y - start.y) * obstacle}
-                                            : start;
-        }
-        else if (obstacle <= 1 || outside(bullet.position, arena))
+        if (!advanceProjectileTerrain(bullet, arena, std::min(step, age - elapsed)))
             return false;
     }
     return bullet.lifetime > 0;
@@ -89,11 +62,13 @@ struct FlightStep
 struct Threat
 {
     BulletId id;
+    PlayerId shooter = 0;
     std::array<FlightStep, dodgeSteps> path;
     std::size_t count = 0;
     WeaponKind weapon = WeaponKind::Pistol;
     int damage = 20;
     float blastRadius = 240, power = 1;
+    int blastDamage = 120;
 };
 
 struct BodyPath
@@ -107,57 +82,30 @@ Threat predictThreat(Bullet bullet, float horizon, const Arena& arena, Vec2 owne
 {
     Threat out;
     out.id = bullet.id;
+    out.shooter = bullet.shooterId;
     out.weapon = bullet.weapon;
     out.damage = bullet.damage;
-    out.blastRadius = (bullet.weapon == WeaponKind::GrenadeLauncher ? 180.f : 240.f) * bullet.blastScale;
+    auto blast = explosionStats(bullet);
+    out.blastRadius = blast.radius;
+    out.blastDamage = blast.damage;
     out.power = bullet.power;
     for (float elapsed = 0; elapsed < horizon && out.count < dodgeSteps; elapsed += step)
     {
-        const auto from = bullet.position;
-        if (bullet.weapon == WeaponKind::FireBoomerang)
-        {
-            if (bullet.age >= .55f)
-                bullet.returning = true;
-            if (bullet.returning)
-            {
-                float d = distance(bullet.position, owner);
-                if (d < 24)
-                    break;
-                bullet.velocity = {(owner.x - bullet.position.x) / d * 700,
-                                   (owner.y - bullet.position.y) / d * 700};
-            }
-        }
-        if (bullet.weapon != WeaponKind::FireBoomerang)
-        {
-            const float dt = std::min(step, horizon - elapsed);
-            if (bullet.lifetime <= dt)
-            {
-                if (explosiveWeapon(bullet.weapon))
-                    out.path[out.count++] = {from, from, 1,
-                                             static_cast<int>(std::lround(bullet.damage * bullet.power)),
-                                             bullet.collisionRadius};
-                break;
-            }
-            bool active = advanceProjectileTerrain(bullet, arena, dt);
-            out.path[out.count++] = {from, bullet.position, active ? 2.f : 1.f,
-                                     static_cast<int>(std::lround(bullet.impactDamage() * bullet.power)),
-                                     bullet.collisionRadius};
-            if (!active)
-                break;
-            continue;
-        }
-        bullet.update(std::min(step, horizon - elapsed));
-        if (bullet.lifetime <= 0)
+        if (bullet.weapon == WeaponKind::FireBoomerang && !steerBoomerang(bullet, owner))
             break;
-        const float barrier = terrainHit(from, bullet.position, arena, bullet.collisionRadius);
-        out.path[out.count++] = {from, bullet.position, barrier, bullet.impactDamage(),
-                                 bullet.collisionRadius};
-        if (barrier <= 1 && bullet.weapon == WeaponKind::FireBoomerang)
+        const auto from = bullet.position;
+        const float dt = std::min(step, horizon - elapsed);
+        if (bullet.lifetime <= dt)
         {
-            bullet.position = from;
-            bullet.returning = true;
+            if (explosiveWeapon(bullet.weapon))
+                out.path[out.count++] = {from, from, 1, 0, bullet.collisionRadius};
+            break;
         }
-        else if (barrier <= 1 || outside(bullet.position, arena))
+        const bool flying = advanceProjectileTerrain(bullet, arena, dt);
+        out.path[out.count++] = {from, bullet.position, flying ? 2.f : 1.f,
+                                 int(std::lround(bullet.impactDamage() * bullet.power)),
+                                 bullet.collisionRadius};
+        if (!flying)
             break;
     }
     return out;
@@ -194,9 +142,10 @@ float expectedDamage(const Threat& threat, const BodyPath& body, const Arena& ar
                                   {{0, 0}, body.size}, flight.radius);
         if (hit && *hit < flight.barrier)
             return self.invulnerability > 0 ? 0.f
-                   : self.shields > 0
+                   : self.shields > 0 && threat.shooter != self.id
                        ? 2.f
-                       : static_cast<float>(healthDamage(flight.damage, 1, self, threat.weapon)) +
+                       : static_cast<float>(std::max(0, healthDamage(flight.damage, 1, self, threat.weapon) -
+                                                            int(self.barrier))) +
                              (incendiaryWeapon(threat.weapon)
                                   ? healthDamage(12, 1, self, WeaponKind::Flamethrower, true)
                                   : 0.f);
@@ -214,15 +163,16 @@ float expectedDamage(const Threat& threat, const BodyPath& body, const Arena& ar
                     break;
                 }
             if (!shielded)
-                damage = std::max(
-                    damage, (threat.weapon == WeaponKind::GrenadeLauncher ? 90.f : 120.f) * threat.power *
-                                std::max(0.f, 1 - distance(blast, nearest) / threat.blastRadius));
+                damage =
+                    std::max(damage, threat.blastDamage * threat.power *
+                                         std::max(0.f, 1 - distance(blast, nearest) / threat.blastRadius));
         }
     }
     return damage <= 0 || self.invulnerability > 0 ? 0.f
-           : self.shields > 0
+           : self.shields > 0 && threat.shooter != self.id
                ? 2.f
-               : static_cast<float>(healthDamage(static_cast<int>(damage), 1, self, threat.weapon));
+               : static_cast<float>(std::max(
+                     0, healthDamage(static_cast<int>(damage), 1, self, threat.weapon) - int(self.barrier)));
 }
 
 } // namespace

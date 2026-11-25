@@ -53,6 +53,8 @@ bool Match::changeMap(PlayerId id, std::uint64_t revision)
     roundsPlayed_ = 0;
     loadout_ = {};
     abilities_ = {};
+    activeLoadout_ = {};
+    rolledActive_ = {};
     upgrade_ = {};
     rolledAbility_ = {AbilityKind::None, AbilityKind::None};
     weaponChoice_ = {};
@@ -95,6 +97,8 @@ void Match::disconnect(PlayerId id, AbortReason reason)
     roundsPlayed_ = 0;
     loadout_ = {};
     abilities_ = {};
+    activeLoadout_ = {};
+    rolledActive_ = {};
     upgrade_ = {};
     rolledAbility_ = {AbilityKind::None, AbilityKind::None};
     weaponChoice_ = {};
@@ -113,6 +117,8 @@ void Match::beginCountdown()
     {
         loadout_ = {};
         abilities_ = {};
+        activeLoadout_ = {};
+        rolledActive_ = {};
     }
     upgrade_ = {};
     rolledAbility_ = {AbilityKind::None, AbilityKind::None};
@@ -142,6 +148,8 @@ void Match::beginCountdown()
     world_.equip(2, loadout_[1]);
     world_.setAbilities(1, abilities_[0]);
     world_.setAbilities(2, abilities_[1]);
+    world_.setActives(1, activeLoadout_[0]);
+    world_.setActives(2, activeLoadout_[1]);
     phase_ = MatchPhase::Countdown;
     remaining_ = 3;
 }
@@ -168,7 +176,7 @@ void Match::setInput(PlayerId id, const PlayerInput& input)
         return;
     PlayerInput continuous = input;
     continuous.triggerHeld = input.triggerHeld || input.shoot;
-    continuous.jump = continuous.shoot = continuous.reload = false;
+    continuous.jump = continuous.shoot = continuous.reload = continuous.activeQ = continuous.activeE = false;
     world_.setPlayerInput(id, continuous);
 }
 
@@ -179,15 +187,15 @@ void Match::clearInput(PlayerId id)
 }
 
 bool Match::action(PlayerId id, std::uint32_t round, std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
-                   bool reload)
+                   bool reload, unsigned activeMask)
 {
-    if (!validId(id) || !connected_[id - 1] ||
+    if (activeMask > 3 || !validId(id) || !connected_[id - 1] ||
         (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd) || round != round_ || sequence == 0 ||
         sequence <= lastAction_[id - 1] || !std::isfinite(aim.x) || !std::isfinite(aim.y) ||
         std::hypot(aim.x, aim.y) < 0.0001f || !world_.players()[id - 1].alive())
         return false;
     lastAction_[id - 1] = sequence;
-    world_.requestAction(id, jump, shoot, aim, sequence, reload);
+    world_.requestAction(id, jump, shoot, aim, sequence, reload, activeMask);
     return true;
 }
 
@@ -200,16 +208,26 @@ bool Match::chooseUpgrade(PlayerId id, UpgradeKind kind, std::uint32_t round, st
 {
     if (!validId(id) || !connected_[id - 1] || phase_ != MatchPhase::Armory || round != round_ ||
         revision != selectionRevision_ || weaponChoice_[id - 1] != WeaponChoice::Pending ||
-        static_cast<unsigned>(kind) > 2)
+        static_cast<unsigned>(kind) > 4)
         return false;
     const auto slot = id - 1;
     if (kind == UpgradeKind::Ability)
     {
-        const auto pool = abilities_[slot].available();
+        const auto pool = abilities_[slot].available(loadout_[slot], activeLoadout_[slot]);
         if (pool.empty())
             return false;
         rolledAbility_[slot] =
             pool[std::uniform_int_distribution<unsigned>(0, static_cast<unsigned>(pool.size() - 1))(random_)];
+    }
+    else if (kind == UpgradeKind::ActiveQ || kind == UpgradeKind::ActiveE)
+    {
+        unsigned index = kind == UpgradeKind::ActiveQ ? 0 : 1;
+        std::vector<ActiveKind> pool;
+        for (unsigned k = 1; k <= activeCount; ++k)
+            if (ActiveKind(k) != activeLoadout_[slot][1 - index])
+                pool.push_back(ActiveKind(k));
+        rolledActive_[slot] =
+            pool[std::uniform_int_distribution<unsigned>(0, unsigned(pool.size() - 1))(random_)];
     }
     else if (kind == UpgradeKind::Weapon)
         rolled_[slot] =
@@ -254,11 +272,13 @@ void Match::update(float dt)
                     {
                         if (upgrade_[i] == UpgradeKind::Ability)
                             abilities_[i].add(rolledAbility_[i]);
+                        else if (upgrade_[i] == UpgradeKind::ActiveQ || upgrade_[i] == UpgradeKind::ActiveE)
+                            activeLoadout_[i][upgrade_[i] == UpgradeKind::ActiveQ ? 0 : 1] = rolledActive_[i];
                         else
                             loadout_[i] = rolled_[i];
                         weaponChoice_[i] = WeaponChoice::Revealing;
-                        spinRemaining_[i] = upgrade_[i] == UpgradeKind::Ability ? abilityReviewSeconds
-                                                                                : spinSeconds - wheelSeconds;
+                        spinRemaining_[i] = upgrade_[i] != UpgradeKind::Weapon ? abilityReviewSeconds
+                                                                               : spinSeconds - wheelSeconds;
                     }
                     else
                     {
@@ -326,6 +346,8 @@ WorldSnapshot Match::snapshot() const
 {
     WorldSnapshot s{tick_,  round_,  phase_,   remaining_,       score_,          connected_,
                     ready_, winner_, aborted_, world_.players(), world_.bullets()};
+    s.activeLoadout = activeLoadout_;
+    s.rolledActive = rolledActive_;
     s.rules = rules_;
     s.terrain = world_.arena().terrainState();
     s.fires = world_.fires();

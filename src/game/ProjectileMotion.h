@@ -1,5 +1,6 @@
 #pragma once
 #include "game/Arena.h"
+#include "game/BoomerangMotion.h"
 #include "game/Bullet.h"
 #include "game/Collision.h"
 #include <algorithm>
@@ -70,6 +71,8 @@ inline bool tunnelProjectile(Bullet& bullet, const Arena& arena, Vec2 at, unsign
     bullet.damage = std::max(1, static_cast<int>(std::lround(
                                     bullet.damage * (bullet.weapon == WeaponKind::Crossbow ? .7f : .6f))));
     bullet.travelled += std::hypot(exit.x - at.x, exit.y - at.y);
+    if (!bullet.returning)
+        bullet.legTravel += std::hypot(exit.x - at.x, exit.y - at.y);
     bullet.position = exit;
     return true;
 }
@@ -113,10 +116,29 @@ inline bool advanceProjectileTerrain(Bullet& bullet, const Arena& arena, float d
             return true;
         }
         bullet.position = at;
+        if (bullet.weapon == WeaponKind::FireBoomerang)
+        {
+            if (bullet.returning)
+                return false;
+            returnBoomerang(bullet);
+            float speed = std::max(.01f, std::hypot(bullet.velocity.x, bullet.velocity.y));
+            bullet.position = {at.x - bullet.velocity.x / speed, at.y - bullet.velocity.y / speed};
+            return true;
+        }
         return false;
     }
-    return to.x >= arena.bounds.position.x && to.y >= arena.bounds.position.y &&
-           to.x <= arena.bounds.position.x + arena.bounds.size.x &&
-           to.y <= arena.bounds.position.y + arena.bounds.size.y;
+    const auto r = bullet.collisionRadius;
+    bool inside = to.x >= arena.bounds.position.x + r && to.y >= arena.bounds.position.y + r &&
+                  to.x <= arena.bounds.position.x + arena.bounds.size.x - r &&
+                  to.y <= arena.bounds.position.y + arena.bounds.size.y - r;
+    if (!inside && bullet.weapon == WeaponKind::FireBoomerang && !bullet.returning)
+    {
+        returnBoomerang(bullet);
+        bullet.position = {
+            std::clamp(to.x, arena.bounds.position.x + 4, arena.bounds.position.x + arena.bounds.size.x - 4),
+            std::clamp(to.y, arena.bounds.position.y + 4, arena.bounds.position.y + arena.bounds.size.y - 4)};
+        return true;
+    }
+    return inside;
 }
 } // namespace cubeshot

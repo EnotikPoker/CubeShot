@@ -1,4 +1,6 @@
 #pragma once
+#include "game/ActiveAbilities.h"
+#include "game/Weapon.h"
 #include <array>
 #include <cstdint>
 #include <string_view>
@@ -39,6 +41,12 @@ enum class AbilityKind : std::uint32_t
     FeatherFall,
     Stability,
     SecondChance,
+    WideSwing,
+    Lunge,
+    Bleeding,
+    Combo,
+    ReturnStrike,
+    SecondCircuit,
     Count,
     None = Count
 };
@@ -63,6 +71,7 @@ struct Abilities
     bool add(AbilityKind kind);
     bool valid() const;
     std::vector<AbilityKind> available() const;
+    std::vector<AbilityKind> available(WeaponKind weapon, const ActiveLoadout& active = {}) const;
     float scale() const;
     float speed() const;
     float jump() const;

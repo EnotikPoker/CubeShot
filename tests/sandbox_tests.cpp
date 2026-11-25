@@ -21,6 +21,7 @@ int main()
         config.abilities[0].add(AbilityKind::Armor);
         config.abilities[0].add(AbilityKind::Jetpack);
         config.weapons[0] = WeaponKind::Minigun;
+        config.actives[0] = {ActiveKind::Barrier, ActiveKind::Dash};
         auto terrain = world.arena().terrainState();
         auto position = world.players()[0].position;
         expect(world.editTest({TestOperation::Build, 0}, config), "Live build applies safely");
@@ -29,6 +30,14 @@ int main()
         expect(world.arena().terrainState().health == terrain.health &&
                    world.players()[0].position.y + 24 == position.y + 48,
                "Build preserves map and feet");
+        expect(world.players()[0].actives[0].kind == ActiveKind::Barrier, "Live build equips active slots");
+        world.editTest({TestOperation::UseQ, 0}, config);
+        world.clearPlayerInput(1); // The client gates held input when closing Tab.
+        world.update(1.f / 120);
+        expect(world.players()[0].barrier > 0 && world.players()[0].actives[0].cooldown > 0,
+               "Queued sandbox cast executes on resume");
+        world.editTest({TestOperation::ReadyActives, 0}, config);
+        expect(world.players()[0].actives[0].cooldown == 0, "Sandbox cooldown reset works immediately");
         for (auto op : {TestOperation::EmptyAmmo, TestOperation::Reload, TestOperation::FinishReload})
             expect(world.editTest({op, 0}, config), "Ammo commands accepted");
         expect(!world.players()[0].weapon.reloading && world.players()[0].weapon.ammo == 300,

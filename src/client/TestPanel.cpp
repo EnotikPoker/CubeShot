@@ -42,9 +42,10 @@ std::vector<MenuButton> TestPanel::buttons() const
     };
     for (unsigned i = 0; i < 4; ++i)
         add(i ? U"Мишень " + number(i) : U"Игрок", {{30.f + i * 232, 66}, {205, 30}}, Kind::Target, i);
-    const std::array<std::u32string_view, 4> sections{U"Способности", U"Оружие", U"Состояние", U"Сцена"};
-    for (unsigned i = 0; i < 4; ++i)
-        add(sections[i], {{30.f + i * 232, 106}, {205, 30}}, Kind::Section, i);
+    const std::array<std::u32string_view, 5> sections{U"Способности", U"Оружие", U"Состояние", U"Сцена",
+                                                      U"Активные"};
+    for (unsigned i = 0; i < 5; ++i)
+        add(sections[i], {{30.f + i * 180, 106}, {165, 30}}, Kind::Section, i);
     if (section_ == 0)
     {
         for (unsigned row = 0; row < 6; ++row)
@@ -92,13 +93,30 @@ std::vector<MenuButton> TestPanel::buttons() const
                 static_cast<unsigned>(actions[i].second), !live_);
         }
     }
-    else
+    else if (section_ == 3)
     {
         add(U"Восстановить карту", {{210, 180}, {540, 38}}, Kind::Operation,
             static_cast<unsigned>(TestOperation::RestoreMap), !live_);
         add(U"Очистить пули, огонь и останки", {{210, 236}, {540, 38}}, Kind::Operation,
             static_cast<unsigned>(TestOperation::Clear), !live_);
         add(U"Перезапустить тест (F5)", {{210, 292}, {540, 38}}, Kind::Restart, 0, !live_);
+    }
+    if (section_ == 4)
+    {
+        for (unsigned slot = 0; slot < 2; ++slot)
+            add((slot ? U"E · " : U"Q · ") +
+                    std::u32string(activeDefinition(draft_.actives[target_][slot]).name),
+                {{30.f + slot * 464, 150}, {437, 32}}, Kind::ActiveSlot, slot);
+        for (unsigned k = 0; k <= activeCount; ++k)
+            add(activeDefinition(ActiveKind(k)).name,
+                {{30.f + (k % 4) * 232, 196.f + (k / 4) * 42}, {213, 34}}, Kind::ActiveChoice, k,
+                k && ActiveKind(k) == draft_.actives[target_][1 - activeSlot_]);
+        add(U"Сбросить перезарядки", {{30, 365}, {285, 32}}, Kind::Operation,
+            unsigned(TestOperation::ReadyActives), !live_);
+        add(U"Применить Q при продолжении", {{330, 365}, {295, 32}}, Kind::Operation,
+            unsigned(TestOperation::UseQ), !live_);
+        add(U"Применить E при продолжении", {{640, 365}, {290, 32}}, Kind::Operation,
+            unsigned(TestOperation::UseE), !live_);
     }
     add(U"Сбросить персонажа", {{30, 487}, {215, 34}}, Kind::Reset);
     add(U"Сбросить всех", {{260, 487}, {190, 34}}, Kind::ResetAll);
@@ -119,6 +137,12 @@ TestPanel::Intent TestPanel::activate(unsigned index)
     edit_ = {TestOperation::Build, target_};
     switch (c.kind)
     {
+        case Kind::ActiveSlot:
+            activeSlot_ = c.value;
+            return Intent::None;
+        case Kind::ActiveChoice:
+            draft_.actives[target_][activeSlot_] = ActiveKind(c.value);
+            break;
         case Kind::Target:
             target_ = c.value;
             return Intent::None;
@@ -154,6 +178,7 @@ TestPanel::Intent TestPanel::activate(unsigned index)
             break;
         case Kind::Reset:
             draft_.abilities[target_] = {};
+            draft_.actives[target_] = {};
             draft_.weapons[target_] = WeaponKind::Pistol;
             draft_.healthPercent[target_] = 100;
             break;
@@ -186,6 +211,9 @@ bool TestPanel::render(SDL_Renderer* r, int selection) const
         bool active = (c.kind == Kind::Target && c.value == target_) ||
                       (c.kind == Kind::Section && c.value == section_) ||
                       (c.kind == Kind::Weapon && c.value == static_cast<unsigned>(draft_.weapons[target_]));
+        active =
+            active || (c.kind == Kind::ActiveSlot && c.value == activeSlot_) ||
+            (c.kind == Kind::ActiveChoice && ActiveKind(c.value) == draft_.actives[target_][activeSlot_]);
         auto b = list[i].bounds;
         SDL_FRect rect{b.position.x, b.position.y, b.size.x, b.size.y};
         SDL_SetRenderDrawColor(r, active || static_cast<int>(i) == selection ? 45 : 25, active ? 86 : 36,
@@ -226,6 +254,12 @@ bool TestPanel::render(SDL_Renderer* r, int selection) const
     }
     if (section_ == 3)
         ok = ok && text(r, U"Карта восстанавливается с безопасным возвратом персонажей на старт.", 60, 360);
+    if (section_ == 4)
+        ok = ok && text(r, activeState_, 30, 397, {116, 197, 232, 255});
+    if (section_ == 4 && selection >= 0 && unsigned(selection) < controls_.size() &&
+        controls_[selection].kind == Kind::ActiveChoice)
+        ok = ok && text(r, activeDefinition(ActiveKind(controls_[selection].value)).description, 30, 420,
+                        {161, 180, 202, 255});
     if (!status_.empty())
         ok = ok && text(r, status_, 30, 458, {245, 177, 105, 255});
     return ok;

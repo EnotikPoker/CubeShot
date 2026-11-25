@@ -64,7 +64,7 @@ Settings loadSettings(const std::filesystem::path& file)
             return settings;
         std::ifstream input(file);
         const auto data = nlohmann::json::parse(input, nullptr, false);
-        if (!data.is_object() || data.value("version", 0) != 1)
+        if (!data.is_object() || (data.value("version", 0) != 1 && data.value("version", 0) != 2))
             return settings;
         if (data.contains("effects") && data["effects"].is_object())
         {
@@ -93,7 +93,8 @@ Settings loadSettings(const std::filesystem::path& file)
         try
         {
             const auto& rows = data.at("bindings");
-            if (!rows.is_array() || (rows.size() != settings.bindings.size() && rows.size() != 5))
+            if (!rows.is_array() ||
+                (rows.size() != settings.bindings.size() && rows.size() != 5 && rows.size() != 6))
                 return settings;
             InputBindings bindings{};
             for (std::size_t a = 0; a < rows.size(); ++a)
@@ -153,6 +154,28 @@ Settings loadSettings(const std::filesystem::path& file)
                 }
                 bindings[5][0] = {BindingDevice::Keyboard, key};
             }
+            if (rows.size() < 8)
+            {
+                auto used = [&](int key)
+                {
+                    for (auto& row : bindings)
+                        for (auto b : row)
+                            if (b.device == BindingDevice::Keyboard && b.code == key)
+                                return true;
+                    return false;
+                };
+                for (unsigned a = 6; a < 8; ++a)
+                {
+                    int key = a == 6 ? SDL_SCANCODE_Q : SDL_SCANCODE_E;
+                    if (used(key))
+                    {
+                        key = SDL_SCANCODE_A;
+                        while (key <= SDL_SCANCODE_Z && used(key))
+                            ++key;
+                    }
+                    bindings[a][0] = {BindingDevice::Keyboard, key};
+                }
+            }
             if (validBindings(bindings))
                 settings.bindings = bindings;
         }
@@ -187,7 +210,7 @@ bool saveSettings(const Settings& settings, const std::filesystem::path& file, s
         rows.push_back(std::move(slots));
     }
     const auto& d = settings.display;
-    const nlohmann::json data{{"version", 1},
+    const nlohmann::json data{{"version", 2},
                               {"display",
                                {{"fullscreen", d.fullscreen},
                                 {"width", d.size.width},

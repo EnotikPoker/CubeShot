@@ -66,7 +66,7 @@ struct Arena
     void restoreTerrain();
     TerrainState terrainState() const;
     bool applyTerrain(const TerrainState& state);
-    bool damageTerrain(Vec2 at, float radius, int damage, bool fire = false);
+    bool damageTerrain(Vec2 at, float radius, int damage, bool fire = false, bool explosion = false);
     const TerrainCell* terrainAt(Vec2 at, float radius = 1) const;
     std::vector<Rect> solidsNear(Rect bounds) const;
     static Arena create(MapId map, bool test = false);

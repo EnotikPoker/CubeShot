@@ -45,8 +45,15 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
     const bool close = meleeWeapon(self.weapon.kind) || self.weapon.kind == WeaponKind::Shotgun ||
                        self.weapon.kind == WeaponKind::Flamethrower;
     const bool threatMelee = meleeWeapon(target->weapon);
+    auto ready = [&](ActiveKind kind)
+    {
+        return std::any_of(target->actives.begin(), target->actives.end(),
+                           [&](auto s) { return s.kind == kind && s.cooldown <= 0; });
+    };
+    const bool gapCloser = ready(ActiveKind::Blink) || ready(ActiveKind::Dash) || ready(ActiveKind::Harpoon);
+    const float dangerReach = enemy.maximum + (threatMelee && gapCloser ? 180.f : 0.f);
     if (threatMelee && !meleeWeapon(self.weapon.kind))
-        profile.minimum = std::max(profile.minimum, enemy.maximum + 85);
+        profile.minimum = std::max(profile.minimum, std::min(profile.maximum - 20, dangerReach + 85));
     const float enemyInterval = weaponDefinition(target->weapon).interval / target->abilities.fireRate();
     const bool enemyReady = !target->reloading && !target->overheated &&
                             (time_ - enemyShotAt_ > enemyInterval || target->weapon != enemyWeapon_);
@@ -59,10 +66,10 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
     // same weapon's envelope rather than circling at its maximum range forever.
     if (time_ - enemyProgressAt_ > 3)
         profile.maximum = std::min(profile.maximum, profile.minimum + 60);
-    const bool lethal = (target->weapon == WeaponKind::Sniper || target->weapon == WeaponKind::Rifle) &&
-                        self.shields == 0 &&
-                        self.health <= weaponDefinition(target->weapon).damage * target->abilities.power() *
-                                           (1 - .1f * self.abilities.level(AbilityKind::ToughSkin));
+    const bool lethal =
+        (target->weapon == WeaponKind::Sniper || target->weapon == WeaponKind::Rifle) && self.shields == 0 &&
+        self.health + self.barrier <= weaponDefinition(target->weapon).damage * target->abilities.power() *
+                                          (1 - .1f * self.abilities.level(AbilityKind::ToughSkin));
     bool covered = false;
     for (const auto& wall : arena_.platforms)
         if (collision::segmentHit(center(*target), self.weaponOrigin(), wall, 3))
@@ -96,11 +103,14 @@ Vec2 BotController::chooseGoal(const Player& self, const std::optional<BotTarget
             if (collision::segmentHit(start, finish, box, 3))
                 return 0.f;
         const float distanceToEnemy = distance(start, finish);
+        if (target->slamming && finish.y > start.y &&
+            std::abs(finish.x - start.x) < 110 * target->abilities.blastRadius())
+            return 700.f;
         if (target->charging && enemyReady)
             return 950.f;
         if (wantsCover)
             return (close ? 400.f : 240.f);
-        if (threatMelee && !meleeWeapon(self.weapon.kind) && distanceToEnemy < enemy.maximum + 60)
+        if (threatMelee && !meleeWeapon(self.weapon.kind) && distanceToEnemy < dangerReach + 60)
             return 650.f;
         return 0.f;
     };

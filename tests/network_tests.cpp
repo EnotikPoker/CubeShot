@@ -315,7 +315,7 @@ void impairedCombat()
         6, "Both impaired clients enter weapon selection after four-second aftermath");
     expect(!r.host.snapshot()->corpses.empty() && r.host.snapshot()->corpses[0].body.owner == 2,
            "Physical corpse snapshot reaches remote clients");
-    r.host.chooseWeapon(true);
+    r.host.chooseUpgrade(UpgradeKind::ActiveQ);
     r.guest.chooseUpgrade(UpgradeKind::Ability);
     r.until(
         [&]
@@ -324,7 +324,7 @@ void impairedCombat()
                    r.guest.snapshot()->weaponChoice[1] == WeaponChoice::Spinning;
         },
         2, "Independent weapon and ability roulettes are reliable under loss");
-    const auto rolled = r.host.snapshot()->rolled[0];
+    const auto rolled = r.host.snapshot()->rolledActive[0];
     const auto ability = r.guest.snapshot()->rolledAbility[1];
     expect(validAbility(ability), "Ability result comes from the server");
     r.guest.chooseWeapon(true); // A second category cannot be chosen during the same intermission.
@@ -336,10 +336,10 @@ void impairedCombat()
                    r.guest.snapshot()->phase == MatchPhase::Countdown;
         },
         10, "Both completed choices start the next countdown after the ability review");
-    expect(r.host.snapshot()->players[0].weapon.kind == rolled &&
-               r.guest.snapshot()->players[0].weapon.kind == rolled && r.host.snapshot()->corpses.empty() &&
-               r.guest.snapshot()->pieces.empty(),
-           "Both clients agree on weapon outcome and round cleanup");
+    expect(r.host.snapshot()->players[0].actives[0].kind == rolled &&
+               r.guest.snapshot()->players[0].actives[0].kind == rolled &&
+               r.host.snapshot()->corpses.empty() && r.guest.snapshot()->pieces.empty(),
+           "Both clients agree on the active outcome and round cleanup");
     expect(r.host.snapshot()->players[1].abilities.level(ability) == 1 &&
                r.guest.snapshot()->players[1].abilities.level(ability) == 1 &&
                r.host.snapshot()->players[1].weapon.kind == WeaponKind::Pistol,
@@ -348,6 +348,27 @@ void impairedCombat()
            "New round restores all geometry identically on both clients");
     expect(r.host.snapshot()->rules.wins == 20 && r.guest.snapshot()->rules.wins == 20,
            "Selected match length survives the next round");
+    r.until(
+        [&] {
+            return r.host.snapshot()->phase == MatchPhase::Round &&
+                   r.guest.snapshot()->phase == MatchPhase::Round;
+        },
+        5, "Active test round starts");
+    const auto serial = r.server.match().world().players()[0].activeSerial;
+    const auto ack = r.host.snapshot()->actionAck[0];
+    r.hostInput.moveDirection = -.25f;
+    r.host.action(false, false, {-1, 0}, false, 1);
+    r.host.action(false, false, {-1, 0}, false, 1);
+    r.until(
+        [&]
+        { return r.host.snapshot()->actionAck[0] >= ack + 2 && r.guest.snapshot()->actionAck[0] >= ack + 2; },
+        3, "Active requests are acknowledged under packet loss");
+    auto current = r.server.match().world().players()[0];
+    expect(current.activeSerial == serial + (rolled == ActiveKind::Heal ? 0 : 1),
+           "Repeated active command never casts twice during cooldown");
+    expect(r.host.snapshot()->players[0].actives[0].kind == rolled &&
+               r.guest.snapshot()->players[0].actives[0].kind == rolled,
+           "Both clients retain the authoritative active state");
     r.guest.disconnect();
     r.until([&] { return r.host.snapshot()->phase == MatchPhase::Lobby && r.host.snapshot()->score[0] == 0; },
             3, "Leaving game resets score without award");

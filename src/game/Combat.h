@@ -6,7 +6,7 @@ namespace cubeshot
 {
 struct DamageContext
 {
-    bool periodic = false, reflected = false;
+    bool periodic = false, reflected = false, bleeding = false;
 };
 
 struct FirePatch

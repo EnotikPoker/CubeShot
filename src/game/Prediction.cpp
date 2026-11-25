@@ -1,5 +1,6 @@
 #include "game/Prediction.h"
 #include "game/BodyPhysics.h"
+#include "game/BoomerangMotion.h"
 #include "game/Collision.h"
 #include "game/ProjectileMotion.h"
 #include <algorithm>
@@ -29,12 +30,17 @@ void Prediction::reset()
 void Prediction::simulate(const PredictedCommand& command, bool visuals)
 {
     auto input = command.input;
-    input.jump = input.shoot = input.reload = false;
+    input.jump = input.shoot = input.reload = input.activeQ = input.activeE = false;
     player_->applyInput(input);
     for (const auto& a : actions_)
         if (a.input == command.sequence)
-            player_->requestAction(a.jump, a.shoot, a.aim, a.sequence, a.reload);
+            player_->requestAction(a.jump, a.shoot, a.aim, a.sequence, a.reload, a.activeMask);
     const int authoritativeHealth = player_->health;
+    auto requests = player_->activeRequests;
+    player_->activeRequests = 0;
+    for (unsigned slot = 0; slot < 2; ++slot)
+        if (requests & (1u << slot))
+            player_->activate(slot, arena_, others_);
     auto bodies = others_;
     bodies.push_back(*player_);
     simulateBodies(bodies, arena_, step);
@@ -128,6 +134,7 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
         reset();
         return;
     }
+    const bool teleport = player_ && player_->teleportRevision != found->teleportRevision;
     const bool boundary = arena_.map != snapshot.map || waitingForSnapshot_ || !player_ ||
                           round_ != snapshot.round || phase_ != snapshot.phase || !found->alive();
     if (arena_.map != snapshot.map || !player_)
@@ -174,7 +181,9 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
             flight_.push_back(b);
     for (const auto& c : commands_)
         simulate(c);
-    if (!boundary)
+    if (teleport)
+        offset_ = {};
+    else if (!boundary)
     {
         offset_.x += old.x - player_->position.x;
         offset_.y += old.y - player_->position.y;
@@ -203,49 +212,46 @@ void Prediction::advance(PlayerInput input)
     simulate(command, true);
     offset_.x *= .85f;
     offset_.y *= .85f;
-    bullets_.erase(
-        std::remove_if(bullets_.begin(), bullets_.end(),
-                       [&](Bullet& b)
-                       {
-                           const auto from = b.position;
-                           if (b.weapon == WeaponKind::FireBoomerang)
-                           {
-                               if (b.age >= .55f)
-                                   b.returning = true;
-                               if (b.returning)
-                               {
-                                   const auto at = player_->weaponOrigin();
-                                   const float distance = std::hypot(at.x - from.x, at.y - from.y);
-                                   if (distance < 24)
-                                       return true;
-                                   b.velocity = {(at.x - from.x) / distance * 700,
-                                                 (at.y - from.y) / distance * 700};
-                               }
-                           }
-                           if (b.weapon != WeaponKind::FireBoomerang)
-                               return !advanceProjectileTerrain(b, arena_, step);
-                           b.update(step);
-                           if (b.lifetime <= 0)
-                               return true;
-                           for (const auto& rect : arena_.platforms)
-                               if (collision::segmentHit(from, b.position, rect, b.collisionRadius))
-                               {
-                                   b.returning = true;
-                                   b.position = from;
-                                   break;
-                               }
-                           return false;
-                       }),
-        bullets_.end());
+    bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
+                                  [&](Bullet& b)
+                                  {
+                                      if (b.weapon == WeaponKind::FireBoomerang &&
+                                          !steerBoomerang(b, player_->weaponOrigin()))
+                                          return true;
+                                      return !advanceProjectileTerrain(b, arena_, step);
+                                  }),
+                   bullets_.end());
 }
 
 std::optional<GameEvent> Prediction::action(std::uint64_t sequence, bool jump, bool shoot, Vec2 aim,
-                                            bool reload)
+                                            bool reload, unsigned activeMask)
 {
     if (!player_ || (phase_ != MatchPhase::Round && phase_ != MatchPhase::RoundEnd) || !player_->alive() ||
         actions_.size() >= 240)
         return {};
-    actions_.push_back({sequence, sequence_ + 1, jump, shoot, reload, aim});
+    actions_.push_back({sequence, sequence_ + 1, jump, shoot, reload, aim, activeMask});
+    for (unsigned slot = 0; slot < 2; ++slot)
+        if (activeMask & (1u << slot))
+        {
+            auto visual = *player_;
+            visual.aimDirection = aim;
+            if (visual.activate(slot, arena_, others_))
+            {
+                GameEvent event;
+                event.round = round_;
+                event.actor = visual.id;
+                event.kind = EventKind::ActiveCast;
+                event.active = visual.actives[slot].kind;
+                event.shotSequence = sequence;
+                event.position = visual.weaponOrigin();
+                event.local = player_->position;
+                event.direction = visual.aimDirection;
+                event.radius = event.active == ActiveKind::Wave                        ? 150.f
+                               : event.active == ActiveKind::Slam && player_->grounded ? 110.f
+                                                                                       : 0;
+                events_.push_back(event);
+            }
+        }
     if (shoot && visualCooldown_ <= 0)
     {
         auto visual = *player_;

@@ -230,7 +230,9 @@ struct Server::Impl
         else if (e.has_action())
         {
             const auto& a = e.action();
-            if (!validAim(a.aim()) || (int(a.jump()) + int(a.shoot()) + int(a.reload()) != 1) ||
+            if (!validAim(a.aim()) ||
+                (a.active_mask() > 3 ||
+                 int(a.jump()) + int(a.shoot()) + int(a.reload()) + int(a.active_mask() != 0) < 1) ||
                 !a.sequence())
             {
                 remove(c, "Invalid action");
@@ -251,7 +253,7 @@ struct Server::Impl
         else if (e.has_weapon_choice())
         {
             const auto& choice = e.weapon_choice();
-            if (choice.upgrade() > 2)
+            if (choice.upgrade() > 4)
             {
                 remove(c, "Invalid upgrade");
                 return;
@@ -357,7 +359,7 @@ void Server::step(float dt)
             const auto action = peer.actions.front();
             peer.actions.pop_front();
             impl_->match.action(peer.id, action.round(), action.sequence(), action.jump(), action.shoot(),
-                                {action.aim().x(), action.aim().y()}, action.reload());
+                                {action.aim().x(), action.aim().y()}, action.reload(), action.active_mask());
             peer.actionSequence = action.sequence();
         }
     }

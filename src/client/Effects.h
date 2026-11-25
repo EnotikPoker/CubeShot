@@ -117,6 +117,7 @@ public:
 private:
     float random(float low, float high);
     void burst(Vec2 at, Vec2 direction, int count, bool blood, PlayerId owner = 0, bool chip = false);
+    std::set<std::tuple<unsigned, PlayerId, std::uint64_t, unsigned, bool>> predictedActives_;
     std::uint32_t random_ = 719;
     float shake_ = 0, time_ = 0, smokeAccumulator_ = 0;
     bool bloodVisible_ = true;

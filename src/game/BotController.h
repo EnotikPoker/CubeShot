@@ -56,6 +56,11 @@ struct BotTarget
     float motionPhase = 0, landing = 0, lean = 0, invulnerability = 0;
     unsigned airJumps = 0;
     bool secondChanceUsed = false;
+    ActiveSlots actives{};
+    float barrier = 0, bleeding = 0, dashTime = 0;
+    Vec2 dashDirection{1, 0};
+    float barrierTime = 0, slamTime = 0;
+    bool slamming = false;
 };
 
 struct BotObservation
@@ -120,6 +125,8 @@ private:
     PlayerInput navigate(const Player& self, Vec2 goal, float dt);
     void avoidBullets(const BotObservation& observation, PlayerInput& input);
     void cancelRoute(bool failed);
+    void useActives(const BotObservation& observation, PlayerInput& input);
+    float nextActive_ = 0, progressBarrier_ = 0;
     float hazardCost(Vec2 position) const;
     NavigationWorker navigationWorker_;
     std::uint64_t navigationGeneration_ = 0;

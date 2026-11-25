@@ -1,4 +1,5 @@
 #include "client/Application.h"
+#include "client/AbilityUI.h"
 #include "client/MenuRenderer.h"
 #include "client/SceneRenderer.h"
 #include "client/SettingsRenderer.h"
@@ -157,6 +158,7 @@ bool Application::handle(MenuAction action)
         {
             world_.setAbilities(i + 1, menu_.testConfiguration().abilities[i]);
             world_.equip(i + 1, menu_.testConfiguration().weapons[i]);
+            world_.setActives(i + 1, menu_.testConfiguration().actives[i]);
             world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
         }
         effects_.clear();
@@ -400,6 +402,7 @@ int Application::run()
                     {
                         world_.setAbilities(i + 1, menu_.testConfiguration().abilities[i]);
                         world_.equip(i + 1, menu_.testConfiguration().weapons[i]);
+                        world_.setActives(i + 1, menu_.testConfiguration().actives[i]);
                         world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
                     }
                     effects_.clear();
@@ -410,7 +413,10 @@ int Application::run()
             const bool jumpEvent = presses[static_cast<std::size_t>(InputAction::Jump)];
             const bool shotEvent = presses[static_cast<std::size_t>(InputAction::Shoot)];
             const bool reloadEvent = presses[static_cast<std::size_t>(InputAction::Reload)];
-            if (before == Screen::Playing && menu_.playing() && (jumpEvent || shotEvent || reloadEvent))
+            unsigned activeMask = (presses[static_cast<std::size_t>(InputAction::ActiveQ)] ? 1u : 0u) |
+                                  (presses[static_cast<std::size_t>(InputAction::ActiveE)] ? 2u : 0u);
+            if (before == Screen::Playing && menu_.playing() &&
+                (jumpEvent || shotEvent || reloadEvent || activeMask))
             {
                 auto input = rawInput();
                 if (jumpEvent)
@@ -433,8 +439,11 @@ int Application::run()
                     }
                 }
                 input = inputGate_.filter(input);
+                activeMask &= (input.activeQ ? 1u : 0u) | (input.activeE ? 2u : 0u);
                 if (session)
                 {
+                    if (activeMask)
+                        session->action(false, false, input.aimDirection, false, activeMask);
                     if (reloadEvent)
                         session->action(false, false, input.aimDirection, true);
                     if (jumpEvent && input.jump)
@@ -444,6 +453,8 @@ int Application::run()
                 }
                 else if (bots_.match())
                 {
+                    if (activeMask)
+                        bots_.action(false, false, input.aimDirection, false, activeMask);
                     if (reloadEvent)
                         bots_.action(false, false, input.aimDirection, true);
                     if (jumpEvent && input.jump)
@@ -453,6 +464,9 @@ int Application::run()
                 }
                 else
                 {
+                    if (activeMask)
+                        world_.requestAction(World::localPlayerId, false, false, input.aimDirection, 0, false,
+                                             activeMask);
                     if (reloadEvent)
                         world_.requestAction(World::localPlayerId, false, false, input.aimDirection, 0, true);
                     world_.setPlayerInput(World::localPlayerId, input);
@@ -576,6 +590,17 @@ int Application::run()
         if (menu_.liveTestPanel())
         {
             const auto& p = world_.players()[menu_.testTarget()];
+            std::u32string activeText;
+            for (unsigned i = 0; i < 2; ++i)
+            {
+                auto a = p.actives[i];
+                if (i)
+                    activeText += U" · ";
+                activeText += (i ? U"E: " : U"Q: ") + std::u32string(activeDefinition(a.kind).name) + U" " +
+                              (a.cooldown > 0 ? asciiText(std::to_string(int(std::ceil(a.cooldown)))) + U" с"
+                                              : U"готово");
+            }
+            menu_.testActiveStatus(activeText);
             menu_.testStatus(U"HP " + asciiText(std::to_string(p.health)) + U"/" +
                              asciiText(std::to_string(p.healthLimit())) + U" · Щиты " +
                              asciiText(std::to_string(p.shields)) + U" · Патроны " +
@@ -605,6 +630,13 @@ int Application::run()
             else
                 rendered = renderScene(renderer_, world_, false, &effects_) &&
                            drawWeaponHud(renderer_, world_.players()[0]);
+        }
+        if (sceneVisible)
+        {
+            std::array<std::u32string, 2> keys{
+                bindingName(settings_.active().bindings[unsigned(InputAction::ActiveQ)][0]),
+                bindingName(settings_.active().bindings[unsigned(InputAction::ActiveE)][0])};
+            rendered = rendered && drawActiveHud(renderer_, ownPlayer(), keys);
         }
         if (menu_.screen() == Screen::Settings)
             rendered = renderSettings(renderer_, settings_, SDL_GetTicks(), menu_.lan());

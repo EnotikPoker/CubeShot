@@ -11,8 +11,11 @@ void BotGameController::handle(MenuAction action, Menu& menu, const std::string&
     if (action == MenuAction::BotRematch && match_)
         match_->rematch(nickname);
     if (match_ && (action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon ||
-                   action == MenuAction::RollAbility))
+                   action == MenuAction::RollAbility || action == MenuAction::RollActiveQ ||
+                   action == MenuAction::RollActiveE))
         match_->chooseUpgrade(action == MenuAction::RollWeapon    ? UpgradeKind::Weapon
+                              : action == MenuAction::RollActiveQ ? UpgradeKind::ActiveQ
+                              : action == MenuAction::RollActiveE ? UpgradeKind::ActiveE
                               : action == MenuAction::RollAbility ? UpgradeKind::Ability
                                                                   : UpgradeKind::Continue);
     synchronize(menu);
@@ -32,10 +35,10 @@ void BotGameController::control(const PlayerInput& input)
         match_->control(input);
 }
 
-void BotGameController::action(bool jump, bool shoot, Vec2 aim, bool reload)
+void BotGameController::action(bool jump, bool shoot, Vec2 aim, bool reload, unsigned activeMask)
 {
     if (match_)
-        match_->action(jump, shoot, aim, reload);
+        match_->action(jump, shoot, aim, reload, activeMask);
 }
 
 void BotGameController::clearInput()

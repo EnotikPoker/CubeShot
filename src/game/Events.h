@@ -1,4 +1,5 @@
 #pragma once
+#include "game/ActiveAbilities.h"
 #include "game/Types.h"
 #include "game/Weapon.h"
 
@@ -14,7 +15,8 @@ enum class EventKind
     CorpseBreak,
     Explosion,
     ShieldBlock,
-    ElectricArc
+    ElectricArc,
+    ActiveCast
 };
 
 struct GameEvent
@@ -31,5 +33,6 @@ struct GameEvent
     unsigned surfaceRevision = 0;
     int volleyDamage = 0;
     float radius = 240;
+    ActiveKind active = ActiveKind::None;
 };
 } // namespace cubeshot

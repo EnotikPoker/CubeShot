@@ -13,6 +13,8 @@ Settings::Settings()
     bindings[3][0] = {BindingDevice::Mouse, SDL_BUTTON_LEFT};
     bindings[4][0] = {BindingDevice::Keyboard, SDL_SCANCODE_F5};
     bindings[5][0] = {BindingDevice::Keyboard, SDL_SCANCODE_R};
+    bindings[6][0] = {BindingDevice::Keyboard, SDL_SCANCODE_Q};
+    bindings[7][0] = {BindingDevice::Keyboard, SDL_SCANCODE_E};
 }
 
 bool validBinding(InputBinding binding)
@@ -58,8 +60,9 @@ bool validDisplay(const DisplaySettings& display)
 
 std::u32string_view actionName(InputAction action)
 {
-    static constexpr std::array<std::u32string_view, 6> names{
-        U"Влево", U"Вправо", U"Прыжок", U"Выстрел", U"Перезапуск теста", U"Перезарядка"};
+    static constexpr std::array<std::u32string_view, 8> names{
+        U"Влево",       U"Вправо",     U"Прыжок",    U"Выстрел", U"Перезапуск теста",
+        U"Перезарядка", U"Активная Q", U"Активная E"};
     return names.at(static_cast<std::size_t>(action));
 }
 

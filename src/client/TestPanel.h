@@ -61,12 +61,18 @@ public:
         status_ = std::move(value);
     }
 
+    void activeState(std::u32string value)
+    {
+        activeState_ = std::move(value);
+    }
+
     void state(std::u32string value)
     {
         state_ = std::move(value);
     }
 
 private:
+    std::u32string activeState_;
     enum class Kind
     {
         Target,
@@ -79,6 +85,8 @@ private:
         HealthMinus,
         HealthPlus,
         Operation,
+        ActiveSlot,
+        ActiveChoice,
         Reset,
         ResetAll,
         Apply,
@@ -94,7 +102,7 @@ private:
 
     TestConfiguration draft_;
     bool live_ = false;
-    unsigned target_ = 0, page_ = 0, section_ = 0;
+    unsigned target_ = 0, page_ = 0, section_ = 0, activeSlot_ = 0;
     TestEdit edit_;
     std::u32string status_, state_;
     mutable std::array<std::u32string, 80> labels_;

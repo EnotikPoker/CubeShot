@@ -7,6 +7,7 @@
 #include "game/Events.h"
 #include "game/Player.h"
 
+#include <array>
 #include <random>
 #include <vector>
 
@@ -28,7 +29,8 @@ public:
     void setPlayerInput(PlayerId id, const PlayerInput& input);
     void clearPlayerInput(PlayerId id);
     void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0,
-                       bool reload = false);
+                       bool reload = false, unsigned activeMask = 0);
+    void setActives(PlayerId id, const ActiveLoadout& loadout);
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
     bool editTest(const TestEdit& edit, const TestConfiguration& config);
@@ -54,6 +56,10 @@ public:
     }
 
 private:
+    std::array<unsigned, 4> testActiveRequests_{};
+    void castActive(Player& player, unsigned slot);
+    void radialActive(Player& player, ActiveKind kind);
+    void updateBleeding(float dt);
     bool damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bool ignite = false,
                 DamageContext context = {});
     void explode(const Bullet& bullet, Vec2 at, PlayerId direct = 0);

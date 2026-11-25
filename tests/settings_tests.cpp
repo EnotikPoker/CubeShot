@@ -165,7 +165,9 @@ void storage()
         std::ofstream output(file);
         output << data;
     };
-    data["bindings"].erase(data["bindings"].end() - 1);
+    while (data["bindings"].size() > 5)
+        data["bindings"].erase(data["bindings"].end() - 1);
+    data["version"] = 1;
     data["bindings"][4][0]["code"] = SDL_SCANCODE_R;
     writeLegacy();
     auto migrated = loadSettings(file);
@@ -185,6 +187,17 @@ void storage()
     expect(migrated.bindings[4][0].code == SDL_SCANCODE_T && migrated.bindings[3][0].code == SDL_SCANCODE_R &&
                migrated.bindings[5][0].code == SDL_SCANCODE_E && validBindings(migrated.bindings),
            "Custom restart and fire R survive migration with a free reload key");
+    data = saved;
+    while (data["bindings"].size() > 6)
+        data["bindings"].erase(data["bindings"].end() - 1);
+    data["version"] = 1;
+    data["bindings"][3][0]["code"] = SDL_SCANCODE_Q;
+    data["bindings"][5][0]["code"] = SDL_SCANCODE_E;
+    writeLegacy();
+    migrated = loadSettings(file);
+    expect(migrated.bindings[3][0].code == SDL_SCANCODE_Q && migrated.bindings[5][0].code == SDL_SCANCODE_E &&
+               validBindings(migrated.bindings),
+           "Six-action migration preserves occupied Q/E and adds free active bindings");
     data = saved;
     data["bindings"][0][0] = data["bindings"][1][0];
     {

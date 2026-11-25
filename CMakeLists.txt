@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.20.0 LANGUAGES C CXX)
+project(CubeShot VERSION 0.21.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -7,6 +7,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
+    src/game/ActiveAbilities.cpp
+    src/game/ActiveCombat.cpp
+    src/game/AttackStats.cpp
     src/game/AttackQueries.cpp
     src/game/TestSession.cpp
     src/game/NavigationWorker.cpp
@@ -21,6 +24,8 @@ add_library(cubeshot_game STATIC
     src/game/Combat.cpp
     src/game/Debris.cpp
     src/game/BotNavigation.cpp
+    src/game/BotActives.cpp
+    src/game/BotUpgrades.cpp
     src/game/BotController.cpp
     src/game/BotPerception.cpp
     src/game/BotCombat.cpp

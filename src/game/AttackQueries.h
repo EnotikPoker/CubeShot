@@ -15,7 +15,7 @@ struct MeleeContact
 };
 
 std::optional<MeleeContact> meleeContact(Vec2 origin, Vec2 direction, float reach, const Player& target,
-                                         const Arena& arena);
+                                         const Arena& arena, float halfAngle = .7953988f);
 int healthDamage(int amount, float power, const Player& target, WeaponKind weapon, bool periodic = false);
 
 struct ElectricContact

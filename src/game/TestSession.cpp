@@ -11,8 +11,8 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
     if (players_.size() != 4 || edit.actor >= players_.size())
         return false;
     for (unsigned i = 0; i < 4; ++i)
-        if (!config.abilities[i].valid() || !validWeapon(config.weapons[i]) || !config.healthPercent[i] ||
-            config.healthPercent[i] > 100)
+        if (!validActiveLoadout(config.actives[i]) || !config.abilities[i].valid() ||
+            !validWeapon(config.weapons[i]) || !config.healthPercent[i] || config.healthPercent[i] > 100)
             return false;
     if (edit.operation == TestOperation::AllBuilds)
     {
@@ -26,12 +26,17 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
     auto& p = players_[edit.actor];
     auto clearHazards = [&]
     {
+        testActiveRequests_ = {};
         bullets_.clear();
         fires_.clear();
         debris_.clear();
         events_.clear();
         for (auto& actor : players_)
-            actor.burning = actor.burnTick = 0;
+        {
+            actor.burning = actor.burnTick = actor.bleeding = actor.bleedTick = actor.barrier =
+                actor.barrierTime = actor.dashTime = 0;
+            actor.slamming = false;
+        }
     };
     auto safe = [&](const Player& candidate)
     {
@@ -58,6 +63,22 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                 return false;
             if (next.weapon.kind != config.weapons[edit.actor])
                 next.weapon.equip(config.weapons[edit.actor]);
+            for (unsigned slot = 0; slot < 2; ++slot)
+                if (next.actives[slot].kind != config.actives[edit.actor][slot])
+                {
+                    auto old = next.actives[slot].kind;
+                    testActiveRequests_[edit.actor] &= ~(1u << slot);
+                    if (old == ActiveKind::Barrier)
+                        next.barrier = next.barrierTime = 0;
+                    if (old == ActiveKind::Dash)
+                        next.dashTime = 0;
+                    if (old == ActiveKind::Slam)
+                        next.slamming = false;
+                    bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(), [&](auto& b)
+                                                  { return b.shooterId == next.id && b.active == old; }),
+                                   bullets_.end());
+                    next.actives[slot] = {config.actives[edit.actor][slot], 0};
+                }
             p = std::move(next);
             break;
         }
@@ -76,6 +97,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
             fresh.position = arena_.spawnPoints[edit.actor];
             fresh.setAbilities(config.abilities[edit.actor]);
             fresh.weapon.equip(config.weapons[edit.actor]);
+            fresh.setActives(config.actives[edit.actor]);
             fresh.weapon.shots = p.weapon.shots;
             fresh.health =
                 std::max(1, static_cast<int>(fresh.healthLimit() * config.healthPercent[edit.actor] / 100));
@@ -83,6 +105,7 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                 return false;
             fresh.grounded = collision::isSupported(fresh.bounds(), arena_.bounds, arena_.platforms);
             p = std::move(fresh);
+            testActiveRequests_[edit.actor] = 0;
             debris_.eraseOwner(p.id);
             bullets_.erase(std::remove_if(bullets_.begin(), bullets_.end(),
                                           [&](auto& b) { return b.shooterId == p.id; }),
@@ -147,6 +170,16 @@ bool World::editTest(const TestEdit& edit, const TestConfiguration& config)
                 actor.clearInput();
                 actor.grounded = collision::isSupported(actor.bounds(), arena_.bounds, arena_.platforms);
             }
+            break;
+        case TestOperation::ReadyActives:
+            for (auto& slot : p.actives)
+                slot.cooldown = 0;
+            break;
+        case TestOperation::UseQ:
+            testActiveRequests_[edit.actor] |= 1;
+            break;
+        case TestOperation::UseE:
+            testActiveRequests_[edit.actor] |= 2;
             break;
         case TestOperation::Clear:
             clearHazards();

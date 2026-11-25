@@ -75,6 +75,26 @@ struct Player
         blockedShots_.clear();
     }
 
+    std::uint32_t activeSerial = 0;
+    ActiveSlots actives{};
+    unsigned activeRequests = 0;
+    std::uint64_t activeSequence = 0, slamSequence = 0;
+    std::uint32_t slamVolley = 0;
+    float barrier = 0, barrierTime = 0, bleeding = 0, bleedTick = 0, bleedPower = 1;
+    PlayerId bleedOwner = 0;
+    float dashTime = 0, slamTime = 0, lungeCooldown = 0, comboTime = 0;
+    Vec2 dashDirection{1, 0};
+    bool slamming = false;
+    unsigned comboHits = 0;
+    PlayerId comboTarget = 0;
+    std::uint32_t teleportRevision = 0;
+
+    bool activate(unsigned slot, const Arena& arena, const std::vector<Player>& others = {})
+    {
+        return activateLocal(*this, slot, arena, others);
+    }
+
+    void setActives(const ActiveLoadout& loadout);
     Weapon weapon;
     bool grounded = false;
     float burning = 0, burnTick = 0;
@@ -99,11 +119,13 @@ struct Player
     Bullet shotPrototype(Vec2 direction, std::uint64_t sequence = 0) const;
     void takeDamage(int damage);
     void applyInput(const PlayerInput& input);
-    void requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0, bool reload = false);
+    void requestAction(bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0, bool reload = false,
+                       unsigned activeMask = 0);
     void clearInput();
     void update(float deltaSeconds, const Arena& arena, bool playerSupport = false);
 
 private:
+    bool activeHeldQ_ = false, activeHeldE_ = false;
     bool jumpHeld_ = false;
     bool jumpRequested_ = false;
     bool shootHeld_ = false;

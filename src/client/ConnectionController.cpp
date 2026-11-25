@@ -97,9 +97,12 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
         }
     }
     if ((action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon ||
-         action == MenuAction::RollAbility) &&
+         action == MenuAction::RollAbility || action == MenuAction::RollActiveQ ||
+         action == MenuAction::RollActiveE) &&
         client_)
         client_->chooseUpgrade(action == MenuAction::RollWeapon    ? UpgradeKind::Weapon
+                               : action == MenuAction::RollActiveQ ? UpgradeKind::ActiveQ
+                               : action == MenuAction::RollActiveE ? UpgradeKind::ActiveE
                                : action == MenuAction::RollAbility ? UpgradeKind::Ability
                                                                    : UpgradeKind::Continue);
     if (action == MenuAction::SelectRules && client_)
