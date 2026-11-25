@@ -10,6 +10,17 @@
 
 namespace cubeshot
 {
+enum class BotIntent
+{
+    Approach,
+    Attack,
+    Demolish,
+    Retreat,
+    Recover,
+    Escape,
+    Reposition
+};
+
 enum class BotDifficulty
 {
     Easy,
@@ -40,6 +51,11 @@ struct BotTarget
     unsigned shields = 0;
     float jetpackFuel = 2;
     bool jetpackActive = false;
+    PlayerId id = 0;
+    DamageShape surface;
+    float motionPhase = 0, landing = 0, lean = 0, invulnerability = 0;
+    unsigned airJumps = 0;
+    bool secondChanceUsed = false;
 };
 
 struct BotObservation
@@ -64,10 +80,12 @@ struct BotAim
 {
     Vec2 direction;
     float flightTime;
+    float expectedDamage = 0;
+    bool demolition = false;
 };
 
 std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const Arena& arena,
-                             float errorRadians = 0);
+                             float errorRadians = 0, bool alternatives = true);
 
 // Observes the whole arena, like the human. Never receives future human input.
 class BotController
@@ -75,10 +93,29 @@ class BotController
 public:
     BotController(Arena arena, BotDifficulty difficulty, std::uint32_t seed);
     void reset();
+
+    BotIntent intent() const
+    {
+        return intent_;
+    }
+
+    Vec2 movementGoal() const
+    {
+        return goal_;
+    }
+
     void prepare(const Abilities& abilities, const Arena* arena = nullptr);
     PlayerInput update(const BotObservation& observation, float dt);
 
 private:
+    BotIntent intent_ = BotIntent::Approach;
+    std::optional<BotAim> attack_;
+    float nextAttack_ = 0, progressTime_ = 0, progressDistance_ = 1e9f, repositionUntil_ = 0;
+    float enemyProgressAt_ = 0;
+    int progressHealth_ = -1;
+    unsigned progressShields_ = 0;
+    std::uint64_t progressTerrain_ = 0;
+    Vec2 lastGoal_{};
     Vec2 chooseGoal(const Player& self, const std::optional<BotTarget>& target);
     PlayerInput navigate(const Player& self, Vec2 goal, float dt);
     void avoidBullets(const BotObservation& observation, PlayerInput& input);
@@ -105,6 +142,7 @@ private:
         std::optional<BotTarget> target;
         std::vector<Bullet> bullets;
         std::vector<FirePatch> fires;
+        Player self;
     };
 
     std::deque<Perception> history_;

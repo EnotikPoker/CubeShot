@@ -93,11 +93,28 @@ int main()
         badPiece.mutable_pieces(0)->set_angle(std::numeric_limits<float>::quiet_NaN());
         expect(!decodeSnapshot(badPiece), "Reject non-finite physical remains");
         badPiece = encodedRich;
-        badPiece.set_weapon_choice(0, 3);
+        badPiece.set_weapon_choice(0, 4);
         expect(!decodeSnapshot(badPiece), "Reject invalid roulette states");
         badPiece = encodedRich;
         badPiece.mutable_players(0)->set_weapon(99);
         expect(!decodeSnapshot(badPiece), "Reject unknown weapon kind");
+        auto review = rich;
+        review.weaponChoice[0] = WeaponChoice::Revealing;
+        review.upgrade[0] = UpgradeKind::Ability;
+        review.rolledAbility[0] = AbilityKind::Speed;
+        review.abilities[0].add(AbilityKind::Speed);
+        review.spinRemaining[0] = Match::abilityReviewSeconds;
+        auto reviewWire = encodeSnapshot(review);
+        auto reviewCopy = decodeSnapshot(reviewWire);
+        expect(reviewCopy && reviewCopy->weaponChoice[0] == WeaponChoice::Revealing &&
+                   reviewCopy->spinRemaining[0] == 5 &&
+                   reviewCopy->abilities[0].level(AbilityKind::Speed) == 1,
+               "Ability result and full reading interval survive snapshot serialization");
+        reviewWire.set_spin_remaining(0, 6);
+        expect(!decodeSnapshot(reviewWire), "Reject oversized result interval");
+        reviewWire = encodeSnapshot(review);
+        reviewWire.set_upgrade(0, static_cast<unsigned>(UpgradeKind::Weapon));
+        expect(!decodeSnapshot(reviewWire), "Weapon result cannot claim an ability reading interval");
         auto input = envelope();
         auto* command = input.mutable_control()->add_commands();
         command->set_sequence(1);

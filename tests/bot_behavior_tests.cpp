@@ -95,33 +95,48 @@ void noHopping()
         for (unsigned seed : {1u, 42u, 123u})
         {
             BotController bot(arena, level, seed);
-            Player self;
-            self.id = 2;
-            self.position = {900, 392};
-            self.grounded = true;
-            float settledX = 0;
+            auto liveArena = arena;
+            liveArena.spawnPoints = {{100, 392}, {900, 392}};
+            World world(liveArena, 2);
+            Abilities endurance;
+            endurance.levels[static_cast<unsigned>(AbilityKind::Health)] = 100;
+            world.setAbilities(1, endurance);
+            bool held = false;
             for (int tick = 0; tick < 120 * 35; ++tick)
             {
                 // Oscillating human movement without firing. Holding position at the end
                 // must let the bot settle rather than chase a preferred point forever.
                 const float cycle = static_cast<float>(tick % 1440) / 1440;
-                const float x = tick < 120 * 20 ? 100 + 550 * (1 - std::abs(2 * cycle - 1)) : 300;
                 const float speed = tick < 120 * 20 ? (cycle < .5f ? 550.f / 6 : -550.f / 6) : 0.f;
-                BotObservation observation{self, BotTarget{{x, 392}, {speed, 0}, {48, 48}, true}, {}};
+                world.setPlayerInput(1, {speed / Player::moveSpeed, false, false, {1, 0}});
+                auto observation = observeBot(world, 2, 1);
                 auto input = bot.update(observation, dt);
                 expect(!input.jump, "No bullets or obstacles: moving opponent must not cause hopping");
-                auto before = self.position;
-                apply(self, input, arena);
+                auto before = world.players()[1].position;
+                world.setPlayerInput(
+                    2, {input.moveDirection, false, false, input.aimDirection, input.triggerHeld});
+                if (input.jump || (input.shoot && !held) || input.reload)
+                    world.requestAction(2, input.jump, input.shoot && !held, input.aimDirection, 0,
+                                        input.reload);
+                held = input.shoot;
+                world.update(dt);
+                world.takeEvents();
+                const auto& self = world.players()[1];
                 expect(std::abs(self.position.y - 392) < .01f &&
                            std::abs(self.position.x - before.x) <=
                                (Player::moveSpeed + std::abs(self.pushX) + self.weapon.damage) * dt + .001f,
                        "Navigation obeys normal physics and speed limits");
-                if (tick == 120 * 28)
-                    settledX = self.position.x;
+                if (tick > 120 * 28 && std::abs(self.position.x - world.players()[0].position.x) >= 620)
+                    std::cerr << "stable level=" << unsigned(level) << " seed=" << seed << " tick=" << tick
+                              << " self=" << self.position.x << " enemy=" << world.players()[0].position.x
+                              << " shots=" << self.weapon.shots << " hp=" << world.players()[0].health
+                              << "\n";
                 if (tick > 120 * 28)
-                    expect(std::abs(self.position.x - settledX) < 3,
-                           "A safe firing distance is stable after opponent stops moving");
+                    expect(std::abs(self.position.x - world.players()[0].position.x) < 620,
+                           "Repositioning stays within engagement range after the opponent stops");
             }
+            expect(world.players()[0].health < world.players()[0].healthLimit(),
+                   "Stable engagement includes real HP damage, not only empty shots");
         }
 }
 

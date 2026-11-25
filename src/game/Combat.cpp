@@ -1,3 +1,4 @@
+#include "game/AttackQueries.h"
 #include "game/Collision.h"
 #include "game/World.h"
 #include <algorithm>
@@ -65,12 +66,7 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
             emit(EventKind::ShieldBlock, bullet, at, player.id);
         return false;
     }
-    float multiplier = reflected ? 1.f : bullet.power;
-    multiplier *= 1 - .1f * player.abilities.level(AbilityKind::ToughSkin);
-    if (player.abilities.level(AbilityKind::FireResistance) &&
-        (periodic || bullet.weapon == WeaponKind::Flamethrower))
-        multiplier *= .5f;
-    amount = std::max(1, static_cast<int>(std::lround(amount * multiplier)));
+    amount = healthDamage(amount, reflected ? 1.f : bullet.power, player, bullet.weapon, periodic);
     // Segment tracing returns the projectile centre. With a large projectile and a
     // small player that centre can be nine canonical pixels outside the skin.
     // Damage marks and blood must attach to the real posed contour, not that centre.
@@ -315,32 +311,8 @@ void World::melee(const Bullet& attack)
     {
         if (!player.alive() || player.id == attack.shooterId)
             continue;
-        auto at = player.weaponOrigin();
-        float nearest = 1e9f;
-        const auto outline = player.bodyContour();
-        for (std::size_t n = 0; n < outline.size(); ++n)
-        {
-            Vec2 a{outline[n].x + player.position.x, outline[n].y + player.position.y},
-                b{outline[(n + 1) % outline.size()].x + player.position.x,
-                  outline[(n + 1) % outline.size()].y + player.position.y};
-            const float dx = b.x - a.x, dy = b.y - a.y;
-            const float t = std::clamp(((attack.position.x - a.x) * dx + (attack.position.y - a.y) * dy) /
-                                           (dx * dx + dy * dy),
-                                       0.f, 1.f);
-            Vec2 point{a.x + dx * t, a.y + dy * t};
-            float distance = std::hypot(point.x - attack.position.x, point.y - attack.position.y);
-            if (distance < nearest)
-            {
-                nearest = distance;
-                at = point;
-            }
-        }
-        const Vec2 delta{at.x - attack.position.x, at.y - attack.position.y};
-        const float distance = std::hypot(delta.x, delta.y);
-        if (distance <= reach &&
-            (distance < .001f || (delta.x * aim.x + delta.y * aim.y) / distance >= .7f) &&
-            !blocked(attack.position, at, arena_))
-            damage(player, attack, at, attack.damage);
+        if (auto contact = meleeContact(attack.position, aim, reach, player, arena_))
+            damage(player, attack, contact->point, attack.damage);
     }
     const Vec2 end{attack.position.x + aim.x * reach, attack.position.y + aim.y * reach};
     float nearestTerrain = 2;

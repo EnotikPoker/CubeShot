@@ -67,7 +67,7 @@ if(CUBESHOT_BUILD_CLIENT)
         ../src/client/HostProcess.cpp
         ../src/client/Menu.cpp)
     target_link_libraries(cubeshot_connection_tests PRIVATE
-        cubeshot_online cubeshot_directory SDL3::SDL3)
+        cubeshot_online cubeshot_directory cubeshot_preferences SDL3::SDL3)
     add_test(NAME connection COMMAND cubeshot_connection_tests)
     set_tests_properties(connection PROPERTIES TIMEOUT 35)
 endif()
@@ -100,7 +100,7 @@ set_tests_properties(bot_match PROPERTIES TIMEOUT 60)
 if(CUBESHOT_BUILD_CLIENT)
     add_executable(cubeshot_bot_game_tests bot_game_tests.cpp
         ../src/client/BotGameController.cpp ../src/client/Menu.cpp)
-    target_link_libraries(cubeshot_bot_game_tests PRIVATE cubeshot_directory)
+    target_link_libraries(cubeshot_bot_game_tests PRIVATE cubeshot_directory cubeshot_preferences)
     add_test(NAME bot_game COMMAND cubeshot_bot_game_tests)
 endif()
 
@@ -149,3 +149,12 @@ add_test(NAME abilities COMMAND cubeshot_abilities_tests)
 add_executable(cubeshot_destruction_tests destruction_tests.cpp)
 target_link_libraries(cubeshot_destruction_tests PRIVATE cubeshot_network)
 add_test(NAME destruction COMMAND cubeshot_destruction_tests)
+
+add_executable(cubeshot_sandbox_tests sandbox_tests.cpp)
+target_link_libraries(cubeshot_sandbox_tests PRIVATE cubeshot_game)
+add_test(NAME sandbox COMMAND cubeshot_sandbox_tests)
+
+add_executable(cubeshot_bot_overhaul_tests bot_overhaul_tests.cpp)
+target_link_libraries(cubeshot_bot_overhaul_tests PRIVATE cubeshot_game)
+add_test(NAME bot_overhaul COMMAND cubeshot_bot_overhaul_tests)
+set_tests_properties(bot_overhaul PROPERTIES TIMEOUT 60)

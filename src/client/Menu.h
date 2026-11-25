@@ -1,10 +1,13 @@
 #pragma once
+#include "client/MenuButton.h"
+#include "client/TestPanel.h"
 #include "game/BotController.h"
 #include "game/Match.h"
 #include "network/Directory.h"
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace cubeshot::client
@@ -35,6 +38,7 @@ enum class MenuAction
     None,
     SelectRules,
     ApplyTest,
+    EditTest,
     StartTest,
     StartBots,
     BotRematch,
@@ -57,13 +61,6 @@ enum class MenuAction
     ChangeMap
 };
 
-struct MenuButton
-{
-    std::u32string_view label;
-    Rect bounds;
-    bool placeholder = false;
-};
-
 struct ListedRoom
 {
     std::string address;
@@ -79,11 +76,7 @@ public:
         return wins_;
     }
 
-    struct TestConfiguration
-    {
-        std::array<Abilities, 4> abilities{};
-        std::array<unsigned, 4> healthPercent{{100, 100, 100, 100}};
-    };
+    using TestConfiguration = cubeshot::TestConfiguration;
 
     const TestConfiguration& testConfiguration() const
     {
@@ -92,17 +85,35 @@ public:
 
     const TestConfiguration& testDraft() const
     {
-        return draft_;
+        return testPanel_.draft();
     }
 
     unsigned testTarget() const
     {
-        return testTarget_;
+        return testPanel_.target();
     }
 
     unsigned testPage() const
     {
-        return testPage_;
+        return testPanel_.page();
+    }
+
+    const TestPanel& testPanel() const
+    {
+        return testPanel_;
+    }
+
+    bool liveTestPanel() const
+    {
+        return screen_ == Screen::TestSetup && testPanel_.live();
+    }
+
+    void openTestPanel(bool live, Screen returnScreen);
+    void completeTestEdit(bool success);
+
+    void testStatus(std::u32string value)
+    {
+        testPanel_.state(std::move(value));
     }
 
     bool bots() const
@@ -214,8 +225,9 @@ public:
     }
 
 private:
-    unsigned wins_ = 15, testTarget_ = 0, testPage_ = 0;
-    TestConfiguration test_, draft_;
+    unsigned wins_ = 15;
+    TestConfiguration test_;
+    TestPanel testPanel_;
     Screen testReturn_ = Screen::Maps;
     std::u32string winsLabel_ = U"До 15 побед";
     std::optional<int> buttonAt(Vec2 position) const;

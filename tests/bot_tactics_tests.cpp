@@ -27,9 +27,10 @@ void tick(World& w, BotController& bot, bool& held)
     expect(std::isfinite(input.aimDirection.x) && std::isfinite(input.aimDirection.y) &&
                std::abs(input.moveDirection) <= 1,
            "Every weapon matchup generates finite legal controls");
-    w.setPlayerInput(2, {input.moveDirection, false, false, input.aimDirection, input.triggerHeld});
-    if (input.jump || (input.shoot && !held))
-        w.requestAction(2, input.jump, input.shoot && !held, input.aimDirection);
+    w.setPlayerInput(2, {input.moveDirection, false, false, input.aimDirection, input.triggerHeld, false,
+                         input.jetpackHeld});
+    if (input.jump || (input.shoot && !held) || input.reload)
+        w.requestAction(2, input.jump, input.shoot && !held, input.aimDirection, 0, input.reload);
     held = input.shoot;
     w.update(dt);
 }
@@ -179,8 +180,8 @@ void meleePlatformDuel()
                 {
                     const PlayerId id = side + 1;
                     auto input = bots[side].update(observeBot(world, id, 2 - side), dt);
-                    world.setPlayerInput(
-                        id, {input.moveDirection, false, false, input.aimDirection, input.triggerHeld});
+                    world.setPlayerInput(id, {input.moveDirection, false, false, input.aimDirection,
+                                              input.triggerHeld, false, input.jetpackHeld});
                     if (input.jump || (input.shoot && !held[side]))
                         world.requestAction(id, input.jump, input.shoot && !held[side], input.aimDirection);
                     held[side] = input.shoot;

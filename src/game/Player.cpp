@@ -113,12 +113,22 @@ std::optional<Bullet> Player::takeShot()
     if (weapon.automatic())
         shotAim_ = aimDirection;
     // World проверит путь от руки до дула, чтобы не стрелять сквозь стену.
+    auto bullet = shotPrototype(shotAim_, shotSequence_);
+    weapon.cooldown = std::max(.03f, weapon.cooldown / (abilities.fireRate() * (1 + .15f * adrenaline())));
+    applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil(),
+                  -shotAim_.y * definition.recoil * abilities.recoil()});
+    return bullet;
+}
+
+Bullet Player::shotPrototype(Vec2 direction, std::uint64_t sequence) const
+{
+    const auto& definition = weaponDefinition(weapon.kind);
     Bullet bullet;
     bullet.position = weaponOrigin();
-    bullet.velocity = {shotAim_.x * weapon.bulletSpeed, shotAim_.y * weapon.bulletSpeed};
+    bullet.velocity = {direction.x * weapon.bulletSpeed, direction.y * weapon.bulletSpeed};
     bullet.damage = weapon.damage;
     bullet.shooterId = id;
-    bullet.shotSequence = shotSequence_;
+    bullet.shotSequence = sequence;
     bullet.weapon = weapon.kind;
     bullet.volley = weapon.shots;
     bullet.lifetime = definition.lifetime;
@@ -146,9 +156,6 @@ std::optional<Bullet> Player::takeShot()
     }
     if (weapon.kind == WeaponKind::Flamethrower)
         bullet.lifetime *= abilities.range();
-    weapon.cooldown = std::max(.03f, weapon.cooldown / (abilities.fireRate() * (1 + .15f * adrenaline())));
-    applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil(),
-                  -shotAim_.y * definition.recoil * abilities.recoil()});
     return bullet;
 }
 

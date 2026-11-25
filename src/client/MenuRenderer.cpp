@@ -160,6 +160,44 @@ bool weaponCard(SDL_Renderer* renderer, WeaponKind kind, float x)
     return ok;
 }
 
+std::u32string abilityTotal(AbilityKind kind, const Abilities& a)
+{
+    const auto n = a.level(kind);
+    auto number = [](int value) { return asciiText(std::to_string(value)); };
+    auto bonus = [&](int percent) { return U"Всего: +" + number(percent) + U"%"; };
+    switch (kind)
+    {
+        case AbilityKind::Health:
+            return U"Всего: " + number(a.health()) + U" HP";
+        case AbilityKind::Armor:
+            return U"Всего: " + number(a.shields()) + U" щитов за раунд";
+        case AbilityKind::Speed:
+        case AbilityKind::Jump:
+            return bonus(30 * n);
+        case AbilityKind::FastReload:
+        case AbilityKind::Magazine:
+        case AbilityKind::ProjectileSpeed:
+        case AbilityKind::Range:
+            return bonus(25 * n);
+        case AbilityKind::Power:
+            return bonus(15 * n);
+        case AbilityKind::FireRate:
+            return bonus(12 * n);
+        case AbilityKind::Demolition:
+            return bonus(50 * n);
+        case AbilityKind::BlastRadius:
+            return bonus(20 * n);
+        case AbilityKind::Accuracy:
+            return U"Всего: разброс " + number(std::lround(a.accuracy() * 100)) + U"% от базового";
+        case AbilityKind::Regeneration:
+            return U"Всего: " + number(4 * n) + U" HP/с после 3 с без урона";
+        case AbilityKind::ToughSkin:
+            return U"Всего: −" + number(10 * n) + U"% входящего урона";
+        default:
+            return U"Способность активна";
+    }
+}
+
 bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
 {
     if (!own)
@@ -171,7 +209,7 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     const unsigned result = ability
                                 ? static_cast<unsigned>(state.rolledAbility[slot])
                                 : static_cast<unsigned>(spinning ? state.rolled[slot] : state.loadout[slot]);
-    const float elapsed = Match::spinSeconds - state.spinRemaining[slot];
+    const float elapsed = Match::wheelSeconds - state.spinRemaining[slot];
     const float progress = spinning ? std::clamp(elapsed / Match::wheelSeconds, 0.f, 1.f) : 1.f;
     const float destination = count * 4.f + result;
     const float position = destination - std::pow(1 - progress, 3.f) * count * 4;
@@ -217,15 +255,29 @@ bool wheel(SDL_Renderer* renderer, const WorldSnapshot& state, PlayerId own)
     if (ability)
     {
         const auto text = abilityDefinition(static_cast<AbilityKind>(shown)).description;
-        if (!centeredText(renderer, text, 397, textWidth(renderer, text, 1) > 800 ? 1 : 1, muted))
+        if (!centeredText(renderer, text, 386, 1, muted))
             return false;
     }
-    if (!drawAbilityRow(renderer, state.abilities[slot], {166, 157}, 20))
+    if (ability && !spinning)
+    {
+        auto level = state.abilities[slot].level(state.rolledAbility[slot]);
+        auto info = U"Ур. " + asciiText(std::to_string(level)) + U" · " +
+                    abilityTotal(state.rolledAbility[slot], state.abilities[slot]);
+        if (state.weaponChoice[slot] == WeaponChoice::Revealing)
+            info += U" · " +
+                    asciiText(std::to_string(static_cast<int>(std::ceil(state.spinRemaining[slot])))) + U" с";
+        if (!centeredText(renderer, info, 409, 1, blue))
+            return false;
+    }
+    unsigned upgrades = 0;
+    for (auto level : state.abilities[slot].levels)
+        upgrades += level;
+    if (!centeredText(renderer, U"Получено улучшений: " + asciiText(std::to_string(upgrades)), 161, 1, muted))
         return false;
     const int scale = textWidth(renderer, name, 2) > 620 ? 1 : 2;
     return ok && rectangle(renderer, {{477, 189}, {6, 17}}, {255, 209, 90, 255}) &&
            rectangle(renderer, {{466, 185}, {28, 8}}, {255, 226, 140, 255}) &&
-           centeredText(renderer, name, 363, scale, progress >= 1 ? SDL_Color{255, 220, 125, 255} : white);
+           centeredText(renderer, name, 353, scale, progress >= 1 ? SDL_Color{255, 220, 125, 255} : white);
 }
 
 bool preview(SDL_Renderer* renderer, MapId id, Rect box, bool test = true)
@@ -255,6 +307,8 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
 {
     if (menu.playing())
         return true;
+    if (menu.screen() == Screen::TestSetup)
+        return menu.testPanel().render(renderer, menu.selection());
     if (menu.screen() == Screen::Paused)
     {
         if (!SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND) ||
@@ -350,46 +404,6 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             if (menu.screen() != Screen::TestSetup && (!centeredText(renderer, title, 65, 4, white) ||
                                                        !centeredText(renderer, hint, 117, 2, muted)))
                 return false;
-            if (menu.screen() == Screen::TestSetup)
-            {
-                // Dedicated layout leaves room for all 31 abilities across six pages.
-                if (!rectangle(renderer, {{0, 0}, {960, 84}}, {15, 21, 29, 255}) ||
-                    !centeredText(renderer, U"Способности и мишени", 25, 3, white))
-                    return false;
-                const auto& config = menu.testDraft();
-                unsigned target = menu.testTarget(), page = menu.testPage();
-                for (unsigned row = 0; row < 6; ++row)
-                {
-                    unsigned index = page * 6 + row;
-                    if (index >= abilityCount)
-                        break;
-                    float y = 135 + row * 44;
-                    if (!drawAbilityIcon(renderer, static_cast<AbilityKind>(index),
-                                         {{40, y + 3}, {27, 27}}) ||
-                        !drawText(renderer, abilityDefinition(static_cast<AbilityKind>(index)).name,
-                                  {80, y + 5}, 1, white) ||
-                        !drawText(renderer, asciiText(std::to_string(config.abilities[target].levels[index])),
-                                  {640, y + 5}, 1, blue))
-                        return false;
-                }
-                auto hp = U"HP: " + asciiText(std::to_string(config.healthPercent[target])) + U"%";
-                if (!drawText(renderer, hp, {390, 423}, 1, white) ||
-                    !drawText(renderer,
-                              asciiText(std::to_string(page + 1)) + U" / " +
-                                  asciiText(std::to_string((abilityCount + 5) / 6)),
-                              {760, 423}, 1, muted))
-                    return false;
-                int selected = menu.selection();
-                if (selected >= 4 && selected < 16)
-                {
-                    unsigned index = page * 6 + (selected - 4) / 2;
-                    if (index < abilityCount &&
-                        !centeredText(renderer,
-                                      abilityDefinition(static_cast<AbilityKind>(index)).description, 460, 1,
-                                      muted))
-                        return false;
-                }
-            }
             if (menu.screen() == Screen::Armory)
             {
                 if (!wheel(renderer, menu.networkSnapshot(), menu.ownId()))
@@ -398,6 +412,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                 const auto choice = menu.networkSnapshot().weaponChoice[other];
                 if (!centeredText(renderer,
                                   choice == WeaponChoice::Ready ? U"Соперник готов"
+                                  : choice == WeaponChoice::Revealing ? U"Соперник получил улучшение"
                                   : choice == WeaponChoice::Spinning ? U"Соперник крутит рулетку"
                                                                      : U"Соперник выбирает",
                                   140, 1, muted))

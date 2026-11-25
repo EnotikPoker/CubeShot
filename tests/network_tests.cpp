@@ -335,7 +335,7 @@ void impairedCombat()
             return r.host.snapshot()->phase == MatchPhase::Countdown &&
                    r.guest.snapshot()->phase == MatchPhase::Countdown;
         },
-        5, "Both completed choices start the next countdown");
+        10, "Both completed choices start the next countdown after the ability review");
     expect(r.host.snapshot()->players[0].weapon.kind == rolled &&
                r.guest.snapshot()->players[0].weapon.kind == rolled && r.host.snapshot()->corpses.empty() &&
                r.guest.snapshot()->pieces.empty(),

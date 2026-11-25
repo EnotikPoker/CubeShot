@@ -98,10 +98,11 @@ void armedBots()
             for (int tick = 0; tick < 120 * 60 && world.players()[0].alive(); ++tick)
             {
                 const auto input = bot.update(observeBot(world, 2, 1), dt);
-                world.setPlayerInput(
-                    2, {input.moveDirection, false, false, input.aimDirection, input.triggerHeld});
-                if (input.jump || (input.shoot && !held))
-                    world.requestAction(2, input.jump, input.shoot && !held, input.aimDirection);
+                world.setPlayerInput(2, {input.moveDirection, false, false, input.aimDirection,
+                                         input.triggerHeld, false, input.jetpackHeld});
+                if (input.jump || (input.shoot && !held) || input.reload)
+                    world.requestAction(2, input.jump, input.shoot && !held, input.aimDirection, 0,
+                                        input.reload);
                 held = input.shoot;
                 world.update(dt);
                 for (const auto& event : world.takeEvents())

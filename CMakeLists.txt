@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.19.0 LANGUAGES C CXX)
+project(CubeShot VERSION 0.20.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -7,9 +7,34 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
-    src/game/NavigationWorker.cpp src/game/Electric.cpp src/game/Terrain.cpp src/game/Abilities.cpp src/game/BodyPhysics.cpp src/game/Arena.cpp src/game/Bullet.cpp src/game/Collision.cpp
-    src/game/Shape.cpp src/game/Combat.cpp src/game/Debris.cpp src/game/BotNavigation.cpp src/game/BotController.cpp src/game/BotMobility.cpp src/game/BotMatch.cpp
-    src/game/Prediction.cpp src/game/Player.cpp src/game/Weapon.cpp src/game/World.cpp src/game/Match.cpp)
+    src/game/AttackQueries.cpp
+    src/game/TestSession.cpp
+    src/game/NavigationWorker.cpp
+    src/game/Electric.cpp
+    src/game/Terrain.cpp
+    src/game/Abilities.cpp
+    src/game/BodyPhysics.cpp
+    src/game/Arena.cpp
+    src/game/Bullet.cpp
+    src/game/Collision.cpp
+    src/game/Shape.cpp
+    src/game/Combat.cpp
+    src/game/Debris.cpp
+    src/game/BotNavigation.cpp
+    src/game/BotController.cpp
+    src/game/BotPerception.cpp
+    src/game/BotCombat.cpp
+    src/game/BotTactics.cpp
+    src/game/BotMovement.cpp
+    src/game/BotThreats.cpp
+    src/game/BotMobility.cpp
+    src/game/BotMatch.cpp
+    src/game/Prediction.cpp
+    src/game/Player.cpp
+    src/game/Weapon.cpp
+    src/game/World.cpp
+    src/game/Match.cpp
+)
 find_package(Threads REQUIRED)
 target_link_libraries(cubeshot_game PUBLIC Threads::Threads)
 target_include_directories(cubeshot_game PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -57,7 +82,7 @@ if(CUBESHOT_BUILD_CLIENT)
     add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/TextRenderer.cpp src/client/UiText.cpp src/client/AbilityUI.cpp)
     target_link_libraries(cubeshot_visuals PUBLIC cubeshot_game SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     add_dependencies(cubeshot_visuals cubeshot_assets)
-    add_library(cubeshot_preferences STATIC
+    add_library(cubeshot_preferences STATIC src/client/TestPanel.cpp
         src/client/Settings.cpp src/client/SettingsStore.cpp src/client/Profile.cpp
         src/client/WindowSettings.cpp src/client/SettingsController.cpp src/client/SettingsRenderer.cpp
         src/client/Input.cpp)
