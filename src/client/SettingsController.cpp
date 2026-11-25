@@ -33,7 +33,7 @@ void SettingsController::begin()
     draft_ = active_;
     draftNickname_ = nickname_;
     tab_ = SettingsTab::Player;
-    selection_ = 4;
+    selection_ = 5;
     editingNickname_ = preview_ = false;
     capture_.reset();
     pressed_.reset();
@@ -43,7 +43,7 @@ void SettingsController::begin()
 void SettingsController::selectTab(SettingsTab tab)
 {
     tab_ = tab;
-    selection_ = 4;
+    selection_ = 5;
     pressed_.reset();
     capture_.reset();
     message_.clear();
@@ -97,9 +97,9 @@ std::vector<SettingsItem> SettingsController::items() const
         return {{Kind::Confirm, 0, 0, {{170, 280}, {290, 52}}, U"Сохранить"},
                 {Kind::Revert, 0, 0, {{500, 280}, {290, 52}}, U"Вернуть"}};
     std::vector<SettingsItem> out;
-    const std::u32string tabs[]{U"Игрок", U"Экран", U"Управление", U"Эффекты"};
-    for (int i = 0; i < 4; ++i)
-        out.push_back({Kind::Tab, i, 0, {{40.f + 225 * i, 78}, {205, 42}}, tabs[i]});
+    const std::u32string tabs[]{U"Игрок", U"Экран", U"Управление", U"Эффекты", U"Звук"};
+    for (int i = 0; i < 5; ++i)
+        out.push_back({Kind::Tab, i, 0, {{40.f + 180 * i, 78}, {165, 42}}, tabs[i]});
     if (tab_ == SettingsTab::Player)
         out.push_back({Kind::Nickname,
                        0,
@@ -121,6 +121,15 @@ std::vector<SettingsItem> SettingsController::items() const
                            {{200, 145.f + 58 * i}, {560, 46}},
                            labels[i],
                            i != 1 || !d.fullscreen});
+    }
+    if (tab_ == SettingsTab::Audio)
+    {
+        const auto& a = draft_.audio;
+        const std::u32string labels[]{U"− Общая громкость: " + number(a.master) + U"% +",
+                                      U"− Звуки боя: " + number(a.combat) + U"% +",
+                                      U"− Интерфейс: " + number(a.interface) + U"% +"};
+        for (int i = 0; i < 3; ++i)
+            out.push_back({Kind::AudioValue, i, 0, {{200, 155.f + 66 * i}, {560, 46}}, labels[i]});
     }
     if (tab_ == SettingsTab::Effects)
     {
@@ -200,6 +209,13 @@ SettingsIntent SettingsController::activate(int index, int direction)
                 d.fps = frameLimits[(current + direction + static_cast<int>(frameLimits.size())) %
                                     frameLimits.size()];
             }
+            break;
+        }
+        case Kind::AudioValue:
+        {
+            auto& a = draft_.audio;
+            int& value = item.value == 0 ? a.master : item.value == 1 ? a.combat : a.interface;
+            value = std::clamp(value + direction * 5, 0, 100);
             break;
         }
         case Kind::EffectValue:
@@ -284,7 +300,7 @@ SettingsIntent SettingsController::event(const SDL_Event& event, SDL_Window* win
             return preview_ ? SettingsIntent::Revert : SettingsIntent::Close;
         if (key == SDL_SCANCODE_TAB && !preview_)
             selectTab(static_cast<SettingsTab>(
-                (static_cast<int>(tab_) + ((event.key.mod & SDL_KMOD_SHIFT) ? 3 : 1)) % 4));
+                (static_cast<int>(tab_) + ((event.key.mod & SDL_KMOD_SHIFT) ? 4 : 1)) % 5));
         else if (key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN)
         {
             const int count = static_cast<int>(items().size());
@@ -295,7 +311,8 @@ SettingsIntent SettingsController::event(const SDL_Event& event, SDL_Window* win
         {
             if (preview_)
                 selection_ = 1 - selection_;
-            else if (items().at(selection_).kind == SettingsItem::Kind::DisplayValue)
+            else if ((items().at(selection_).kind == SettingsItem::Kind::DisplayValue ||
+                      items().at(selection_).kind == SettingsItem::Kind::AudioValue))
                 return activate(selection_, key == SDL_SCANCODE_LEFT ? -1 : 1);
             else
             {
@@ -330,7 +347,14 @@ SettingsIntent SettingsController::event(const SDL_Event& event, SDL_Window* win
             const auto pressed = pressed_;
             pressed_.reset();
             if (pressed && hit == pressed)
-                return activate(*hit);
+            {
+                const auto& item = list[*hit];
+                const int direction = item.kind == SettingsItem::Kind::AudioValue &&
+                                              point.x < item.bounds.position.x + item.bounds.size.x / 2
+                                          ? -1
+                                          : 1;
+                return activate(*hit, direction);
+            }
         }
     }
     (void)window;
@@ -355,7 +379,7 @@ void SettingsController::finish(const Save& save)
 
 void SettingsController::apply(WindowSettings& window, const Save& save, std::uint64_t now)
 {
-    if (!validDisplay(draft_.display) || !validBindings(draft_.bindings))
+    if (!validDisplay(draft_.display) || !validBindings(draft_.bindings) || !validAudio(draft_.audio))
     {
         message_ = U"Проверьте настройки";
         return;
@@ -390,7 +414,7 @@ void SettingsController::confirm(WindowSettings& window, const Save& save)
         return;
     }
     preview_ = false;
-    selection_ = 4;
+    selection_ = 5;
     finish(save);
 }
 
@@ -411,7 +435,7 @@ void SettingsController::cancelPreview(WindowSettings& window)
         return;
     restore(window);
     preview_ = false;
-    selection_ = 4;
+    selection_ = 5;
     pressed_.reset();
     message_ = U"Изменения экрана отменены";
 }

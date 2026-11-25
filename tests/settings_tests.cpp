@@ -75,8 +75,40 @@ struct FakeWindow : WindowSettings
     }
 };
 
+void audioSettingsControls()
+{
+    SettingsController controller;
+    controller.initialize({}, "Player");
+    controller.selectTab(SettingsTab::Audio);
+    expect(controller.items()[controller.selection()].kind == SettingsItem::Kind::AudioValue,
+           "Audio tab initially selects master volume");
+    send(controller, SDL_SCANCODE_LEFT);
+    expect(controller.draft().audio.master == 75 && controller.active().audio.master == 80,
+           "Volume adjustment previews draft without applying");
+    send(controller, SDL_SCANCODE_DOWN);
+    send(controller, SDL_SCANCODE_RIGHT);
+    expect(controller.draft().audio.combat == 90, "Independent combat volume control");
+    FakeWindow window;
+    controller.cancel(window);
+    expect(controller.draft().audio == AudioSettings{}, "Cancel restores original volumes");
+    controller.selectTab(SettingsTab::Audio);
+    send(controller, SDL_SCANCODE_LEFT);
+    bool saved = false;
+    controller.apply(
+        window,
+        [&](const Settings& s, const std::string&, std::string&)
+        {
+            saved = s.audio.master == 75;
+            return true;
+        },
+        0);
+    expect(saved && controller.active().audio.master == 75, "Apply persists selected volumes");
+}
+
 void modelAndInput()
 {
+    expect(validAudio({0, 0, 0}) && validAudio({100, 100, 100}) && !validAudio({-1, 50, 50}),
+           "Volume boundaries valid");
     Settings defaults;
     expect(validBindings(defaults.bindings) && validDisplay(defaults.display), "Defaults valid");
     expect(defaults.display.fps == 120 && !defaults.display.vsync && !defaults.display.fullscreen,
@@ -144,12 +176,14 @@ void storage()
     const auto file = folder / "settings.json";
     expect(loadSettings(file).display == Settings{}.display, "Missing file uses defaults");
     Settings desired;
+    desired.audio = {35, 40, 55};
     desired.display.fps = 30;
     desired.display.vsync = true;
     desired.bindings[3][0] = {BindingDevice::Keyboard, SDL_SCANCODE_F};
     std::string error;
     expect(saveSettings(desired, file, error), "Persist valid settings");
-    expect(loadSettings(file).display == desired.display && loadSettings(file).bindings == desired.bindings,
+    expect(loadSettings(file).display == desired.display && loadSettings(file).bindings == desired.bindings &&
+               loadSettings(file).audio == desired.audio,
            "Round trip");
     desired.display.fps = 240;
     expect(saveSettings(desired, file, error) && loadSettings(file).display.fps == 240,
@@ -160,6 +194,22 @@ void storage()
         input >> data;
     }
     const auto saved = data;
+    data["version"] = 2;
+    data.erase("audio");
+    {
+        std::ofstream output(file);
+        output << data;
+    }
+    expect(loadSettings(file).audio == AudioSettings{},
+           "Old profiles receive default audio without losing bindings");
+    data = saved;
+    data["audio"] = {{"master", -1}, {"combat", 101}, {"interface", "loud"}};
+    {
+        std::ofstream output(file);
+        output << data;
+    }
+    expect(loadSettings(file).audio == AudioSettings{}, "Malformed volume fields safely use defaults");
+    data = saved;
     auto writeLegacy = [&]
     {
         std::ofstream output(file);
@@ -401,7 +451,8 @@ void renderPages()
            "Scaled letterboxed mouse coordinates match logical scene");
     SettingsController controller;
     controller.initialize(Settings{}, "Тестовый Игрок");
-    for (auto tab : {SettingsTab::Player, SettingsTab::Display, SettingsTab::Controls})
+    for (auto tab : {SettingsTab::Player, SettingsTab::Display, SettingsTab::Controls, SettingsTab::Audio,
+                     SettingsTab::Effects})
     {
         controller.selectTab(tab);
         expect(renderSettings(renderer.get(), controller, 0, false) && SDL_RenderPresent(renderer.get()),
@@ -424,6 +475,7 @@ int main()
     try
     {
         modelAndInput();
+        audioSettingsControls();
         storage();
         transactionAndEditing();
         menuAndTiming();

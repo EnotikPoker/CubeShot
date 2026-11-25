@@ -116,6 +116,24 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Rubik.ttf"):
                 check_package.verify_visual_assets(root)
 
+    def test_audio_assets_are_complete_and_readable(self):
+        check_package.verify_audio_assets(Path(__file__).resolve().parents[1])
+
+    def test_audio_assets_reject_missing_and_truncated_samples(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = Path(__file__).resolve().parents[1] / "assets" / "audio"
+            import shutil
+            shutil.copytree(source, root / "assets" / "audio")
+            sample = root / "assets" / "audio" / "pistol.wav"
+            original = sample.read_bytes()
+            sample.write_bytes(original[:50])
+            with self.assertRaisesRegex(RuntimeError, "audio asset"):
+                check_package.verify_audio_assets(root)
+            sample.unlink()
+            with self.assertRaisesRegex(RuntimeError, "audio asset"):
+                check_package.verify_audio_assets(root)
+
     def test_detect_missing_or_damaged_library(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

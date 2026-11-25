@@ -70,7 +70,8 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         terrainRevision_ = arena.geometryRevision;
         auto detached = [&](const auto& stain)
         {
-            for (auto& solid : arena.platforms)
+            auto nearby = arena.solidsNear({{stain.position.x - 2, stain.position.y - 2}, {4, 4}});
+            for (auto& solid : nearby)
                 if (stain.position.x >= solid.position.x - 2 &&
                     stain.position.x <= solid.position.x + solid.size.x + 2 &&
                     stain.position.y >= solid.position.y - 2 &&
@@ -84,6 +85,8 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
     bloodVisible_ = blood;
     dt = std::clamp(dt, 0.f, .1f);
     time_ += dt;
+    confirmation_ = std::max(0.f, confirmation_ - dt);
+    hurt_ = std::max(0.f, hurt_ - dt);
     burstBudget_ = 180;
     shake_ = shake ? std::max(0.f, shake_ - dt * 35) : 0;
     if (!blood)
@@ -118,6 +121,15 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
     for (const auto& p : players)
     {
         auto& pose = poses_[p.id];
+        if (pose.initialized && pose.life != p.lifeRevision)
+        {
+            pose = {};
+            if (p.id == own)
+            {
+                confirmation_ = hurt_ = 0;
+            }
+        }
+        pose.life = p.lifeRevision;
         if (!pose.initialized)
         {
             pose.previous = p.position;
@@ -140,6 +152,8 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         pose.previous = p.position;
         pose.grounded = p.grounded;
     }
+    unsigned terrainParticleCount = unsigned(std::count_if(
+        particles_.begin(), particles_.end(), [](const auto& p) { return p.material != Material::Fixed; }));
     for (const auto& e : events)
     {
         if (e.target && e.kind != EventKind::CorpseHit && e.kind != EventKind::CorpseBreak)
@@ -228,10 +242,27 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         else if (e.kind == EventKind::ShieldBlock)
         {
             poses_[e.target].shield = .15f;
+            if (e.actor == own && e.target != own)
+            {
+                confirmation_ = .16f;
+                shieldConfirmation_ = true;
+                killConfirmation_ = false;
+            }
         }
         else if (e.kind == EventKind::Hit)
         {
             poses_[e.target].hit = .12f;
+            if (e.actor == own && e.target != own)
+            {
+                confirmation_ = .16f;
+                shieldConfirmation_ = false;
+                killConfirmation_ = false;
+            }
+            if (e.target == own)
+            {
+                hurt_ = .25f;
+                hurtDirection_ = {-e.direction.x, -e.direction.y};
+            }
             Vec2 at = e.position;
             auto found =
                 std::find_if(players.begin(), players.end(), [&](const auto& p) { return p.id == e.target; });
@@ -261,17 +292,16 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
                         material = cell.material;
                         break;
                     }
-                auto terrainCount = std::count_if(particles_.begin(), particles_.end(), [](const auto& p)
-                                                  { return p.material != Material::Fixed; });
                 auto start = particles_.size();
                 burst(e.position, {-e.direction.x, -e.direction.y},
                       material == Material::Fixed
                           ? 4
-                          : std::min(12, std::max(0, 256 - static_cast<int>(terrainCount))),
+                          : std::min(12, std::max(0, 256 - static_cast<int>(terrainParticleCount))),
                       false, 0, material != Material::Fixed);
                 for (auto i = start; i < particles_.size(); ++i)
                 {
                     particles_[i].material = material;
+                    terrainParticleCount += material != Material::Fixed;
                     if (material != Material::Fixed)
                         particles_[i].size = random(4, 8);
                 }
@@ -286,6 +316,12 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         }
         else if (e.kind == EventKind::Death)
         {
+            if (e.actor == own && e.target != own)
+            {
+                confirmation_ = .25f;
+                shieldConfirmation_ = false;
+                killConfirmation_ = true;
+            }
             if (blood && !incendiaryWeapon(e.weapon))
                 burst({e.position.x + 24, e.position.y + 24}, e.direction, 120, true, e.target);
             else if (incendiaryWeapon(e.weapon))
@@ -295,8 +331,13 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
                  !incendiaryWeapon(e.weapon))
             burst(e.position, e.direction, e.kind == EventKind::CorpseBreak ? 90 : 30, true, e.target);
     }
-    if (dt <= 0)
+    // Presentation is polled much more often than rendered. Move particles at
+    // most 120 times/s, while events and confirmations are still consumed immediately.
+    particleAccumulator_ += dt;
+    if (particleAccumulator_ < 1.f / 120)
         return;
+    dt = particleAccumulator_;
+    particleAccumulator_ = 0;
     smokeAccumulator_ += dt;
     if (smokeAccumulator_ >= .1f)
     {
@@ -328,7 +369,16 @@ void Effects::update(float dt, const std::vector<Player>& players, const Arena& 
         const Vec2 to{p.position.x + p.velocity.x * dt, p.position.y + p.velocity.y * dt};
         float nearest = 2;
         const Rect* surface = nullptr;
-        for (const auto& box : arena.platforms)
+        std::vector<Rect> nearby;
+        const auto* solids = &arena.platforms;
+        if (arena.platforms.size() > 64)
+        {
+            nearby =
+                arena.solidsNear({{std::min(p.position.x, to.x) - 1, std::min(p.position.y, to.y) - 1},
+                                  {std::abs(to.x - p.position.x) + 2, std::abs(to.y - p.position.y) + 2}});
+            solids = &nearby;
+        }
+        for (const auto& box : *solids)
             if (std::max(p.position.x, to.x) + 1 >= box.position.x &&
                 std::min(p.position.x, to.x) - 1 <= box.position.x + box.size.x &&
                 std::max(p.position.y, to.y) + 1 >= box.position.y &&

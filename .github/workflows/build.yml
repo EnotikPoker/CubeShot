@@ -38,7 +38,7 @@ jobs:
             autoconf autoconf-archive automake libtool libtool-bin libltdl-dev autopoint pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev wayland-protocols \
-            patchelf
+            libpulse-dev patchelf
       - name: Bootstrap pinned vcpkg
         shell: bash
         run: |

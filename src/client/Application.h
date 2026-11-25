@@ -7,6 +7,7 @@
 #include "client/Menu.h"
 #include "client/Profile.h"
 #include "client/SettingsController.h"
+#include "client/SoundScene.h"
 #include "client/VisualAssets.h"
 #include "game/World.h"
 #include <cstdint>
@@ -52,6 +53,8 @@ private:
     World world_;
     BotGameController bots_;
     Effects effects_;
+    AudioSystem audio_;
+    SoundScene sounds_{audio_.mixer};
     bool wasConnected_ = false;
     Menu menu_;
     std::array<int, 2> buildScroll_{};

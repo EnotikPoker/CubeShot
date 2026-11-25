@@ -4,6 +4,12 @@
 
 namespace cubeshot::client
 {
+bool validAudio(const AudioSettings& a)
+{
+    return a.master >= 0 && a.master <= 100 && a.combat >= 0 && a.combat <= 100 && a.interface >= 0 &&
+           a.interface <= 100;
+}
+
 Settings::Settings()
 {
     bindings[0] = {{{BindingDevice::Keyboard, SDL_SCANCODE_A}, {BindingDevice::Keyboard, SDL_SCANCODE_LEFT}}};

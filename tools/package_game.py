@@ -25,11 +25,12 @@ SDL_RUNTIME = (
     "libXi.so.6", "libXfixes.so.3", "libXrender.so.1", "libXss.so.1",
     "libwayland-client.so.0", "libwayland-cursor.so.0", "libwayland-egl.so.1",
     "libxkbcommon.so.0", "libdecor-0.so.0", "libdbus-1.so.3",
-    "libibus-1.0.so.5", "libudev.so.1",
+    "libibus-1.0.so.5", "libudev.so.1", "libpulse.so.0", "libasound.so.2",
 )
 REQUIRED_SDL_RUNTIME = {
     "libX11.so.6", "libXext.so.6", "libXcursor.so.1", "libXrandr.so.2",
     "libwayland-client.so.0", "libwayland-cursor.so.0", "libxkbcommon.so.0",
+    "libpulse.so.0", "libasound.so.2",
 }
 
 

@@ -22,6 +22,7 @@ Application::~Application()
         SDL_SetCursor(SDL_GetDefaultCursor());
         SDL_DestroyCursor(crosshair_);
     }
+    audio_.shutdown();
     visuals_.reset();
     SDL_DestroyRenderer(renderer_);
     SDL_DestroyWindow(window_);
@@ -73,6 +74,8 @@ bool Application::initialize()
         }
     }
     settings_.initialize(preferences, profile_.nickname);
+    audio_.setSettings(preferences.audio);
+    audio_.initialize(VisualAssets::directory() / "audio");
     eventInput_.synchronize();
     crosshair_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
     return crosshair_ && SDL_SetCursor(SDL_GetDefaultCursor());
@@ -112,6 +115,7 @@ void Application::screenChanged(Screen before)
 {
     if (before == menu_.screen())
         return;
+    audio_.mixer.play(menu_.playing() ? SoundCue::Click : SoundCue::Back, .45f, 0, 3);
     world_.clearPlayerInput(World::localPlayerId);
     bots_.synchronize(menu_);
     bots_.clearInput();
@@ -128,6 +132,8 @@ void Application::screenChanged(Screen before)
 
 bool Application::handle(MenuAction action)
 {
+    if (action != MenuAction::None)
+        audio_.mixer.play(SoundCue::Click, .4f, 0, 3);
     if (action == MenuAction::Quit)
         return false;
     if (action == MenuAction::OpenSettings)
@@ -141,6 +147,8 @@ bool Application::handle(MenuAction action)
     if (action == MenuAction::StartBots || action == MenuAction::BotRematch)
     {
         effects_.clear();
+        sounds_.clear();
+        audio_.clear();
         lastRound_ = 0;
     }
     if (action == MenuAction::EditTest)
@@ -151,6 +159,8 @@ bool Application::handle(MenuAction action)
         if (accepted && (edit.operation == TestOperation::RestoreMap ||
                          edit.operation == TestOperation::Clear || edit.operation == TestOperation::Respawn))
             effects_.clear();
+        sounds_.clear();
+        audio_.clear();
     }
     if (action == MenuAction::StartTest || action == MenuAction::ApplyTest)
     {
@@ -164,6 +174,8 @@ bool Application::handle(MenuAction action)
             world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
         }
         effects_.clear();
+        sounds_.clear();
+        audio_.clear();
     }
     if ((!connections_.session() && !bots_.match()) ||
         (connections_.session() && connections_.session()->connecting()))
@@ -181,6 +193,8 @@ void Application::updateSession()
             return;
         if (wasConnected_)
             effects_.clear();
+        sounds_.clear();
+        audio_.clear();
         wasConnected_ = false;
         lastRound_ = 0;
         return;
@@ -193,6 +207,8 @@ void Application::updateSession()
         {
             lastRound_ = snapshot.round;
             effects_.clear();
+            sounds_.clear();
+            audio_.clear();
             inputGate_.reset(rawInput());
         }
         const auto input = menu_.playing() ? inputGate_.filter(rawInput())
@@ -419,6 +435,8 @@ int Application::run()
                         world_.setHealth(i + 1, menu_.testConfiguration().healthPercent[i]);
                     }
                     effects_.clear();
+                    sounds_.clear();
+                    audio_.clear();
                 }
                 inputGate_.reset(rawInput());
                 accumulator = 0;
@@ -559,15 +577,22 @@ int Application::run()
             {
                 lastRound_ = s.round;
                 effects_.clear();
+                sounds_.clear();
+                audio_.clear();
                 inputGate_.reset(rawInput());
                 eventInput_.synchronize();
             }
-            effects_.update(menu_.playing() || menu_.screen() == Screen::BotResult ||
-                                    menu_.screen() == Screen::Armory
-                                ? static_cast<float>(elapsed)
-                                : 0.f,
-                            s.players, arenaForEffects(s), bots_.match()->takeEvents(), 1,
-                            settings_.active().blood, settings_.active().shake);
+            auto events = bots_.match()->takeEvents();
+            const float soundDt = menu_.screen() == Screen::Paused || menu_.screen() == Screen::Settings
+                                      ? 0.f
+                                      : static_cast<float>(elapsed);
+            sounds_.update(soundDt, s.players, arenaForEffects(s), events, 1, s.entities, s.bullets);
+            sounds_.match(s.phase, s.round, s.remaining, s.weaponChoice, 1);
+            effects_.update(
+                menu_.playing() || menu_.screen() == Screen::BotResult || menu_.screen() == Screen::Armory
+                    ? static_cast<float>(elapsed)
+                    : 0.f,
+                s.players, arenaForEffects(s), events, 1, settings_.active().blood, settings_.active().shake);
             const auto previousScreen = menu_.screen();
             bots_.synchronize(menu_);
             screenChanged(previousScreen);
@@ -580,15 +605,38 @@ int Application::run()
                                         [&](const auto& e) { return e.round != s.round; }),
                          events.end());
             const auto visual = session->interpolated();
+            auto soundPlayers = visual.players;
+            if (auto predicted = session->predictedPlayer())
+                for (auto& p : soundPlayers)
+                    if (p.id == session->playerId())
+                        p = *predicted;
+            sounds_.update(static_cast<float>(elapsed), soundPlayers, arenaForEffects(s), events,
+                           session->playerId(), s.entities, s.bullets);
+            sounds_.match(s.phase, s.round, s.remaining, s.weaponChoice, session->playerId());
             effects_.update(static_cast<float>(elapsed), visual.players, arenaForEffects(s), events,
                             session->playerId(), settings_.active().blood, settings_.active().shake);
         }
         else if (!bots_.match())
         {
+            auto events = world_.takeEvents();
+            sounds_.update(menu_.playing() ? static_cast<float>(elapsed) : 0.f, world_.players(),
+                           world_.arena(), events, World::localPlayerId, world_.entities(), world_.bullets());
             effects_.update(menu_.playing() ? static_cast<float>(elapsed) : 0.f, world_.players(),
-                            world_.arena(), world_.takeEvents(), World::localPlayerId,
-                            settings_.active().blood, settings_.active().shake);
+                            world_.arena(), events, World::localPlayerId, settings_.active().blood,
+                            settings_.active().shake);
         }
+        const auto volumes =
+            menu_.screen() == Screen::Settings ? settings_.draft().audio : settings_.active().audio;
+        static AudioSettings lastVolumes;
+        const bool volumeChanged = !(volumes == lastVolumes);
+        audio_.setSettings(volumes);
+        if (volumeChanged && menu_.screen() == Screen::Settings)
+        {
+            audio_.mixer.play(volumes.combat != lastVolumes.combat ? SoundCue::HitConfirm : SoundCue::Click,
+                              .5f, 0, 3);
+        }
+        lastVolumes = volumes;
+        audio_.pump((SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) != 0);
         const int fps =
             settings_.previewing() ? settings_.draft().display.fps : settings_.active().display.fps;
         if (!pacer_.due(now, fps))
@@ -629,6 +677,14 @@ int Application::run()
             (session && menu_.screen() == Screen::Result) ||
             (bots_.match() && menu_.screen() == Screen::BotResult) || menu_.screen() == Screen::Armory;
         bool rendered = true;
+        if (sceneVisible && menu_.playing())
+        {
+            float mx = 0, my = 0;
+            SDL_GetMouseState(&mx, &my);
+            Vec2 cursor;
+            SDL_RenderCoordinatesFromWindow(renderer_, mx, my, &cursor.x, &cursor.y);
+            rendered = rendered && drawCombatFeedback(renderer_, effects_, cursor);
+        }
         if (sceneVisible)
         {
             if (session && session->snapshot())

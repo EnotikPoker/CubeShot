@@ -44,6 +44,12 @@ void effects()
     expect(fx.pose(1).shot < .05f, "Authority acknowledgement does not replay predicted recoil");
     GameEvent hit{2, 20, 7, 1, EventKind::Hit, 1, 2, {850, 420}, {1, 0}};
     fx.update(.01f, world.players(), arena, {hit}, 1);
+    expect(fx.hitConfirmation() > 0 && !fx.confirmedShield(), "Authoritative HP hit confirms near crosshair");
+    auto shield = hit;
+    shield.id = 3;
+    shield.kind = EventKind::ShieldBlock;
+    fx.update(.01f, world.players(), arena, {shield}, 1);
+    expect(fx.hitConfirmation() > 0 && fx.confirmedShield(), "Shield block has distinct feedback");
     const auto count = fx.particles().size();
     expect(count > 0 && fx.pose(2).hit > 0 && !fx.splashes().empty(),
            "Confirmed hit creates blood and hit animation");
@@ -69,8 +75,37 @@ void effects()
     dead[1].health = 0;
     fx.update(.1f, dead, arena, {}, 1);
     expect(fx.pose(2).death > 0 && !fx.pose(2).alive, "Dead body has an independent visual animation");
+    auto respawned = world.players();
+    respawned[1].lifeRevision = 1;
+    fx.update(.01f, respawned, arena, {}, 1);
+    expect(fx.pose(2).hit == 0 && fx.pose(2).death == 0 && fx.pose(2).alive,
+           "Respawn cannot inherit old-body damage or death animations");
     fx.clear();
     expect(fx.pose(2).death == 0 && fx.particles().empty(), "World reset clears effects");
+}
+
+void feedbackClipping()
+{
+    auto surface = std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)>(
+        SDL_CreateSurface(960, 540, SDL_PIXELFORMAT_RGBA32), SDL_DestroySurface);
+    auto renderer = std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)>(
+        SDL_CreateSoftwareRenderer(surface.get()), SDL_DestroyRenderer);
+    World w(Arena::createDuel(), 2);
+    Effects fx;
+    GameEvent hit;
+    hit.id = 1;
+    hit.kind = EventKind::Hit;
+    hit.actor = 1;
+    hit.target = 2;
+    fx.update(.01f, w.players(), w.arena(), {hit}, 1);
+    SDL_SetRenderDrawColor(renderer.get(), 11, 22, 33, 255);
+    SDL_RenderClear(renderer.get());
+    expect(drawCombatFeedback(renderer.get(), fx, {480, 475}), "Feedback renders near lower scene edge");
+    SDL_RenderPresent(renderer.get());
+    SDL_Color c;
+    SDL_ReadSurfacePixel(surface.get(), 488, 483, &c.r, &c.g, &c.b, &c.a);
+    expect(c.r == 11 && c.g == 22 && c.b == 33, "Hit marker never paints over footer HUD");
+    expect(!SDL_RenderClipEnabled(renderer.get()), "Feedback restores renderer clip state");
 }
 
 void transformAndRendering()
@@ -140,6 +175,7 @@ int main()
     try
     {
         effects();
+        feedbackClipping();
         transformAndRendering();
         settings();
         std::cout << "Effects and view checks passed\n";

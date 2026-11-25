@@ -64,8 +64,25 @@ Settings loadSettings(const std::filesystem::path& file)
             return settings;
         std::ifstream input(file);
         const auto data = nlohmann::json::parse(input, nullptr, false);
-        if (!data.is_object() || (data.value("version", 0) != 1 && data.value("version", 0) != 2))
+        if (!data.is_object() ||
+            (data.value("version", 0) != 1 && data.value("version", 0) != 2 && data.value("version", 0) != 3))
             return settings;
+        if (data.contains("audio") && data["audio"].is_object())
+        {
+            const auto& a = data["audio"];
+            auto read = [&](const char* key, int& target)
+            {
+                if (a.contains(key) && a[key].is_number_integer())
+                {
+                    const auto& value = a[key];
+                    if (value >= 0 && value <= 100)
+                        target = value.get<int>();
+                }
+            };
+            read("master", settings.audio.master);
+            read("combat", settings.audio.combat);
+            read("interface", settings.audio.interface);
+        }
         if (data.contains("effects") && data["effects"].is_object())
         {
             const auto& e = data["effects"];
@@ -196,7 +213,7 @@ Settings loadSettings()
 
 bool saveSettings(const Settings& settings, const std::filesystem::path& file, std::string& error)
 {
-    if (!validDisplay(settings.display) || !validBindings(settings.bindings))
+    if (!validDisplay(settings.display) || !validBindings(settings.bindings) || !validAudio(settings.audio))
     {
         error = "Invalid settings";
         return false;
@@ -210,7 +227,11 @@ bool saveSettings(const Settings& settings, const std::filesystem::path& file, s
         rows.push_back(std::move(slots));
     }
     const auto& d = settings.display;
-    const nlohmann::json data{{"version", 2},
+    const nlohmann::json data{{"version", 3},
+                              {"audio",
+                               {{"master", settings.audio.master},
+                                {"combat", settings.audio.combat},
+                                {"interface", settings.audio.interface}}},
                               {"display",
                                {{"fullscreen", d.fullscreen},
                                 {"width", d.size.width},

@@ -13,6 +13,7 @@ namespace cubeshot::client
 struct Pose
 {
     Vec2 previous{};
+    unsigned life = 0;
     float cycle = 0, land = 0, shot = 0, hit = 0, death = 0, shield = 0;
     bool grounded = false, alive = true, initialized = false;
 };
@@ -104,6 +105,31 @@ public:
 
     Vec2 shakeOffset() const;
 
+    float hitConfirmation() const
+    {
+        return confirmation_;
+    }
+
+    bool confirmedShield() const
+    {
+        return shieldConfirmation_;
+    }
+
+    bool confirmedKill() const
+    {
+        return killConfirmation_;
+    }
+
+    float hurtPulse() const
+    {
+        return hurt_;
+    }
+
+    Vec2 hurtDirection() const
+    {
+        return hurtDirection_;
+    }
+
     float time() const
     {
         return time_;
@@ -120,6 +146,9 @@ private:
     std::set<std::tuple<unsigned, PlayerId, std::uint64_t, unsigned, bool>> predictedActives_;
     std::uint32_t random_ = 719;
     float shake_ = 0, time_ = 0, smokeAccumulator_ = 0;
+    float confirmation_ = 0, hurt_ = 0, particleAccumulator_ = 0;
+    bool shieldConfirmation_ = false, killConfirmation_ = false;
+    Vec2 hurtDirection_{};
     bool bloodVisible_ = true;
     std::map<PlayerId, Pose> poses_;
     std::vector<Particle> particles_;

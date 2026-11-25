@@ -12,6 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
+import wave
 from linux_runtime import CXX_RUNTIMES, SYSTEM_LIBRARY_DIRS
 
 
@@ -134,6 +135,28 @@ def verify_visual_assets(package):
         raise RuntimeError("Missing font license: assets/fonts/OFL.txt")
 
 
+def verify_audio_assets(package):
+    root = package / "assets" / "audio"
+    try:
+        data = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        names = data["clips"]
+        if data["version"] != 1 or len(names) != 61 or len(set(names)) != len(names):
+            raise ValueError("Incomplete sound catalog")
+        for name in names:
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z_]+", name):
+                raise ValueError("Invalid sound name")
+            with wave.open(str(root / (name + ".wav")), "rb") as source:
+                if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 2, 48000):
+                    raise ValueError("Unsupported sound format")
+                count = source.getnframes()
+                if not 960 <= count <= 96000 or len(source.readframes(count)) != count * 2:
+                    raise ValueError("Empty or truncated sound")
+        if not (root / "README.md").is_file():
+            raise ValueError("Missing sound provenance")
+    except (OSError, ValueError, KeyError, TypeError, wave.Error, EOFError) as error:
+        raise RuntimeError(f"Missing or invalid audio asset: {error}") from error
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
@@ -146,6 +169,7 @@ def main():
         package = root / "CubeShot"
         verify_files(package)
         verify_visual_assets(package)
+        verify_audio_assets(package)
         metadata = json.loads((package / "PACKAGE.json").read_text(encoding="utf-8"))
         if metadata["version"] != args.version:
             raise RuntimeError("Package version does not match requested release")

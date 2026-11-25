@@ -13,6 +13,7 @@ namespace cubeshot::client
 {
 
 class Effects;
+bool drawCombatFeedback(SDL_Renderer* renderer, const Effects& effects, Vec2 cursor);
 bool renderSnapshot(SDL_Renderer* renderer, const WorldSnapshot& snapshot, PlayerId own,
                     const Effects* effects = nullptr);
 

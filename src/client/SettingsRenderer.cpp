@@ -36,6 +36,12 @@ bool renderSettings(SDL_Renderer* renderer, const SettingsController& settings, 
             !centered(renderer, U"Новый ник используется при следующем подключении", 290, 2, muted))
             return false;
     }
+    else if (settings.tab() == SettingsTab::Audio)
+    {
+        if (!centered(renderer, U"Стрелки влево/вправо — громкость · 0% — без звука", 365, 1, muted) ||
+            !centered(renderer, U"Изменения слышны сразу. Отмена вернёт прежнюю громкость", 394, 1, muted))
+            return false;
+    }
     else if (settings.tab() == SettingsTab::Controls)
     {
         for (int a = 0; a < static_cast<int>(InputAction::Count); ++a)

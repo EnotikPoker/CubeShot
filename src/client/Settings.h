@@ -81,10 +81,23 @@ struct DisplaySettings
     }
 };
 
+struct AudioSettings
+{
+    int master = 80, combat = 85, interface = 65;
+
+    bool operator==(const AudioSettings& other) const
+    {
+        return master == other.master && combat == other.combat && interface == other.interface;
+    }
+};
+
+bool validAudio(const AudioSettings& settings);
+
 struct Settings
 {
     bool blood = true, shake = true;
     DisplaySettings display;
+    AudioSettings audio;
     InputBindings bindings;
     Settings();
 };

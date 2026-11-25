@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.22.0 LANGUAGES C CXX)
+project(CubeShot VERSION 0.23.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -91,6 +91,8 @@ if(CUBESHOT_BUILD_CLIENT)
     add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/TextRenderer.cpp src/client/UiText.cpp src/client/AbilityUI.cpp src/client/BuildInspector.cpp)
     target_link_libraries(cubeshot_visuals PUBLIC cubeshot_game SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     add_dependencies(cubeshot_visuals cubeshot_assets)
+    add_library(cubeshot_audio STATIC src/client/Audio.cpp src/client/SoundScene.cpp)
+    target_link_libraries(cubeshot_audio PUBLIC cubeshot_game SDL3::SDL3)
     add_library(cubeshot_preferences STATIC src/client/TestPanel.cpp
         src/client/Settings.cpp src/client/SettingsStore.cpp src/client/Profile.cpp
         src/client/WindowSettings.cpp src/client/SettingsController.cpp src/client/SettingsRenderer.cpp
@@ -101,7 +103,7 @@ if(CUBESHOT_BUILD_CLIENT)
         src/client/BotGameController.cpp
         src/client/Menu.cpp src/client/MenuRenderer.cpp
         src/client/SceneRenderer.cpp src/client/Effects.cpp src/client/HostProcess.cpp)
-    target_link_libraries(cubeshot_client PRIVATE cubeshot_preferences cubeshot_network cubeshot_directory)
+    target_link_libraries(cubeshot_client PRIVATE cubeshot_preferences cubeshot_audio cubeshot_network cubeshot_directory)
     if(WIN32)
         set_target_properties(cubeshot_client PROPERTIES WIN32_EXECUTABLE TRUE)
     endif()

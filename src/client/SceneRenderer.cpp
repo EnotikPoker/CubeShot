@@ -633,6 +633,17 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
             auto c =
                 e.kind == EntityKind::Mine ? SDL_Color{186, 171, 75, 255} : SDL_Color{180, 110, 200, 255};
             p.rect(e.bounds(), c);
+            const Vec2 center{e.position.x + e.size.x / 2, e.position.y + e.size.y / 2};
+            // A persistent shape plus a fuse bar works without colour or audio.
+            const float pulse = e.kind == EntityKind::Sticky ? 1 - e.fuse / 1.25f : (e.arm <= 0 ? 1.f : 0.f);
+            p.line({center.x - 10, center.y - 11}, {center.x, center.y - 19}, 1.5f, {1, .7f, .3f, 1});
+            p.line({center.x, center.y - 19}, {center.x + 10, center.y - 11}, 1.5f, {1, .7f, .3f, 1});
+            if (e.kind == EntityKind::Sticky)
+            {
+                p.rect({{center.x - 10, center.y - 25}, {20, 3}}, {40, 35, 45, 255});
+                p.rect({{center.x - 10, center.y - 25}, {20 * std::clamp(pulse, 0.f, 1.f), 3}},
+                       {255, 170, 80, 255});
+            }
             p.rect({{e.position.x + 4, e.position.y + 2}, {5, 3}},
                    e.arm > 0 ? SDL_Color{70, 90, 85, 255} : SDL_Color{255, 94, 76, 255});
         }
@@ -755,7 +766,16 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         }
         if (b.weapon == WeaponKind::GrenadeLauncher)
         {
-            p.ellipse(b.position, 6 * scale, 6 * scale, {99, 128, 68, 255});
+            p.ellipse(b.position, 6 * scale, 6 * scale,
+                      b.active == ActiveKind::IceGrenade ? SDL_Color{101, 200, 240, 255}
+                                                         : SDL_Color{99, 128, 68, 255});
+            const float total = b.active == ActiveKind::Bomb         ? 1.1f
+                                : b.active == ActiveKind::IceGrenade ? .8f
+                                                                     : 1.5f;
+            p.rect({{b.position.x - 8, b.position.y - 13}, {16, 2}}, {40, 35, 45, 255});
+            p.rect(
+                {{b.position.x - 8, b.position.y - 13}, {16 * std::clamp(b.lifetime / total, 0.f, 1.f), 2}},
+                {255, 204, 79, 255});
             p.ellipse({b.position.x - 2, b.position.y - 2}, 2, 2, {255, 204, 79, 255});
             continue;
         }
@@ -976,6 +996,43 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
     SDL_SetRenderClipRect(renderer, nullptr);
     return labels && rendered && (!present || SDL_RenderPresent(renderer));
+}
+
+bool drawCombatFeedback(SDL_Renderer* r, const Effects& fx, Vec2 cursor)
+{
+    const SDL_Rect clip{0, 0, 960, 476};
+    SDL_SetRenderClipRect(r, &clip);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    bool ok = true;
+    if (fx.hitConfirmation() > 0 && cursor.y < 476)
+    {
+        const auto c = fx.confirmedKill()     ? SDL_Color{255, 204, 100, 255}
+                       : fx.confirmedShield() ? SDL_Color{104, 212, 248, 255}
+                                              : SDL_Color{240, 246, 252, 255};
+        SDL_SetRenderDrawColor(r, c.r, c.g, c.b, Uint8(255 * std::min(1.f, fx.hitConfirmation() * 12)));
+        for (float x : {-1.f, 1.f})
+            for (float y : {-1.f, 1.f})
+                ok = SDL_RenderLine(r, cursor.x + x * 6, cursor.y + y * 6, cursor.x + x * 11,
+                                    cursor.y + y * 11) &&
+                     ok;
+        if (fx.confirmedShield())
+        {
+            SDL_FRect shield{cursor.x - 13, cursor.y - 13, 26, 26};
+            ok = SDL_RenderRect(r, &shield) && ok;
+        }
+    }
+    if (fx.hurtPulse() > 0)
+    {
+        auto direction = fx.hurtDirection();
+        float n = std::max(.001f, std::hypot(direction.x, direction.y));
+        Vec2 at{480 + direction.x / n * 410, 238 + direction.y / n * 200};
+        SDL_SetRenderDrawColor(r, 246, 105, 113, Uint8(180 * std::min(1.f, fx.hurtPulse() * 8)));
+        ok = SDL_RenderLine(r, at.x - 8, at.y, at.x, at.y - 6) && ok;
+        ok = SDL_RenderLine(r, at.x, at.y - 6, at.x + 8, at.y) && ok;
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    SDL_SetRenderClipRect(r, nullptr);
+    return ok;
 }
 
 bool renderScene(SDL_Renderer* r, const World& world, bool present, const Effects* effects)
