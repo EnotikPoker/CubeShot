@@ -19,7 +19,7 @@ bool validActiveLoadout(const ActiveLoadout& a)
 
 const ActiveDefinition& activeDefinition(ActiveKind k)
 {
-    static const std::array<ActiveDefinition, 9> defs{
+    static const std::array<ActiveDefinition, 15> defs{
         {{U"Пусто", U"Получите способность между раундами", 0},
          {U"Рывок", U"Рывок на 200 пикселей к прицелу; стены останавливают", 6},
          {U"Телепорт", U"Перенос до 220 пикселей к прицелу, в том числе сквозь стены", 8},
@@ -28,7 +28,13 @@ const ActiveDefinition& activeDefinition(ActiveKind k)
          {U"Гарпун", U"10 урона и притягивание врага; дальность 600", 10},
          {U"Удар о землю", U"Быстрое падение; удар при посадке: 40 урона, радиус 110", 10},
          {U"Волна", U"15 урона и сильное отталкивание, радиус 150", 8},
-         {U"Бомба", U"Взрыв через 1,1 с: до 60 урона, радиус 150; опасна владельцу", 12}}};
+         {U"Бомба", U"Взрыв через 1,1 с: до 60 урона, радиус 150; опасна владельцу", 12},
+         {U"Парирование", U"0,35 с защиты спереди: отражает пули и блокирует ближний удар", 7},
+         {U"Ледяная граната", U"15 урона, радиус 130; замедление 25% на 2 с; опасна владельцу", 10},
+         {U"Мина", U"На опоре: взвод 0,6 с, 45 урона в радиусе 130; можно расстрелять", 12},
+         {U"Силовой экран", U"90 HP на 3 с; пропускает игроков, блокирует атаки с обеих сторон", 12},
+         {U"Форсаж", U"На 4 с: +25% темпа атак и скорости перезарядки", 14},
+         {U"Очищение", U"Снимает огонь, кровотечение и замедление; защита 20% на 1,5 с", 10}}};
     return defs[validActive(k) ? unsigned(k) : 0];
 }
 
@@ -91,6 +97,36 @@ bool activateLocal(Player& p, unsigned index, const Arena& arena, const std::vec
             p.heal(30);
             p.burning = p.burnTick = p.bleeding = p.bleedTick = 0;
             break;
+        case ActiveKind::Parry:
+            p.parry = .35f;
+            break;
+        case ActiveKind::Overdrive:
+            p.overdrive = 4;
+            break;
+        case ActiveKind::Cleanse:
+            p.burning = p.burnTick = p.bleeding = p.bleedTick = p.slow = 0;
+            p.cleanse = 1.5f;
+            break;
+        case ActiveKind::Mine:
+            if (!p.grounded)
+                return false;
+            break;
+        case ActiveKind::Screen:
+        {
+            Vec2 at{p.position.x + p.size.x / 2 + p.aimDirection.x * 120 - 5, p.position.y + p.size.y - 112};
+            Rect box{at, {10, 112}};
+            if (at.x < arena.bounds.position.x || at.y < arena.bounds.position.y ||
+                at.x + 10 > arena.bounds.position.x + arena.bounds.size.x ||
+                at.y + 112 > arena.bounds.position.y + arena.bounds.size.y)
+                return false;
+            for (auto wall : arena.platforms)
+                if (collision::overlaps(box, wall))
+                    return false;
+            for (auto body : others)
+                if (body.alive() && collision::overlaps(box, body.bounds()))
+                    return false;
+            break;
+        }
         case ActiveKind::Slam:
             p.slamming = true;
             p.slamTime = 2;
@@ -98,6 +134,11 @@ bool activateLocal(Player& p, unsigned index, const Arena& arena, const std::vec
         default:
             break;
     }
+    p.spawnProtection = 0;
+    if (p.abilities.level(AbilityKind::Resonance))
+        p.resonance = 2;
+    p.actives[1 - index].cooldown =
+        std::max(0.f, p.actives[1 - index].cooldown - .5f * p.abilities.level(AbilityKind::Transfer));
     slot.cooldown = activeDefinition(slot.kind).cooldown;
     return true;
 }

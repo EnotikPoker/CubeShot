@@ -91,6 +91,7 @@ inline bool advanceProjectileTerrain(Bullet& bullet, const Arena& arena, float d
         {{std::min(from.x, to.x) - bullet.collisionRadius, std::min(from.y, to.y) - bullet.collisionRadius},
          {std::abs(to.x - from.x) + 2 * bullet.collisionRadius,
           std::abs(to.y - from.y) + 2 * bullet.collisionRadius}});
+    solids.insert(solids.end(), arena.combatScreens.begin(), arena.combatScreens.end());
     for (auto& r : solids)
         if (auto hit = collision::segmentHit(from, to, r, bullet.collisionRadius); hit && *hit < nearest)
         {
@@ -112,6 +113,7 @@ inline bool advanceProjectileTerrain(Bullet& bullet, const Arena& arena, float d
         {
             bounceProjectile(bullet, at, surface, 1);
             --bullet.ricochets;
+            ++bullet.bounces;
             bullet.damage = std::max(1, static_cast<int>(std::lround(bullet.damage * .7f)));
             return true;
         }

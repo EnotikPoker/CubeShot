@@ -2,6 +2,7 @@
 #include "game/Abilities.h"
 #include "game/ActiveAbilities.h"
 #include "game/Weapon.h"
+#include <string>
 
 namespace cubeshot
 {
@@ -11,6 +12,7 @@ struct AttackStats
     unsigned circuits = 0;
 };
 
+std::u32string abilityEffect(AbilityKind kind, const Abilities& abilities);
 AttackStats attackStats(WeaponKind weapon, const Abilities& abilities);
 bool passiveApplies(AbilityKind kind, WeaponKind weapon, const ActiveLoadout& active = {});
 struct Bullet;

@@ -555,3 +555,23 @@ const std::vector<PhysicsPiece>& Debris::pieces() const
     return pieces_;
 }
 } // namespace cubeshot
+
+namespace cubeshot
+{
+void Debris::limitContinuous(float dt)
+{
+    for (auto& c : corpses_)
+    {
+        if (c.body.life < 0)
+            c.body.life = 20;
+        c.body.life = std::max(0.f, c.body.life - dt);
+    }
+    corpses_.erase(std::remove_if(corpses_.begin(), corpses_.end(), [](auto& c) { return c.body.life <= 0; }),
+                   corpses_.end());
+    if (corpses_.size() > 6)
+        corpses_.erase(corpses_.begin(), corpses_.end() - 6);
+    for (auto& p : pieces_)
+        if (p.life < 0)
+            p.life = 20;
+}
+} // namespace cubeshot

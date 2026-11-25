@@ -63,7 +63,9 @@ void BotController::reset()
 
 void BotController::prepare(const Abilities& abilities, const Arena* arena)
 {
-    if (arena && (arena_.map != arena->map || arena_.terrainRevision != arena->terrainRevision))
+    if (arena && (arena_.map != arena->map || arena_.terrainRevision != arena->terrainRevision ||
+                  arena_.modifiers.gravity != arena->modifiers.gravity ||
+                  arena_.modifiers.movement != arena->modifiers.movement))
     {
         arena_ = *arena;
         movementAbilities_.reset();
@@ -79,7 +81,12 @@ void BotController::prepare(const Abilities& abilities, const Arena* arena)
 
 PlayerInput BotController::update(const BotObservation& observation, float dt)
 {
+    if (observation.geometry && (arena_.modifiers.gravity != observation.geometry->modifiers.gravity ||
+                                 arena_.modifiers.movement != observation.geometry->modifiers.movement))
+        prepare(observation.self.abilities, observation.geometry);
     prepare(observation.self.abilities);
+    if (observation.geometry)
+        arena_.combatScreens = observation.geometry->combatScreens;
     if (observation.geometry && (arena_.map != observation.geometry->map ||
                                  arena_.terrainRevision != observation.geometry->terrainRevision))
     {
@@ -108,7 +115,8 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
         aim_ = observation.self.aimDirection;
     time_ += dt;
     const bool previouslyKnown = perceived_.target.has_value();
-    history_.push_back({time_, observation.target, observation.bullets, observation.fires, observation.self});
+    history_.push_back({time_, observation.target, observation.bullets, observation.fires, observation.self,
+                        observation.entities});
     while (!history_.empty() && history_.front().time <= time_ - tuning_.reaction)
     {
         perceived_ = std::move(history_.front());
@@ -182,7 +190,16 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
     }
     if (time_ >= nextGoal_ && observation.self.grounded && time_ >= dodgeUntil_)
     {
-        const auto next = chooseGoal(observation.self, perceived_.target);
+        auto next = chooseGoal(observation.self, perceived_.target);
+        if (observation.objective && (observation.self.health > 25 || !perceived_.target))
+        {
+            Vec2 capture{observation.objective->x - observation.self.size.x / 2,
+                         observation.objective->y - observation.self.size.y / 2};
+            if (!perceived_.target ||
+                distance(observation.self.weaponOrigin(), *observation.objective) > 50 ||
+                distance(center(*perceived_.target), *observation.objective) > 72)
+                next = capture;
+        }
         if (distance(next, goal_) > 12)
             cancelRoute(false);
         goal_ = next;
@@ -311,10 +328,11 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
             {
                 input.shoot = true;
                 nextShot_ =
-                    time_ +
-                    std::max(tuning_.shotInterval * observation.self.weapon.shotInterval / .25f,
-                             observation.self.weapon.shotInterval) /
-                        (observation.self.abilities.fireRate() * (1 + .15f * observation.self.adrenaline()));
+                    time_ + std::max(tuning_.shotInterval * observation.self.weapon.shotInterval / .25f,
+                                     observation.self.weapon.shotInterval) /
+                                (observation.self.abilities.fireRate() *
+                                 (observation.self.overdrive > 0 ? 1.25f : 1.f) *
+                                 (1 + .15f * observation.self.adrenaline()));
             }
         }
     }
@@ -391,6 +409,35 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
                               distance(observation.self.position, perceived_.target->position)
                       ? BotIntent::Retreat
                       : BotIntent::Approach;
+    if (time_ >= nextShot_ && observation.self.weapon.cooldown <= 0 &&
+        !meleeWeapon(observation.self.weapon.kind))
+    {
+        for (const auto& entity : perceived_.entities)
+        {
+            bool target = entity.kind == EntityKind::Screen ||
+                          (entity.kind == EntityKind::Mine && entity.attack.shooterId != observation.self.id);
+            if (!target)
+                continue;
+            Vec2 center{entity.position.x + entity.size.x / 2, entity.position.y + entity.size.y / 2};
+            auto d = Vec2{center.x - observation.self.weaponOrigin().x,
+                          center.y - observation.self.weaponOrigin().y};
+            float length = std::hypot(d.x, d.y);
+            if (length > 450 || length < .01f)
+                continue;
+            if (entity.kind == EntityKind::Screen &&
+                !collision::segmentHit(observation.self.weaponOrigin(), goal_, entity.bounds(), 3))
+                continue;
+            if (terrainHit(observation.self.weaponOrigin(), center, arena_, 3) <= 1)
+                continue;
+            if (explosiveWeapon(observation.self.weapon.kind) ||
+                observation.self.weapon.kind == WeaponKind::StickyLauncher)
+                continue;
+            input.aimDirection = {d.x / length, d.y / length};
+            input.shoot = true;
+            input.triggerHeld = observation.self.weapon.automatic();
+            break;
+        }
+    }
     useActives(observation, input);
     input.jetpackHeld = input.jetpackHeld || input.jump;
     return input;

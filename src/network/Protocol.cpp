@@ -1,4 +1,5 @@
 #include "network/Protocol.h"
+#include "network/ExpansionProtocol.h"
 #include "network/Identity.h"
 #include <algorithm>
 #include <cmath>
@@ -90,7 +91,7 @@ std::optional<PhysicsPiece> decodePiece(const wire::Piece& p, bool allowEmpty = 
     if (!(allowEmpty && out.outline.empty()) && !validPolygon(out.outline))
         return {};
     if (p.kind() > 2 || !finite(p.eye()) || std::abs(p.eye().x()) > 64 || std::abs(p.eye().y()) > 64 ||
-        !std::isfinite(p.life()) || p.life() < -1 || p.life() > 6)
+        !std::isfinite(p.life()) || p.life() < -1 || p.life() > 20)
         return {};
     out.kind = static_cast<PieceKind>(p.kind());
     out.hasEye = p.eye_attached();
@@ -190,6 +191,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         if (!piece.outline.empty())
             encodePiece(out.add_pieces(), piece);
     out.set_wins(s.rules.wins);
+    encodeExpansion(out, s);
     auto terrain = s.terrain;
     if (terrain.health.empty())
         terrain = Arena::create(s.map).terrainState();
@@ -202,6 +204,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         vec(v->mutable_position(), p.position);
         vec(v->mutable_velocity(), p.velocity);
         vec(v->mutable_aim(), p.aimDirection);
+        encodePlayerExpansion(*v, p);
         v->set_health(p.health);
         v->set_grounded(p.grounded);
         v->set_push_x(p.pushX);
@@ -276,6 +279,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
     for (const auto& b : s.bullets)
     {
         auto* v = out.add_bullets();
+        encodeBulletExpansion(*v, b);
         v->set_id(b.id);
         vec(v->mutable_position(), b.position);
         vec(v->mutable_velocity(), b.velocity);
@@ -332,12 +336,14 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         in.upgrade_size() != 2 || in.rolled_ability_size() != 2)
         return {};
     if (in.loadout_size() != 2 || in.rolled_size() != 2 || in.weapon_choice_size() != 2 ||
-        in.spin_remaining_size() != 2 || in.corpses_size() > 2 || in.pieces_size() > Debris::maxPieces)
+        in.spin_remaining_size() != 2 || in.corpses_size() > 6 || in.pieces_size() > Debris::maxPieces)
         return {};
     if (in.fires_size() > static_cast<int>(maxFires))
         return {};
     WorldSnapshot s;
     s.rules.wins = in.wins();
+    if (!decodeExpansion(in, s))
+        return {};
     if (!s.rules.valid())
         return {};
     // Validate against immutable layout metadata; do not rebuild a collision mesh for every packet.
@@ -379,7 +385,9 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         if (!validNickname(in.names(i)))
             return {};
         s.names[i] = in.names(i);
-        if (in.score(i) > s.rules.wins)
+        if (in.score(i) > (s.rules.mode == GameMode::Control    ? s.rules.controlGoal
+                           : s.rules.mode == GameMode::ArmsRace ? s.rules.stages
+                                                                : s.rules.wins))
             return {};
         if (in.loadout(i) >= weaponCount || in.rolled(i) >= weaponCount || in.weapon_choice(i) > 3 ||
             !std::isfinite(in.spin_remaining(i)) || in.spin_remaining(i) < 0 ||
@@ -401,7 +409,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
              s.spinRemaining[i] > Match::wheelSeconds + .01f) ||
             (s.weaponChoice[i] == WeaponChoice::Revealing &&
              (s.upgrade[i] == UpgradeKind::Continue ||
-              s.spinRemaining[i] > (s.upgrade[i] != UpgradeKind::Weapon
+              s.spinRemaining[i] > ((s.upgrade[i] != UpgradeKind::Weapon || s.rules.mode == GameMode::Control)
                                         ? Match::abilityReviewSeconds
                                         : Match::spinSeconds - Match::wheelSeconds) +
                                        .01f)))
@@ -440,6 +448,10 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         if (!abilities)
             return {};
         p.setAbilities(*abilities, false);
+        if (!decodePlayerExpansion(v, p))
+            return {};
+        p.modifiers = chaosModifiers(s.mode.chaos);
+        p.weapon.reloadFactor = p.modifiers.reload / (p.overdrive > 0 ? 1.25f : 1.f);
         if (v.health() > static_cast<unsigned>(p.healthLimit()) || v.shields() > p.abilities.shields() ||
             !std::isfinite(v.jetpack_fuel()) || v.jetpack_fuel() < 0 || v.jetpack_fuel() > 2.001f ||
             (v.jetpack_active() && !p.abilities.level(AbilityKind::Jetpack)))
@@ -465,7 +477,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         auto bounded = [](float f, float hi) { return std::isfinite(f) && f >= 0 && f <= hi + .001f; };
         if (!bounded(v.barrier(), 60) || !bounded(v.barrier_time(), 2) || !bounded(v.bleeding(), 3) ||
-            !bounded(v.bleed_tick(), 1) || !bounded(v.bleed_power(), 1.886f) || v.bleed_power() < 1 ||
+            !bounded(v.bleed_tick(), 1) || !bounded(v.bleed_power(), 2.168f) || v.bleed_power() < 1 ||
             v.bleed_owner() > 2 || !bounded(v.dash_time(), .16f) || !validAim(v.dash_direction()) ||
             !bounded(v.slam_time(), 2) || !bounded(v.lunge_cooldown(), .5f) || v.combo_hits() > 3 ||
             v.combo_target() > 2 || !bounded(v.combo_time(), 2))
@@ -588,15 +600,17 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         if (!std::isfinite(v.radius()) ||
             (std::abs(v.radius() - 3.f) > .001f && std::abs(v.radius() - 4.5f) > .001f &&
-             !(v.active() == unsigned(ActiveKind::Bomb) && std::abs(v.radius() - 5.f) < .001f)))
+             !((v.active() == unsigned(ActiveKind::Bomb) || v.active() == unsigned(ActiveKind::IceGrenade)) &&
+               std::abs(v.radius() - 5.f) < .001f)))
             return {};
         b.collisionRadius = v.radius();
         b.ignites = v.ignites();
         auto validFactor = [](float f, float lo, float hi)
         { return std::isfinite(f) && f >= lo - .001f && f <= hi + .001f; };
-        if (v.ricochets() > 1 || v.penetrations() > 2 || !validFactor(v.power(), 1, 1.45f) ||
-            !validFactor(v.terrain_power(), 1, 2.5f) || !validFactor(v.blast_scale(), 1, 1.4f) ||
-            !validFactor(v.range_scale(), 1, 1.75f) || !validFactor(v.spread_scale(), .421875f, 1))
+        if (v.ricochets() > (v.weapon() == unsigned(WeaponKind::Disc) ? 3u : 1u) || v.penetrations() > 2 ||
+            !validFactor(v.power(), 1, 2.72f) || !validFactor(v.terrain_power(), 1, 3.75f) ||
+            !validFactor(v.blast_scale(), 1, 1.4f) || !validFactor(v.range_scale(), 1, 1.75f) ||
+            !validFactor(v.spread_scale(), .421875f, 1))
             return {};
         b.ricochets = v.ricochets();
         b.penetrations = v.penetrations();
@@ -611,11 +625,12 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         b.returning = v.returning();
         b.hitMask = v.hit_mask();
         b.active = ActiveKind(v.active());
-        if (b.active != ActiveKind::None && b.active != ActiveKind::Bomb && b.active != ActiveKind::Harpoon)
+        if (b.active != ActiveKind::None && b.active != ActiveKind::Bomb && b.active != ActiveKind::Harpoon &&
+            b.active != ActiveKind::IceGrenade)
             return {};
         if (b.weapon == WeaponKind::FireBoomerang)
         {
-            if (!validFactor(v.boom_out(), 560, 980) || !validFactor(v.boom_return(), 700, 1225) ||
+            if (!validFactor(v.boom_out(), 560, 1225) || !validFactor(v.boom_return(), 700, 1531.25f) ||
                 !validFactor(v.boom_range(), 308, 539) || !validFactor(v.return_power(), 1, 1.5f) ||
                 !validFactor(v.leg_travel(), 0, 100000) || !validAim(v.launch_direction()) ||
                 v.circuits() > 1)
@@ -629,6 +644,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             b.circuits = v.circuits();
         }
 
+        if (!decodeBulletExpansion(v, b))
+            return {};
         s.bullets.push_back(b);
     }
     std::set<std::uint64_t> pieces;
@@ -636,7 +653,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     for (const auto& v : in.corpses())
     {
         auto body = decodePiece(v.body(), v.integrity() == 0);
-        if (!body || !pieces.insert(body->id).second || !corpseOwners.insert(body->owner).second ||
+        if (!body || !pieces.insert(body->id).second ||
+            (s.rules.mode != GameMode::Control && !corpseOwners.insert(body->owner).second) ||
             v.integrity() > 100 || v.cause() >= weaponCount ||
             (v.integrity() == 0 && !body->outline.empty()) || (v.integrity() > 0 && body->outline.empty()))
             return {};
@@ -662,6 +680,8 @@ wire::Events encodeEvents(const std::vector<GameEvent>& events)
         v->set_tick(e.tick);
         v->set_shot_sequence(e.shotSequence);
         v->set_round(e.round);
+        v->set_life(e.ownerLife);
+        v->set_target_life(e.targetLife);
         v->set_kind(static_cast<unsigned>(e.kind));
         v->set_active(unsigned(e.active));
         v->set_actor(e.actor);
@@ -687,16 +707,18 @@ std::optional<std::vector<GameEvent>> decodeEvents(const wire::Events& in)
     for (const auto& e : in.events())
     {
         if (!e.id() || !e.round() || e.kind() > static_cast<unsigned>(EventKind::ActiveCast) ||
-            !validActive(ActiveKind(e.active())) || e.actor() < 1 || e.actor() > 2 || e.target() > 2 ||
-            !finite(e.position()) || !validAim(e.direction()) || e.damage() > 1000 ||
-            e.weapon() >= weaponCount || !finite(e.local()) || !std::isfinite(e.radius()) || e.radius() < 0 ||
-            e.radius() > 400 || e.volley_damage() > 1000)
+            !validActive(ActiveKind(e.active())) ||
+            ((e.actor() == 0) &&
+             (e.kind() == unsigned(EventKind::Shot) || e.kind() == unsigned(EventKind::ActiveCast))) ||
+            e.actor() > 2 || e.target() > 2 || !finite(e.position()) || !validAim(e.direction()) ||
+            e.damage() > 1000 || e.weapon() >= weaponCount || !finite(e.local()) ||
+            !std::isfinite(e.radius()) || e.radius() < 0 || e.radius() > 400 || e.volley_damage() > 1000)
             return {};
         result.push_back({e.id(), e.tick(), e.shot_sequence(), e.round(), static_cast<EventKind>(e.kind()),
                           e.actor(), e.target(), vec(e.position()), vec(e.direction()),
                           static_cast<int>(e.damage()), static_cast<WeaponKind>(e.weapon()), e.volley(),
                           vec(e.local()), e.surface_revision(), static_cast<int>(e.volley_damage()),
-                          e.radius(), ActiveKind(e.active())});
+                          e.radius(), ActiveKind(e.active()), e.life(), e.target_life()});
     }
     return result;
 }

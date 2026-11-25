@@ -7,7 +7,7 @@ void BotGameController::handle(MenuAction action, Menu& menu, const std::string&
 {
     if (action == MenuAction::StartBots)
         match_ = std::make_unique<BotMatch>(menu.botMap(), menu.botDifficulty(), nickname,
-                                            std::random_device{}(), MatchRules{menu.wins()});
+                                            std::random_device{}(), menu.matchRules());
     if (action == MenuAction::BotRematch && match_)
         match_->rematch(nickname);
     if (match_ && (action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon ||

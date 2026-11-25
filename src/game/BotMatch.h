@@ -29,7 +29,7 @@ private:
     BotController bot_;
     std::string nickname_;
     std::uint64_t humanSequence_ = 0, botSequence_ = 0;
-    std::uint32_t round_ = 0;
+    std::uint32_t round_ = 0, life_ = 0;
     double accumulator_ = 0;
     bool botHeld_ = false;
     std::deque<BotRoundStats> history_;

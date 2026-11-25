@@ -47,6 +47,16 @@ enum class AbilityKind : std::uint32_t
     Combo,
     ReturnStrike,
     SecondCircuit,
+    Impulse,
+    Executioner,
+    Tempering,
+    AirManeuver,
+    Stance,
+    Echo,
+    FreshMagazine,
+    Economy,
+    Resonance,
+    Transfer,
     Count,
     None = Count
 };

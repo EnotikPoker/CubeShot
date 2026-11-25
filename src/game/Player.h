@@ -2,6 +2,7 @@
 
 #include "game/Abilities.h"
 #include "game/Bullet.h"
+#include "game/Modes.h"
 #include "game/PlayerInput.h"
 #include "game/Shape.h"
 #include "game/Types.h"
@@ -25,6 +26,14 @@ struct Player
     static constexpr float gravity = 1800.0f; // Пикселей/с².
 
     PlayerId id = 0;
+    unsigned lifeRevision = 0;
+    SimulationModifiers modifiers;
+    float spawnProtection = 0, lastHostileAgo = 999, parry = 0, slow = 0, overdrive = 0, cleanse = 0,
+          tempering = 0, temperCooldown = 0, resonance = 0, beamTime = 0;
+    bool freshMagazine = false;
+    unsigned economyCounter = 0, meleeSuccesses = 0;
+    std::uint64_t impulseKey = 0;
+
     Vec2 position;
     Vec2 velocity;
     float pushX = 0;
@@ -53,7 +62,9 @@ struct Player
 
     float movementSpeed() const
     {
-        return moveSpeed * abilities.speed() * (1 + .2f * adrenaline());
+        return moveSpeed * abilities.speed() * modifiers.movement * (slow > 0 ? .75f : 1) *
+               (grounded ? 1.f : 1 + .15f * abilities.level(AbilityKind::AirManeuver)) *
+               (1 + .2f * adrenaline());
     }
 
     float jumpVelocity() const
@@ -139,6 +150,7 @@ private:
     {
         PlayerId shooter;
         std::uint32_t volley;
+        unsigned life;
     };
 
     std::vector<BlockedShot> blockedShots_;

@@ -11,9 +11,9 @@ struct WorldView
 
     explicit WorldView(Rect bounds)
     {
-        scale = std::min(960.f / bounds.size.x, 540.f / bounds.size.y);
+        scale = std::min(960.f / bounds.size.x, 476.f / bounds.size.y);
         origin = bounds.position;
-        offset = {(960 - bounds.size.x * scale) / 2, (540 - bounds.size.y * scale) / 2};
+        offset = {(960 - bounds.size.x * scale) / 2, (476 - bounds.size.y * scale) / 2};
     }
 
     Vec2 toScreen(Vec2 p) const

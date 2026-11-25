@@ -6,6 +6,7 @@
 #include "game/Debris.h"
 #include "game/Events.h"
 #include "game/Player.h"
+#include "game/WorldEntity.h"
 
 #include <array>
 #include <random>
@@ -31,6 +32,22 @@ public:
     void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0,
                        bool reload = false, unsigned activeMask = 0);
     void setActives(PlayerId id, const ActiveLoadout& loadout);
+
+    const std::vector<WorldEntity>& entities() const
+    {
+        return entities_;
+    }
+
+    void setModifiers(SimulationModifiers modifiers);
+    void respawnPlayer(PlayerId id, Vec2 position, WeaponKind weapon, const Abilities& abilities,
+                       const ActiveLoadout& active, const ActiveSlots& previous, unsigned life);
+    void advanceDeadCooldowns(float dt);
+
+    void limitContinuousDebris(float dt)
+    {
+        debris_.limitContinuous(dt);
+    }
+
     void resetPlayers(bool swapSpawns = false);
     void equip(PlayerId id, WeaponKind kind);
     bool editTest(const TestEdit& edit, const TestConfiguration& config);
@@ -56,6 +73,25 @@ public:
     }
 
 private:
+    void resetEntities();
+    void updateEntities(float dt);
+    void syncScreens();
+    std::optional<std::pair<float, std::uint64_t>> traceEntities(Vec2 from, Vec2 to, float radius,
+                                                                 const Bullet& attack) const;
+    void hitEntity(std::uint64_t id, const Bullet& attack, Vec2 at);
+    void beam(const Bullet& attack);
+    void removeOwnedEntities(PlayerId id);
+    std::vector<WorldEntity> entities_;
+    std::uint64_t nextEntityId_ = 1;
+    float hazardTick_ = 0;
+
+    struct EchoAttack
+    {
+        Bullet attack;
+        float delay = .12f;
+    };
+
+    std::vector<EchoAttack> echoes_;
     std::array<unsigned, 4> testActiveRequests_{};
     void castActive(Player& player, unsigned slot);
     void radialActive(Player& player, ActiveKind kind);

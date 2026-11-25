@@ -12,7 +12,8 @@ using namespace botdetail;
 
 namespace
 {
-std::optional<BotAim> bombPlan(const Player& self, const BotTarget& target, const Arena& arena)
+std::optional<BotAim> bombPlan(const Player& self, const BotTarget& target, const Arena& arena,
+                               ActiveKind kind = ActiveKind::Bomb)
 {
     std::optional<BotAim> best;
     float side = center(target).x >= self.weaponOrigin().x ? 1.f : -1.f;
@@ -21,12 +22,20 @@ std::optional<BotAim> bombPlan(const Player& self, const BotTarget& target, cons
         float a = degrees * pi / 180;
         Vec2 dir{std::cos(a) * side, std::sin(a)};
         auto b = self.shotPrototype(dir);
-        b.active = ActiveKind::Bomb;
+        b.active = kind;
+        b.power = self.abilities.power();
+        if (kind == ActiveKind::IceGrenade)
+        {
+            b.blastDamage = 15;
+            b.blastRadius = 130;
+            b.terrainDamage = 0;
+            b.terrainRadius = 0;
+        }
         b.weapon = WeaponKind::GrenadeLauncher;
         b.damage = 60;
-        b.velocity = {dir.x * 520, dir.y * 520};
+        b.velocity = {dir.x * 520 * self.modifiers.projectiles, dir.y * 520 * self.modifiers.projectiles};
         b.acceleration = 900;
-        b.lifetime = 1.1f;
+        b.lifetime = kind == ActiveKind::IceGrenade ? .8f : 1.1f;
         b.collisionRadius = 5;
         b.ricochets = b.penetrations = 0;
         Player enemy = predictedTarget(target);
@@ -94,6 +103,38 @@ void BotController::useActives(const BotObservation& observation, PlayerInput& i
         Vec2 aim = input.aimDirection;
         switch (ability.kind)
         {
+            case ActiveKind::Parry:
+                cast = danger && gap < 500;
+                break;
+            case ActiveKind::Cleanse:
+                cast = self.burning > 0 || self.bleeding > 0 || self.slow > 0 || (danger && self.health < 40);
+                break;
+            case ActiveKind::Overdrive:
+                cast = gap < profile.maximum + 40 && !self.weapon.reloading;
+                break;
+            case ActiveKind::Mine:
+                cast = self.grounded && gap < 400 && gap > 100;
+                break;
+            case ActiveKind::Screen:
+                if ((danger || self.weapon.reloading) && gap > 220)
+                {
+                    cast = true;
+                    aimOverride = true;
+                    Vec2 d{at.x - origin.x, at.y - origin.y};
+                    float n = std::max(.01f, std::hypot(d.x, d.y));
+                    aim = {d.x / n, d.y / n};
+                }
+                break;
+            case ActiveKind::IceGrenade:
+                if (gap > 190 && gap < 430)
+                {
+                    if (auto plan = bombPlan(self, target, arena_, ActiveKind::IceGrenade))
+                    {
+                        aim = plan->direction;
+                        cast = aimOverride = true;
+                    }
+                }
+                break;
             case ActiveKind::Heal:
                 cast = self.health <= self.healthLimit() - 25 ||
                        ((self.burning > 0 || self.bleeding > 0) && self.health < self.healthLimit() - 5);

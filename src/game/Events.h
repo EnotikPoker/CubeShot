@@ -34,5 +34,6 @@ struct GameEvent
     int volleyDamage = 0;
     float radius = 240;
     ActiveKind active = ActiveKind::None;
+    unsigned ownerLife = 0, targetLife = 0;
 };
 } // namespace cubeshot

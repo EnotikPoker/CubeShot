@@ -102,12 +102,15 @@ std::vector<MenuButton> Menu::buttons() const
                        choice != WeaponChoice::Pending},
                       {U"Активная Q", {}, choice != WeaponChoice::Pending},
                       {U"Активная E", {}, choice != WeaponChoice::Pending}};
+            if (snapshot_.rules.mode == GameMode::ArmsRace)
+                result[0].placeholder = true;
             break;
         }
         case Screen::BotSetup:
             result = {
                 {U"Предыдущая карта", {}}, {U"Следующая карта", {}}, {botDifficultyName(botDifficulty_), {}},
-                {U"Начать", {}},           {U"Назад", {}},           {winsLabel_, {}}};
+                {U"Начать", {}},           {U"Назад", {}},           {winsLabel_, {}},
+                {modeLabel_, {}}};
             break;
         case Screen::BotResult:
             result = {{U"Реванш", {}}, {U"Карта и сложность", {}}, {U"Выйти в главное меню", {}}};
@@ -125,6 +128,7 @@ std::vector<MenuButton> Menu::buttons() const
                 result[1] = {U"Предыдущая карта", {}, !snapshot_.voting && own_ != 1};
                 result.insert(result.begin() + 2, {U"Следующая карта", {}, !snapshot_.voting && own_ != 1});
                 result.insert(result.begin() + 3, {winsLabel_, {}, own_ != 1});
+                result.insert(result.begin() + 4, {modeLabel_, {}, own_ != 1});
                 if (snapshot_.voting && own_ && snapshot_.votes[own_ - 1] < 0)
                     result[0].label = U"Голосовать за карту";
                 else if (snapshot_.voting && (snapshot_.votes[0] < 0 || snapshot_.votes[1] < 0))
@@ -139,20 +143,21 @@ std::vector<MenuButton> Menu::buttons() const
         result.push_back({U"Настроить тест", {}});
     const float top = screen_ == Screen::Armory                                          ? 398
                       : screen_ == Screen::Maps                                          ? 270
-                      : screen_ == Screen::BotSetup                                      ? 270
+                      : screen_ == Screen::BotSetup                                      ? 248
                       : screen_ == Screen::BotResult                                     ? 300
                       : screen_ == Screen::Modes                                         ? 166
                       : (screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser) ? 161
                       : screen_ == Screen::Paused                                        ? 214
                       : (screen_ == Screen::Address)                                     ? 276
-                      : screen_ == Screen::Lobby || screen_ == Screen::Result ||
-                              screen_ == Screen::Connecting || screen_ == Screen::Maps
+                      : screen_ == Screen::Lobby                                         ? 248
+                      : screen_ == Screen::Result || screen_ == Screen::Connecting || screen_ == Screen::Maps
                           ? 300
                           : 200;
     for (std::size_t i = 0; i < result.size(); ++i)
         result[i].bounds = {
             {264, top + static_cast<float>(i) *
-                            ((screen_ == Screen::BotSetup || screen_ == Screen::Maps) ? 38
+                            (screen_ == Screen::BotSetup ? 34
+                             : (screen_ == Screen::Maps) ? 38
                              : screen_ == Screen::Lobby
                                  ? 40
                                  : ((screen_ == Screen::Browser || screen_ == Screen::OnlineBrowser ||
@@ -204,7 +209,7 @@ void Menu::open(Screen screen)
     pressed_.reset();
     message_.clear();
     if (screen == Screen::BotSetup)
-        winsLabel_ = U"До " + asciiText(std::to_string(wins_)) + U" побед";
+        updateRuleLabels();
     if (screen == Screen::BotSetup || screen == Screen::Maps || screen == Screen::Main ||
         screen == Screen::Modes || screen == Screen::Lan || screen == Screen::Online)
         bots_ = false;
@@ -460,8 +465,12 @@ MenuAction Menu::activate()
         }
         else if (selection_ == 5)
         {
-            wins_ = wins_ == 20 ? 5 : wins_ + 5;
-            winsLabel_ = U"До " + asciiText(std::to_string(wins_)) + U" побед";
+            cycleTarget();
+        }
+        else if (selection_ == 6)
+        {
+            gameMode_ = GameMode((unsigned(gameMode_) + 1) % 4);
+            updateRuleLabels();
         }
         else
             open(Screen::Modes);
@@ -497,7 +506,17 @@ MenuAction Menu::activate()
         }
         if (screen_ == Screen::Lobby && selection_ == 3)
         {
-            wins_ = snapshot_.rules.wins == 20 ? 5 : snapshot_.rules.wins + 5;
+            gameMode_ = snapshot_.rules.mode;
+            stages_ = snapshot_.rules.stages;
+            controlGoal_ = snapshot_.rules.controlGoal;
+            wins_ = snapshot_.rules.wins;
+            cycleTarget();
+            return MenuAction::SelectRules;
+        }
+        if (screen_ == Screen::Lobby && selection_ == 4)
+        {
+            gameMode_ = GameMode((unsigned(snapshot_.rules.mode) + 1) % 4);
+            updateRuleLabels();
             return MenuAction::SelectRules;
         }
         return MenuAction::LeaveRoom;
@@ -606,12 +625,17 @@ void Menu::backspace()
 void Menu::botState(const WorldSnapshot& snapshot)
 {
     snapshot_ = snapshot;
-    winsLabel_ = U"До " + asciiText(std::to_string(snapshot.rules.wins)) + U" побед";
+    gameMode_ = snapshot.rules.mode;
+    wins_ = snapshot.rules.wins;
+    stages_ = snapshot.rules.stages;
+    controlGoal_ = snapshot.rules.controlGoal;
+    updateRuleLabels();
     own_ = 1;
-    if (snapshot.phase == MatchPhase::Armory && screen_ != Screen::Armory && screen_ != Screen::Paused &&
-        screen_ != Screen::Settings)
+    if ((snapshot.phase == MatchPhase::Armory || snapshot.mode.respawn[0].choosing) &&
+        screen_ != Screen::Armory && screen_ != Screen::Paused && screen_ != Screen::Settings)
         open(Screen::Armory);
-    else if (snapshot.phase != MatchPhase::Armory && screen_ == Screen::Armory)
+    else if (snapshot.phase != MatchPhase::Armory && !snapshot.mode.respawn[0].choosing &&
+             screen_ == Screen::Armory)
         open(Screen::Playing);
     if (snapshot.phase == MatchPhase::Finished && screen_ == Screen::Playing)
         open(Screen::BotResult);
@@ -625,7 +649,11 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
                 ? static_cast<MapId>(snapshot.votes[own - 1])
                 : snapshot.map;
     snapshot_ = snapshot;
-    winsLabel_ = U"До " + asciiText(std::to_string(snapshot.rules.wins)) + U" побед";
+    gameMode_ = snapshot.rules.mode;
+    wins_ = snapshot.rules.wins;
+    stages_ = snapshot.rules.stages;
+    controlGoal_ = snapshot.rules.controlGoal;
+    updateRuleLabels();
     own_ = own;
     lan_ = true;
     bots_ = false;
@@ -639,7 +667,7 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
         if (snapshot.aborted != AbortReason::None)
             message_ = U"Игрок отключился. Матч отменён, счёт сброшен";
     }
-    else if (phase == MatchPhase::Armory)
+    else if (phase == MatchPhase::Armory || (own && snapshot.mode.respawn[own - 1].choosing))
     {
         if (screen_ != Screen::Paused && screen_ != Screen::Armory)
             open(Screen::Armory);
@@ -682,5 +710,28 @@ void Menu::closeSettings()
         open(Screen::Result);
     else
         open(Screen::Paused);
+}
+} // namespace cubeshot::client
+
+namespace cubeshot::client
+{
+void Menu::updateRuleLabels()
+{
+    modeLabel_ = U"Режим: " + std::u32string(modeName(gameMode_));
+    winsLabel_ = gameMode_ == GameMode::ArmsRace ? U"Цепочка: " + asciiText(std::to_string(stages_))
+                 : gameMode_ == GameMode::Control
+                     ? U"Цель: " + asciiText(std::to_string(controlGoal_)) + U" · 8 мин"
+                     : U"До " + asciiText(std::to_string(wins_)) + U" побед";
+}
+
+void Menu::cycleTarget()
+{
+    if (gameMode_ == GameMode::ArmsRace)
+        stages_ = stages_ == 21 ? 7 : stages_ + 7;
+    else if (gameMode_ == GameMode::Control)
+        controlGoal_ = controlGoal_ == 240 ? 120 : controlGoal_ + 60;
+    else
+        wins_ = wins_ == 20 ? 5 : wins_ + 5;
+    updateRuleLabels();
 }
 } // namespace cubeshot::client

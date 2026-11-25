@@ -22,7 +22,11 @@ enum class WeaponKind : std::uint32_t
     FireBoomerang,
     GrenadeLauncher,
     Crossbow,
-    Electric
+    Electric,
+    Beam,
+    Disc,
+    Hammer,
+    StickyLauncher
 };
 
 struct WeaponDefinition
@@ -35,7 +39,7 @@ struct WeaponDefinition
     float reloadTime = 0, effectiveRange = 0, recoil = 0;
 };
 
-inline constexpr unsigned weaponCount = 17;
+inline constexpr unsigned weaponCount = 21;
 bool meleeWeapon(WeaponKind kind);
 bool ballisticWeapon(WeaponKind kind);
 bool explosiveWeapon(WeaponKind kind);
@@ -58,7 +62,7 @@ struct Weapon
     bool reloading = false;
     float reloadRemaining = 0;
     unsigned magazineLevel = 0, reloadLevel = 0;
-    float bodyScale = 1;
+    float bodyScale = 1, reloadFactor = 1;
     int capacity() const;
     float reloadDuration() const;
     float reloadSetup() const;

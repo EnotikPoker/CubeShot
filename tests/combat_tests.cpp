@@ -131,7 +131,7 @@ void bodies()
 
 void maps()
 {
-    expect(mapCatalog().size() == 14, "Nine new maps and two legacy arenas");
+    expect(mapCatalog().size() == 20, "Nine new maps and two legacy arenas");
     for (const auto& info : mapCatalog())
     {
         auto a = Arena::create(info.id, true);
@@ -159,8 +159,13 @@ void maps()
                "Duel spawn positions are symmetric");
         if (info.id == MapId::Duel)
             continue;
-        const unsigned size = static_cast<unsigned>(info.id) >= 11 ? static_cast<unsigned>(info.id) - 11
-                                                                   : (static_cast<unsigned>(info.id) - 1) % 3;
+        const unsigned size = unsigned(info.id) >= unsigned(MapId::LabSectors)
+                                  ? ((info.id == MapId::LabSectors || info.id == MapId::DocksLoading) ? 0
+                                     : (info.id == MapId::LabReactor || info.id == MapId::Mine)       ? 2
+                                                                                                      : 1)
+                              : static_cast<unsigned>(info.id) >= 11
+                                  ? static_cast<unsigned>(info.id) - 11
+                                  : (static_cast<unsigned>(info.id) - 1) % 3;
         expect(near(a.bounds.size.x, size == 0   ? 960
                                      : size == 1 ? 1280
                                                  : 1600),

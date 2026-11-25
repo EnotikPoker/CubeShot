@@ -17,6 +17,10 @@ struct Bullet
     Vec2 velocity;
     int damage = 20;
     PlayerId shooterId = 0;
+    unsigned ownerLife = 0, reflections = 0, bounces = 0;
+    bool secondary = false, area = false;
+    int blastDamage = 0, terrainDamage = 0;
+    float blastRadius = 0, terrainRadius = 0;
     float lifetime = 3.0f;
     BulletId id = 0;
     std::uint64_t shotSequence = 0;

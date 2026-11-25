@@ -135,6 +135,12 @@ bool drawAbilityIcon(SDL_Renderer* r, AbilityKind kind, Rect box)
         case AbilityKind::SecondCircuit:
             return drawAbilityIcon(r, AbilityKind::FastReload, box) && rect(13, 12, 5, 9);
         default:
+            if (validAbility(kind))
+            {
+                unsigned n = unsigned(kind) - unsigned(AbilityKind::Impulse);
+                return line(3, 3, 29, 3) && line(29, 3, 29, 29) && line(29, 29, 3, 29) && line(3, 29, 3, 3) &&
+                       rect(7 + (n % 3) * 6, 8, 4, 16) && line(7, 16, 25, 16);
+            }
             return true;
     }
 }
@@ -170,27 +176,52 @@ bool drawAbilityRow(SDL_Renderer* r, const Abilities& abilities, Vec2 at, float 
 
 bool drawAbilityHud(SDL_Renderer* r, const Player& p)
 {
-    if (!drawAbilityRow(r, p.abilities, {12, 474}, 20, &p))
+    unsigned count = 0;
+    for (auto n : p.abilities.levels)
+        count += n > 0;
+    auto label = U"HP " + number(std::max(0, p.health)) + U"/" + number(p.healthLimit()) + U"  Щиты " +
+                 number(p.shields);
+    if (!drawText(r, label, {12, 482}, 1, {224, 235, 246, 255}))
         return false;
-    auto text = U"HP " + number(p.health) + U"/" + number(p.healthLimit());
-    if (p.abilities.level(AbilityKind::Armor))
-        text += U"  Щиты " + number(p.shields);
-    if (!drawText(r, text, {12, 503}, 1, {224, 235, 246, 255}))
+    SDL_FRect bar{12, 504, 190, 5};
+    SDL_SetRenderDrawColor(r, 39, 55, 66, 255);
+    SDL_RenderFillRect(r, &bar);
+    bar.w *= std::clamp(float(p.health) / p.healthLimit(), 0.f, 1.f);
+    SDL_SetRenderDrawColor(r, 85, 210, 125, 255);
+    SDL_RenderFillRect(r, &bar);
+    if (!drawText(r, U"Tab · Сборка " + number(count), {300, 516}, 1, {155, 180, 201, 255}))
         return false;
     if (p.abilities.level(AbilityKind::Jetpack))
     {
-        if (!drawText(r, U"Топливо", {315, 444}, 1, {133, 203, 235, 255}))
-            return false;
-        SDL_SetRenderDrawColor(r, 35, 57, 74, 255);
-        SDL_FRect bar{315, 461, 132, 3};
-        if (!SDL_RenderFillRect(r, &bar))
-            return false;
-        SDL_SetRenderDrawColor(r, 123, 211, 250, 255);
-        bar.w *= std::clamp(p.jetpackFuel / 2, 0.f, 1.f);
-        if (!SDL_RenderFillRect(r, &bar))
-            return false;
+        SDL_FRect fuel{12, 530, 190 * std::clamp(p.jetpackFuel / 2, 0.f, 1.f), 3};
+        SDL_SetRenderDrawColor(r, 100, 200, 240, 255);
+        SDL_RenderFillRect(r, &fuel);
     }
-    return true;
+    std::vector<std::u32string> status;
+    if (p.burning > 0)
+        status.push_back(U"Огонь");
+    if (p.bleeding > 0)
+        status.push_back(U"Кровь");
+    if (p.barrier > 0)
+        status.push_back(U"Барьер");
+    if (p.slow > 0)
+        status.push_back(U"Лёд");
+    if (p.overdrive > 0)
+        status.push_back(U"Форсаж");
+    if (p.cleanse > 0)
+        status.push_back(U"Защита");
+    if (p.tempering > 0)
+        status.push_back(U"Закалка");
+    std::u32string text;
+    for (unsigned i = 0; i < std::min<std::size_t>(4, status.size()); ++i)
+    {
+        if (i)
+            text += U" · ";
+        text += status[i];
+    }
+    if (status.size() > 4)
+        text += U" +" + number(unsigned(status.size() - 4));
+    return drawText(r, text, {12, 513}, 1, {242, 184, 115, 255});
 }
 } // namespace cubeshot::client
 
@@ -199,11 +230,35 @@ namespace cubeshot::client
 bool drawActiveIcon(SDL_Renderer* r, ActiveKind kind, Rect box)
 {
     static constexpr AbilityKind symbols[]{
-        AbilityKind::None,  AbilityKind::Speed,       AbilityKind::SmallBody,
-        AbilityKind::Armor, AbilityKind::Health,      AbilityKind::ReturnStrike,
-        AbilityKind::Jump,  AbilityKind::BlastRadius, AbilityKind::Demolition};
+        AbilityKind::None,   AbilityKind::Speed,       AbilityKind::SmallBody,
+        AbilityKind::Armor,  AbilityKind::Health,      AbilityKind::ReturnStrike,
+        AbilityKind::Jump,   AbilityKind::BlastRadius, AbilityKind::Demolition,
+        AbilityKind::Stance, AbilityKind::FeatherFall, AbilityKind::Thorns,
+        AbilityKind::Armor,  AbilityKind::FireRate,    AbilityKind::FireResistance};
     if (!validActive(kind))
         return false;
+    if (kind == ActiveKind::Screen || kind == ActiveKind::Parry || kind == ActiveKind::IceGrenade ||
+        kind == ActiveKind::Mine)
+    {
+        SDL_SetRenderDrawColor(r, 120, 205, 235, 255);
+        float u = box.size.x / 32;
+        auto line = [&](float x, float y, float a, float b)
+        {
+            return SDL_RenderLine(r, box.position.x + x * u, box.position.y + y * u, box.position.x + a * u,
+                                  box.position.y + b * u);
+        };
+        if (kind == ActiveKind::Screen)
+            return line(6, 2, 6, 30) && line(26, 2, 26, 30) && line(6, 6, 26, 6) && line(6, 26, 26, 26) &&
+                   line(13, 11, 19, 21);
+        if (kind == ActiveKind::IceGrenade)
+            return line(16, 2, 16, 30) && line(3, 8, 29, 24) && line(3, 24, 29, 8) && line(11, 2, 16, 7) &&
+                   line(21, 30, 16, 25);
+        if (kind == ActiveKind::Parry)
+            return line(3, 16, 14, 16) && line(9, 10, 14, 16) && line(14, 16, 9, 22) && line(24, 3, 20, 10) &&
+                   line(20, 10, 20, 22) && line(20, 22, 24, 29);
+        return line(4, 23, 28, 23) && line(4, 23, 9, 15) && line(9, 15, 23, 15) && line(23, 15, 28, 23) &&
+               line(16, 14, 16, 3) && line(9, 6, 12, 10) && line(23, 6, 20, 10);
+    }
     if (kind == ActiveKind::None)
     {
         SDL_SetRenderDrawColor(r, 80, 98, 119, 255);
@@ -215,22 +270,30 @@ bool drawActiveIcon(SDL_Renderer* r, ActiveKind kind, Rect box)
 
 bool drawActiveHud(SDL_Renderer* r, const Player& p, const std::array<std::u32string, 2>& keys)
 {
-    bool ok = true;
     for (unsigned i = 0; i < 2; ++i)
     {
-        auto slot = p.actives[i];
-        float y = 415 + i * 30.f;
-        SDL_FRect bg{704, y, 244, 27};
-        SDL_SetRenderDrawColor(r, 18, 28, 40, 225);
-        ok = ok && SDL_RenderFillRect(r, &bg);
-        ok = ok && drawActiveIcon(r, slot.kind, {{710, y + 4}, {19, 19}});
-        std::u32string label = keys[i] + U" · " + std::u32string(activeDefinition(slot.kind).name);
-        if (slot.cooldown > 0)
-            label += U" " + number(unsigned(std::ceil(slot.cooldown))) + U" с";
-        ok =
-            ok && drawText(r, label, {737, y + 5}, 1,
-                           slot.cooldown > 0 ? SDL_Color{125, 143, 163, 255} : SDL_Color{132, 215, 239, 255});
+        auto a = p.actives[i];
+        float x = 438 + i * 44.f;
+        SDL_FRect box{x, 500, 36, 34};
+        SDL_SetRenderDrawColor(r, 35, 52, 69, 255);
+        if (!SDL_RenderFillRect(r, &box) || !drawActiveIcon(r, a.kind, {{x + 8, 507}, {20, 20}}))
+            return false;
+        if (a.cooldown > 0)
+        {
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 12, 19, 30, 200);
+            SDL_RenderFillRect(r, &box);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+            auto time = number(unsigned(std::ceil(a.cooldown)));
+            if (!drawText(r, time, {x + 18 - textWidth(r, time, 1) / 2, 511}, 1, {232, 241, 248, 255}))
+                return false;
+        }
+        auto key = keys[i];
+        if (key.size() > 3)
+            key = key.substr(0, 2) + U"…";
+        if (!drawText(r, key, {x + 2, 498}, 1, {235, 210, 137, 255}))
+            return false;
     }
-    return ok;
+    return true;
 }
 } // namespace cubeshot::client

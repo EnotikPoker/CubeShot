@@ -50,6 +50,7 @@ void World::resetPlayers(bool swapSpawns)
         players_[0].aimDirection = {direction, 0};
         players_[1].aimDirection = {-direction, 0};
     }
+    resetEntities();
     pendingDamage_.assign(players_.size(), 0);
     pendingCauses_.assign(players_.size(), {});
     pendingContacts_.assign(players_.size(), {});
@@ -125,6 +126,7 @@ void World::update(float deltaSeconds, bool damageLiving)
         for (auto& contacts : pendingContacts_)
             contacts.clear();
         ++tick_;
+        updateEntities(step);
         for (auto& p : players_)
         {
             auto requests = p.activeRequests;
@@ -157,6 +159,11 @@ void World::update(float deltaSeconds, bool damageLiving)
                 emit(EventKind::Shot, *bullet,
                      {bullet->position.x + bullet->velocity.x / shotSpeed * player.weapon.barrel(),
                       bullet->position.y + bullet->velocity.y / shotSpeed * player.weapon.barrel()});
+                if (bullet->weapon == WeaponKind::Beam)
+                {
+                    beam(*bullet);
+                    continue;
+                }
                 if (bullet->weapon == WeaponKind::Electric)
                 {
                     electric(*bullet);
@@ -223,11 +230,16 @@ void World::update(float deltaSeconds, bool damageLiving)
                     cause.damage = volleyDamage;
                     players_[i].lastImpact = cause;
                 }
+                removeOwnedEntities(players_[i].id);
                 debris_.spawn(players_[i], velocity, deathImpact, marker.weapon, volleyDamage);
                 emit(EventKind::Death, marker, players_[i].position, players_[i].id);
                 events_.back().volleyDamage = volleyDamage;
             }
         }
+        entities_.erase(
+            std::remove_if(entities_.begin(), entities_.end(), [](const auto& e) { return e.health <= 0; }),
+            entities_.end());
+        syncScreens();
     }
 }
 
@@ -253,9 +265,18 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             hitSurface = true;
         }
     }
+    auto entityHit = traceEntities(bullet.position, destination, bullet.collisionRadius, bullet);
+    if (entityHit && entityHit->first < nearest)
+    {
+        nearest = entityHit->first;
+        hitSurface = false;
+    }
+    else
+        entityHit.reset();
     for (Player& player : players_)
     {
-        if (!player.alive() || player.id == bullet.shooterId ||
+        if (!player.alive() ||
+            (player.id == bullet.shooterId && !(bullet.weapon == WeaponKind::Disc && bullet.bounces > 0)) ||
             (bullet.weapon == WeaponKind::FireBoomerang && (bullet.hitMask & (1u << player.id))))
         {
             continue;
@@ -269,6 +290,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         {
             nearest = *hit;
             victim = &player;
+            entityHit.reset();
             hitSurface = false;
         }
     }
@@ -277,6 +299,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
     {
         nearest = remains->fraction;
         victim = nullptr;
+        entityHit.reset();
         hitSurface = false;
     }
     else
@@ -287,6 +310,63 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
                 bullet.position.y + (destination.y - bullet.position.y) * nearest};
         bullet.travelled =
             std::max(0.f, bullet.travelled - std::hypot(destination.x - at.x, destination.y - at.y));
+        if (victim && victim->parry > 0 && bullet.active == ActiveKind::None &&
+            ballisticWeapon(bullet.weapon))
+        {
+            float speed = std::max(.01f, std::hypot(bullet.velocity.x, bullet.velocity.y));
+            if ((-bullet.velocity.x * victim->aimDirection.x - bullet.velocity.y * victim->aimDirection.y) /
+                    speed >=
+                .5f)
+            {
+                emit(EventKind::ShieldBlock, bullet, at, victim->id);
+                if (bullet.reflections)
+                    return false;
+                ++bullet.reflections;
+                bullet.shooterId = victim->id;
+                bullet.ownerLife = victim->lifeRevision;
+                bullet.velocity = {victim->aimDirection.x * speed, victim->aimDirection.y * speed};
+                bullet.position = {at.x + victim->aimDirection.x * 5, at.y + victim->aimDirection.y * 5};
+                return true;
+            }
+        }
+        if (bullet.weapon == WeaponKind::StickyLauncher)
+        {
+            if (entities_.size() < maxWorldEntities)
+            {
+                WorldEntity e;
+                e.id = nextEntityId_++;
+                e.kind = EntityKind::Sticky;
+                e.position = {at.x - 6, at.y - 6};
+                e.size = {12, 12};
+                e.health = 10;
+                e.arm = .2f;
+                e.life = 8;
+                e.fuse = 1.25f;
+                e.anchored = true;
+                e.attack = bullet;
+                e.attack.blastDamage = 55;
+                e.attack.blastRadius = 135;
+                e.attack.terrainDamage = 100;
+                e.attack.terrainRadius = 80;
+                if (victim)
+                {
+                    e.attached = victim->id;
+                    e.attachedLife = victim->lifeRevision;
+                    e.anchor = victim->bodyLocal({at.x - victim->position.x, at.y - victim->position.y});
+                    damage(*victim, bullet, at, 5);
+                }
+                entities_.push_back(e);
+            }
+            return false;
+        }
+        if (entityHit)
+        {
+            if (explosiveWeapon(bullet.weapon))
+                explode(bullet, at);
+            else
+                hitEntity(entityHit->second, bullet, at);
+            return false;
+        }
         if (explosiveWeapon(bullet.weapon) && (bullet.weapon != WeaponKind::GrenadeLauncher || victim))
         {
             explode(bullet, at, victim ? victim->id : 0);
@@ -310,7 +390,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         else if (victim)
         {
             applied = damage(*victim, impact, at, impact.damage, incendiaryWeapon(bullet.weapon));
-            if (bullet.active == ActiveKind::Harpoon && damageLiving_)
+            if (bullet.active == ActiveKind::Harpoon && damageLiving_ && victim->spawnProtection <= 0)
             {
                 for (const auto& owner : players_)
                     if (owner.id == bullet.shooterId)
@@ -344,6 +424,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
             {
                 bounceProjectile(bullet, at, hitBox, 1);
                 --bullet.ricochets;
+                ++bullet.bounces;
                 bullet.damage = std::max(1, static_cast<int>(std::lround(bullet.damage * .7f)));
                 return true;
             }
@@ -429,10 +510,12 @@ void World::emit(EventKind kind, const Bullet& bullet, Vec2 at, PlayerId target)
                        len > 0 ? Vec2{bullet.velocity.x / len, bullet.velocity.y / len} : Vec2{1, 0},
                        bullet.damage, bullet.weapon, bullet.volley});
     events_.back().active = bullet.active;
+    events_.back().ownerLife = bullet.ownerLife;
     if (target)
         for (const auto& player : players_)
             if (player.id == target)
             {
+                events_.back().targetLife = player.lifeRevision;
                 events_.back().local = player.bodyLocal({at.x - player.position.x, at.y - player.position.y});
                 events_.back().surfaceRevision = player.surface.revision;
             }

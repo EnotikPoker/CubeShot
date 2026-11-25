@@ -217,13 +217,18 @@ struct Server::Impl
                 if (command.sequence() <= peer.controlSequence ||
                     command.sequence() - peer.controlSequence > 240)
                     continue;
+                if (command.life() != match.world().players()[peer.id - 1].lifeRevision)
+                    continue;
                 peer.commands.emplace(command.sequence(), PlayerInput{command.movement(),
                                                                       false,
                                                                       false,
                                                                       {command.aim().x(), command.aim().y()},
                                                                       command.fire_held(),
                                                                       false,
-                                                                      command.jump_held()});
+                                                                      command.jump_held(),
+                                                                      false,
+                                                                      false,
+                                                                      command.life()});
             }
             peer.input = Clock::now();
         }
@@ -259,7 +264,7 @@ struct Server::Impl
                 return;
             }
             match.chooseUpgrade(peer.id, static_cast<UpgradeKind>(choice.upgrade()), choice.round(),
-                                choice.selection_revision());
+                                choice.selection_revision(), choice.life());
             broadcast(true);
         }
         else if (e.has_ready())
@@ -271,7 +276,9 @@ struct Server::Impl
         }
         else if (e.has_rule_choice())
         {
-            match.selectRules(peer.id, MatchRules{e.rule_choice().wins()},
+            match.selectRules(peer.id,
+                              MatchRules{e.rule_choice().wins(), GameMode(e.rule_choice().mode()),
+                                         e.rule_choice().stages(), e.rule_choice().control_goal()},
                               e.rule_choice().selection_revision());
             broadcast(true);
         }
@@ -359,7 +366,8 @@ void Server::step(float dt)
             const auto action = peer.actions.front();
             peer.actions.pop_front();
             impl_->match.action(peer.id, action.round(), action.sequence(), action.jump(), action.shoot(),
-                                {action.aim().x(), action.aim().y()}, action.reload(), action.active_mask());
+                                {action.aim().x(), action.aim().y()}, action.reload(), action.active_mask(),
+                                action.life());
             peer.actionSequence = action.sequence();
         }
     }

@@ -73,6 +73,11 @@ struct ListedRoom
 class Menu
 {
 public:
+    MatchRules matchRules() const
+    {
+        return {wins_, gameMode_, stages_, controlGoal_};
+    }
+
     unsigned wins() const
     {
         return wins_;
@@ -232,7 +237,11 @@ public:
     }
 
 private:
-    unsigned wins_ = 15;
+    unsigned wins_ = 15, stages_ = 14, controlGoal_ = 180;
+    GameMode gameMode_ = GameMode::Duel;
+    std::u32string modeLabel_ = U"Режим: Дуэль";
+    void updateRuleLabels();
+    void cycleTarget();
     TestConfiguration test_;
     TestPanel testPanel_;
     Screen testReturn_ = Screen::Maps;

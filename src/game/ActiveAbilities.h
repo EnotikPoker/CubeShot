@@ -18,9 +18,15 @@ enum class ActiveKind : unsigned
     Slam,
     Wave,
     Bomb,
+    Parry,
+    IceGrenade,
+    Mine,
+    Screen,
+    Overdrive,
+    Cleanse,
     Count
 };
-inline constexpr unsigned activeCount = 8;
+inline constexpr unsigned activeCount = 14;
 
 struct ActiveDefinition
 {

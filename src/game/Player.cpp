@@ -111,13 +111,23 @@ std::optional<Bullet> Player::takeShot()
     }
     if (!requested || !weapon.tryFire())
         return {};
+    spawnProtection = 0;
+    if (abilities.level(AbilityKind::Economy) && weapon.capacity() > 0 && ++economyCounter == 4)
+    {
+        ++weapon.ammo;
+        if (weapon.reloading)
+            weapon.cancelReload();
+        economyCounter = 0;
+    }
     if (weapon.automatic())
         shotAim_ = aimDirection;
     // World проверит путь от руки до дула, чтобы не стрелять сквозь стену.
     auto bullet = shotPrototype(shotAim_, shotSequence_);
-    weapon.cooldown = std::max(.03f, weapon.cooldown / (abilities.fireRate() * (1 + .15f * adrenaline())));
-    applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil(),
-                  -shotAim_.y * definition.recoil * abilities.recoil()});
+    freshMagazine = false;
+    weapon.cooldown = std::max(.03f, weapon.cooldown / (abilities.fireRate() * (overdrive > 0 ? 1.25f : 1.f) *
+                                                        (1 + .15f * adrenaline())));
+    applyImpulse({-shotAim_.x * definition.recoil * abilities.recoil() * modifiers.recoil,
+                  -shotAim_.y * definition.recoil * abilities.recoil() * modifiers.recoil});
     if (meleeWeapon(weapon.kind) && lungeCooldown <= 0 && abilities.level(AbilityKind::Lunge))
     {
         float force = 120 * abilities.level(AbilityKind::Lunge);
@@ -133,8 +143,9 @@ Bullet Player::shotPrototype(Vec2 direction, std::uint64_t sequence) const
     Bullet bullet;
     bullet.position = weaponOrigin();
     bullet.velocity = {direction.x * weapon.bulletSpeed, direction.y * weapon.bulletSpeed};
-    bullet.damage = weapon.damage;
+    bullet.damage = weapon.kind == WeaponKind::Beam ? (beamTime >= .6f ? 5 : 3) : weapon.damage;
     bullet.shooterId = id;
+    bullet.ownerLife = lifeRevision;
     bullet.shotSequence = sequence;
     bullet.weapon = weapon.kind;
     bullet.volley = weapon.shots;
@@ -147,7 +158,10 @@ Bullet Player::shotPrototype(Vec2 direction, std::uint64_t sequence) const
     bullet.power =
         abilities.power() *
         (meleeWeapon(weapon.kind) && abilities.level(AbilityKind::Combo) ? 1 + .1f * comboHits : 1);
-    bullet.terrainPower = abilities.demolition();
+    bullet.power *= resonance > 0 ? 1.15f : 1.f;
+    if (freshMagazine && abilities.level(AbilityKind::FreshMagazine) && weapon.kind != WeaponKind::Beam)
+        bullet.power *= 1.25f;
+    bullet.terrainPower = abilities.demolition() * modifiers.terrain;
     bullet.blastScale = abilities.blastRadius();
     bullet.rangeScale = abilities.range();
     bullet.spreadScale = abilities.accuracy();
@@ -164,13 +178,17 @@ Bullet Player::shotPrototype(Vec2 direction, std::uint64_t sequence) const
         bullet.velocity.x *= abilities.projectileSpeed();
         bullet.velocity.y *= abilities.projectileSpeed();
     }
+    bullet.velocity.x *= modifiers.projectiles;
+    bullet.velocity.y *= modifiers.projectiles;
+    if (weapon.kind == WeaponKind::Disc)
+        bullet.ricochets += 2;
     if (weapon.kind == WeaponKind::Flamethrower)
         bullet.lifetime *= abilities.range();
     if (weapon.kind == WeaponKind::FireBoomerang)
     {
         auto stats = attackStats(weapon.kind, abilities);
-        bullet.boomOutSpeed = stats.boomOut;
-        bullet.boomReturnSpeed = stats.boomReturn;
+        bullet.boomOutSpeed = stats.boomOut * modifiers.projectiles;
+        bullet.boomReturnSpeed = stats.boomReturn * modifiers.projectiles;
         bullet.boomRange = stats.boomRange;
         bullet.returnPower = stats.returnPower;
         bullet.circuits = stats.circuits;
@@ -219,14 +237,14 @@ bool Player::absorb(const Bullet& b)
     if (b.shooterId == id || b.shooterId == 0)
         return false;
     for (auto shot : blockedShots_)
-        if (shot.shooter == b.shooterId && shot.volley == b.volley)
+        if (shot.shooter == b.shooterId && shot.volley == b.volley && shot.life == b.ownerLife)
             return true;
     if (!shields)
         return false;
     --shields;
     if (blockedShots_.size() >= 512)
         blockedShots_.erase(blockedShots_.begin());
-    blockedShots_.push_back({b.shooterId, b.volley});
+    blockedShots_.push_back({b.shooterId, b.volley, b.ownerLife});
     return true;
 }
 
@@ -356,6 +374,16 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         return;
     }
 
+    lastHostileAgo = std::min(999.f, lastHostileAgo + deltaSeconds);
+    for (float* timer :
+         {&spawnProtection, &parry, &slow, &overdrive, &cleanse, &tempering, &temperCooldown, &resonance})
+        *timer = std::max(0.f, *timer - deltaSeconds);
+    const float reloadFactor = modifiers.reload / (overdrive > 0 ? 1.25f : 1.f);
+    if (weapon.reloading && weapon.reloadFactor > 0)
+        weapon.reloadRemaining *= reloadFactor / weapon.reloadFactor;
+    weapon.reloadFactor = reloadFactor;
+    beamTime =
+        weapon.kind == WeaponKind::Beam && triggerHeld_ && !weapon.reloading ? beamTime + deltaSeconds : 0;
     for (auto& slot : actives)
         slot.cooldown = std::max(0.f, slot.cooldown - deltaSeconds);
     barrierTime = std::max(0.f, barrierTime - deltaSeconds);
@@ -441,7 +469,7 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
                 velocity.y = fallSpeed;
             else
             {
-                velocity.y += gravity * step;
+                velocity.y += gravity * modifiers.gravity * step;
                 velocity.y =
                     std::min(velocity.y, fallSpeed * (abilities.level(AbilityKind::FeatherFall) ? .6f : 1.f));
             }
@@ -470,7 +498,10 @@ void Player::update(float deltaSeconds, const Arena& arena, bool playerSupport)
         velocity.x = pushX;
         velocity.y = 0;
     }
+    bool wasReloading = weapon.reloading;
     weapon.update(deltaSeconds);
+    if (wasReloading && !weapon.reloading)
+        freshMagazine = true;
 }
 
 } // namespace cubeshot

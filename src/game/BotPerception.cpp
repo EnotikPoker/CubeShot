@@ -81,8 +81,24 @@ BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent)
                                       p.slamTime,
                                       p.slamming};
     }
+    if (result.target)
+        for (const auto& p : world.players())
+            if (p.id == opponent)
+            {
+                auto& t = *result.target;
+                t.modifiers = p.modifiers;
+                t.parry = p.parry;
+                t.slow = p.slow;
+                t.overdrive = p.overdrive;
+                t.cleanse = p.cleanse;
+                t.tempering = p.tempering;
+                t.spawnProtection = p.spawnProtection;
+                t.lifeRevision = p.lifeRevision;
+            }
+    result.entities = world.entities();
     for (const auto& b : world.bullets())
-        if (b.shooterId != self || explosiveWeapon(b.weapon))
+        if (b.shooterId != self || explosiveWeapon(b.weapon) ||
+            (b.weapon == WeaponKind::Disc && b.bounces > 0))
             result.bullets.push_back(b);
     result.fires = world.fires();
     return result;
@@ -94,6 +110,14 @@ Player predictedTarget(const BotTarget& target)
 {
     Player p;
     p.setAbilities(target.abilities, false);
+    p.modifiers = target.modifiers;
+    p.parry = target.parry;
+    p.slow = target.slow;
+    p.overdrive = target.overdrive;
+    p.cleanse = target.cleanse;
+    p.tempering = target.tempering;
+    p.spawnProtection = target.spawnProtection;
+    p.lifeRevision = target.lifeRevision;
     p.id = target.id;
     p.surface = target.surface;
     p.motionPhase = target.motionPhase;

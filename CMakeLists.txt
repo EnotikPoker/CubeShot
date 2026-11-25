@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.21.0 LANGUAGES C CXX)
+project(CubeShot VERSION 0.22.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -7,6 +7,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
+    src/game/MatchModes.cpp
+    src/game/ExpansionMaps.cpp
+    src/game/WorldEntities.cpp
+    src/game/Modes.cpp
     src/game/ActiveAbilities.cpp
     src/game/ActiveCombat.cpp
     src/game/AttackStats.cpp
@@ -67,7 +71,7 @@ FetchContent_MakeAvailable(GameNetworkingSockets)
 protobuf_generate_cpp(PROTO_SOURCES PROTO_HEADERS src/network/protocol.proto)
 add_library(cubeshot_network STATIC
     ${PROTO_SOURCES} ${PROTO_HEADERS}
-    src/network/Identity.cpp src/network/Protocol.cpp src/network/Address.cpp
+    src/network/ExpansionProtocol.cpp src/network/Identity.cpp src/network/Protocol.cpp src/network/Address.cpp
     src/network/Client.cpp src/network/Server.cpp src/network/detail/GnsRuntime.cpp
     src/network/SnapshotInterpolation.cpp src/network/NetworkSimulation.cpp src/network/Discovery.cpp)
 target_include_directories(cubeshot_network PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_BINARY_DIR}")
@@ -84,7 +88,7 @@ if(CUBESHOT_BUILD_CLIENT)
     find_package(SDL3_ttf 3.2.2 REQUIRED CONFIG)
     add_custom_target(cubeshot_assets
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:cubeshot_client>/assets")
-    add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/TextRenderer.cpp src/client/UiText.cpp src/client/AbilityUI.cpp)
+    add_library(cubeshot_visuals STATIC src/client/VisualAssets.cpp src/client/TextRenderer.cpp src/client/UiText.cpp src/client/AbilityUI.cpp src/client/BuildInspector.cpp)
     target_link_libraries(cubeshot_visuals PUBLIC cubeshot_game SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     add_dependencies(cubeshot_visuals cubeshot_assets)
     add_library(cubeshot_preferences STATIC src/client/TestPanel.cpp

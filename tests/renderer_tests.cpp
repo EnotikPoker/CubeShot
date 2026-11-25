@@ -52,8 +52,8 @@ Surface drawPlayer(cubeshot::Vec2 aim)
 SDL_Color pixel(SDL_Surface* surface, int x, int y)
 {
     SDL_Color color{};
-    expect(SDL_ReadSurfacePixel(surface, static_cast<int>(210 + x * 540.f / 128),
-                                static_cast<int>(y * 540.f / 128), &color.r, &color.g, &color.b, &color.a),
+    expect(SDL_ReadSurfacePixel(surface, static_cast<int>(242 + x * 476.f / 128),
+                                static_cast<int>(y * 476.f / 128), &color.r, &color.g, &color.b, &color.a),
            "Read rendered pixel");
     return color;
 }
@@ -113,7 +113,10 @@ void testScaledBackdrop()
     for (int y = 0; y < 200; ++y)
     {
         SDL_Color color{};
-        expect(SDL_ReadSurfacePixel(surface.get(), 10, y, &color.r, &color.g, &color.b, &color.a),
+        expect(SDL_ReadSurfacePixel(
+                   surface.get(),
+                   static_cast<int>(cubeshot::client::WorldView(world.arena().bounds).offset.x) + 10, y,
+                   &color.r, &color.g, &color.b, &color.a),
                "Read scaled background");
         expect(color.r >= 38 && color.b >= 79,
                "Non-integer map scaling leaves no dark seams in the quiet gradient");

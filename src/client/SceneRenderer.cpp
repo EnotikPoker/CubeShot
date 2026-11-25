@@ -253,6 +253,9 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
             !part(13, kind == WeaponKind::Bat ? -8.f : -4.f, drawn - 12, kind == WeaponKind::Bat ? 16.f : 8.f,
                   {.04f, .06f, .08f, 1}, mirror))
             return false;
+        if (kind == WeaponKind::Hammer)
+            return part(4, -3, drawn - 12, 6, {.6f, .4f, .2f, 1}, mirror) &&
+                   part(drawn - 22, -18, 22, 36, {.46f, .55f, .65f, 1}, mirror);
         return part(0, -4, 16, 8, {.5f, .3f, .15f, 1}, mirror) &&
                part(14, kind == WeaponKind::Bat ? -7.f : -3.f, drawn - 14,
                     kind == WeaponKind::Bat ? 14.f : 6.f,
@@ -270,6 +273,16 @@ bool weapon(const Painter& p, const Player& player, const Pose& pose)
         return part(4, -12, 36, 22, {.27f, .34f, .25f, 1}, mirror) &&
                part(15, -17, 14, 34, {.2f, .25f, .3f, 1}, mirror) &&
                part(10, 9, 8, 14, {.4f, .26f, .15f, 1}, mirror);
+    if (kind == WeaponKind::Beam)
+        return part(4, -10, 33, 20, {.12f, .23f, .29f, 1}, mirror) &&
+               part(30, -5, 18, 10, {.35f, .95f, .86f, 1}, mirror) &&
+               part(12, 10, 8, 14, {.2f, .25f, .3f, 1}, mirror);
+    if (kind == WeaponKind::Disc)
+        return part(2, -8, 32, 16, {.2f, .27f, .34f, 1}, mirror) &&
+               part(26, -11, 8, 22, {.8f, .85f, .94f, 1}, mirror);
+    if (kind == WeaponKind::StickyLauncher)
+        return part(2, -9, 37, 18, {.35f, .18f, .4f, 1}, mirror) &&
+               part(28, -5, 12, 10, {.8f, .6f, .86f, 1}, mirror);
     if (kind == WeaponKind::Electric)
         return part(0, -9, 26, 18, {.2f, .3f, .4f, 1}, mirror) &&
                part(21, -12, 6, 24, {.3f, .8f, 1, 1}, mirror) &&
@@ -322,9 +335,12 @@ bool background(const Painter& p, const Arena& arena)
 {
     const auto theme = mapInfo(arena.map).theme;
     const auto bounds = arena.bounds;
-    const SDL_Color top = theme == MapTheme::Nature  ? SDL_Color{45, 79, 92, 255}
-                          : theme == MapTheme::Ruins ? SDL_Color{66, 65, 83, 255}
-                                                     : SDL_Color{38, 56, 79, 255};
+    const SDL_Color top = theme == MapTheme::Laboratory ? SDL_Color{37, 60, 72, 255}
+                          : theme == MapTheme::Docks    ? SDL_Color{38, 57, 76, 255}
+                          : theme == MapTheme::Foundry  ? SDL_Color{65, 50, 48, 255}
+                          : theme == MapTheme::Nature   ? SDL_Color{45, 79, 92, 255}
+                          : theme == MapTheme::Ruins    ? SDL_Color{66, 65, 83, 255}
+                                                        : SDL_Color{38, 56, 79, 255};
     p.gradient(bounds, top,
                {static_cast<Uint8>(top.r + 18), static_cast<Uint8>(top.g + 16),
                 static_cast<Uint8>(top.b + 12), 255});
@@ -342,6 +358,15 @@ bool background(const Painter& p, const Arena& arena)
         {
             p.rect({{x, bounds.size.y * .4f}, {75, bounds.size.y * .6f}}, quiet);
             p.rect({{x - 6, bounds.size.y * .4f}, {88, 12}}, quiet);
+        }
+        else if (theme == MapTheme::Laboratory)
+        {
+            p.rect({{x, bounds.size.y * .35f}, {95, 4}}, quiet);
+            p.rect({{x + 90, bounds.size.y * .35f}, {4, bounds.size.y * .65f}}, quiet);
+        }
+        else if (theme == MapTheme::Docks)
+        {
+            p.rect({{x, bounds.size.y * .6f}, {100, bounds.size.y * .4f}}, quiet);
         }
         else
         {
@@ -428,15 +453,18 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
                   1.4f, 1.8f, {32, 49, 57, 255});
         return;
     }
-    const auto color = ownerColor(piece.owner, own);
+    float fade = piece.life >= 0 ? std::clamp(piece.life / .6f, 0.f, 1.f) : 1.f;
+    auto color = ownerColor(piece.owner, own);
+    color.a = fade;
     p.ellipse({piece.position.x, piece.position.y + piece.size.y * .4f}, piece.size.x * .6f, 3,
               {7, 15, 25, 85});
-    const SDL_FColor tint = piece.charred       ? SDL_FColor{.22f, .19f, .2f, 1}
-                            : fragment && blood ? SDL_FColor{.92f, .7f, .7f, 1}
-                                                : color;
+    SDL_FColor tint = piece.charred       ? SDL_FColor{.22f, .19f, .2f, 1}
+                      : fragment && blood ? SDL_FColor{.92f, .7f, .7f, 1}
+                                          : color;
+    tint.a = fade;
     p.material(fragment && blood ? 5 : 4, piece.outline, piece.position, piece.angle, tint, piece.skinOffset,
                piece.visualScale);
-    p.outline(piece.outline, piece.position, piece.angle, 2.2f, {.025f, .045f, .065f, 1});
+    p.outline(piece.outline, piece.position, piece.angle, 2.2f, {.025f, .045f, .065f, fade});
     if (fragment)
     {
         for (std::size_t i = 0; i < piece.outline.size(); ++i)
@@ -468,7 +496,8 @@ void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blo
 static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::vector<Player>& players,
                         const std::vector<Bullet>& bullets, PlayerId own, bool present,
                         const Effects* effects, const std::vector<Corpse>& corpses,
-                        const std::vector<PhysicsPiece>& pieces, const std::vector<FirePatch>& fires)
+                        const std::vector<PhysicsPiece>& pieces, const std::vector<FirePatch>& fires,
+                        const std::vector<WorldEntity>& entities)
 {
     auto* assets = VisualAssets::get(renderer);
     if (!assets)
@@ -482,6 +511,8 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
     spans.clear();
     if (geometry.capacity() < 65536)
         geometry.reserve(65536);
+    SDL_Rect sceneClip{0, 0, 960, 476};
+    SDL_SetRenderClipRect(renderer, &sceneClip);
     Painter p{renderer, WorldView(arena.bounds), *assets, geometry, spans};
     if (effects)
     {
@@ -574,6 +605,38 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
         remains(p, corpse.body, own, blood, false);
     for (const auto& piece : pieces)
         remains(p, piece, own, blood, true);
+    for (const auto& h : arena.hazards)
+    {
+        auto r = h.bounds;
+        r.position.y -= 6;
+        r.size.y += 6;
+        p.rect(r, h.heat ? SDL_Color{226, 105, 52, 255} : SDL_Color{113, 208, 103, 255});
+        for (float x = r.position.x; x < r.position.x + r.size.x; x += 12)
+            p.line({x, r.position.y}, {x + 6, r.position.y + 6}, 2, {.12f, .17f, .2f, 1});
+    }
+    for (const auto& e : entities)
+    {
+        if (e.kind == EntityKind::Screen)
+        {
+            p.rect(e.bounds(), {80, 182, 220, 160});
+            p.line(e.position, {e.position.x, e.position.y + e.size.y}, 2, {.6f, .9f, 1, 1});
+        }
+        else if (e.kind == EntityKind::Barrel)
+        {
+            p.rect(e.bounds(), {151, 67, 45, 255});
+            p.rect({{e.position.x, e.position.y + 9}, {e.size.x, 7}}, {235, 165, 60, 255});
+            p.line({e.position.x + 8, e.position.y + 6}, {e.position.x + 16, e.position.y + 21}, 2,
+                   {.12f, .14f, .16f, 1});
+        }
+        else
+        {
+            auto c =
+                e.kind == EntityKind::Mine ? SDL_Color{186, 171, 75, 255} : SDL_Color{180, 110, 200, 255};
+            p.rect(e.bounds(), c);
+            p.rect({{e.position.x + 4, e.position.y + 2}, {5, 3}},
+                   e.arm > 0 ? SDL_Color{70, 90, 85, 255} : SDL_Color{255, 94, 76, 255});
+        }
+    }
     for (const auto& player : players)
     {
         if (!player.alive())
@@ -611,6 +674,15 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                        {x + 3 * player.bodyScale(), y + player.size.y * 1.1f}, 4 * player.bodyScale(),
                        {.5f, .85f, 1, 1});
             }
+        }
+        if (player.spawnProtection > 0 || player.cleanse > 0 || player.parry > 0)
+        {
+            Polygon ring{{-4, -4},
+                         {player.size.x + 4, -4},
+                         {player.size.x + 4, player.size.y + 4},
+                         {-4, player.size.y + 4}};
+            p.outline(ring, player.position, 0, 2,
+                      player.parry > 0 ? SDL_FColor{1, .85f, .4f, 1} : SDL_FColor{.5f, .9f, 1, .8f});
         }
         if (player.shields || pose.shield > 0)
         {
@@ -700,6 +772,21 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                      {(20 + b.age * 25) * scale, (28 + b.age * 25) * scale},
                      std::atan2(dir.y, dir.x) + 1.5707963f,
                      {1, 1, 1, .9f * std::clamp(b.lifetime / .12f, 0.f, 1.f)});
+            continue;
+        }
+        if (b.weapon == WeaponKind::Disc)
+        {
+            p.ellipse(b.position, 8, 5, {190, 215, 237, 255}, b.age * 14);
+            continue;
+        }
+        if (b.weapon == WeaponKind::StickyLauncher)
+        {
+            p.ellipse(b.position, 5, 5, {190, 120, 220, 255});
+            continue;
+        }
+        if (b.active == ActiveKind::IceGrenade)
+        {
+            p.ellipse(b.position, 6, 6, {125, 205, 245, 255});
             continue;
         }
         if (b.weapon == WeaponKind::FireBoomerang)
@@ -861,11 +948,11 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
             at.y += below ? 10.f : player.abilities.level(AbilityKind::Jetpack) ? -45.f : -30.f;
             const std::u32string label(n.begin(), n.end());
             at.x = std::clamp(at.x, 2.f, std::max(2.f, 958 - textWidth(renderer, label, 1)));
-            at.y = std::clamp(at.y, 2.f, 522.f);
+            at.y = std::clamp(at.y, 2.f, 455.f);
             labels = labels && drawText(renderer, label, at, 1, {207, 233, 249, 255});
         }
     for (const auto& player : players)
-        if (player.alive())
+        if (player.alive() && player.id != own)
         {
             auto at = p.view.toScreen(
                 {player.position.x,
@@ -887,13 +974,15 @@ static bool renderWorld(SDL_Renderer* renderer, const Arena& arena, const std::v
                 }
         }
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderClipRect(renderer, nullptr);
     return labels && rendered && (!present || SDL_RenderPresent(renderer));
 }
 
 bool renderScene(SDL_Renderer* r, const World& world, bool present, const Effects* effects)
 {
     return renderWorld(r, world.arena(), world.players(), world.bullets(), World::localPlayerId, present,
-                       effects, world.debris().corpses(), world.debris().pieces(), world.fires());
+                       effects, world.debris().corpses(), world.debris().pieces(), world.fires(),
+                       world.entities());
 }
 
 bool renderSnapshot(SDL_Renderer* r, const WorldSnapshot& s, PlayerId own, const Effects* effects)
@@ -902,6 +991,28 @@ bool renderSnapshot(SDL_Renderer* r, const WorldSnapshot& s, PlayerId own, const
     if (cached.map != s.map)
         cached = Arena::create(s.map);
     cached.applyTerrain(s.terrain);
-    return renderWorld(r, cached, s.players, s.bullets, own, false, effects, s.corpses, s.pieces, s.fires);
+    bool ok = renderWorld(r, cached, s.players, s.bullets, own, false, effects, s.corpses, s.pieces, s.fires,
+                          s.entities);
+    if (s.rules.mode == GameMode::Control)
+    {
+        WorldView view(cached.bounds);
+        auto places = cached.controlAnchors();
+        auto ring = [&](unsigned index, SDL_Color color)
+        {
+            auto center = view.toScreen(places[index]);
+            SDL_SetRenderDrawColor(r, color.r, color.g, color.b, color.a);
+            for (int n = 0; n < 64; ++n)
+            {
+                float a = n * 6.2831853f / 64, b = (n + 1) * 6.2831853f / 64;
+                SDL_RenderLine(
+                    r, center.x + std::cos(a) * 72 * view.scale, center.y + std::sin(a) * 72 * view.scale,
+                    center.x + std::cos(b) * 72 * view.scale, center.y + std::sin(b) * 72 * view.scale);
+            }
+        };
+        ring(s.mode.zone, {101, 206, 235, 255});
+        if (s.mode.zoneRemaining <= 3)
+            ring((s.mode.zone + 1) % 3, {229, 197, 100, 255});
+    }
+    return ok;
 }
 } // namespace cubeshot::client

@@ -26,6 +26,7 @@ public:
     void chooseUpgrade(UpgradeKind kind);
     void selectMap(MapId map);
     void selectRules(unsigned wins);
+    void selectRules(MatchRules rules);
     void changeMap();
     std::vector<GameEvent> takeEvents();
     bool connected() const;

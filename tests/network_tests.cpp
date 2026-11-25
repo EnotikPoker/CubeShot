@@ -354,7 +354,11 @@ void impairedCombat()
                    r.guest.snapshot()->phase == MatchPhase::Round;
         },
         5, "Active test round starts");
-    const auto serial = r.server.match().world().players()[0].activeSerial;
+    // The roulette result was checked above. Use an unconditional cast here:
+    // screen/mine placement and a full-health heal may legitimately be refused.
+    auto& world = const_cast<World&>(r.server.match().world());
+    world.setActives(1, {ActiveKind::Barrier, ActiveKind::None});
+    const auto serial = world.players()[0].activeSerial;
     const auto ack = r.host.snapshot()->actionAck[0];
     r.hostInput.moveDirection = -.25f;
     r.host.action(false, false, {-1, 0}, false, 1);
@@ -364,10 +368,9 @@ void impairedCombat()
         { return r.host.snapshot()->actionAck[0] >= ack + 2 && r.guest.snapshot()->actionAck[0] >= ack + 2; },
         3, "Active requests are acknowledged under packet loss");
     auto current = r.server.match().world().players()[0];
-    expect(current.activeSerial == serial + (rolled == ActiveKind::Heal ? 0 : 1),
-           "Repeated active command never casts twice during cooldown");
-    expect(r.host.snapshot()->players[0].actives[0].kind == rolled &&
-               r.guest.snapshot()->players[0].actives[0].kind == rolled,
+    expect(current.activeSerial == serial + 1, "Repeated active command never casts twice during cooldown");
+    expect(r.host.snapshot()->players[0].actives[0].kind == ActiveKind::Barrier &&
+               r.guest.snapshot()->players[0].actives[0].kind == ActiveKind::Barrier,
            "Both clients retain the authoritative active state");
     r.guest.disconnect();
     r.until([&] { return r.host.snapshot()->phase == MatchPhase::Lobby && r.host.snapshot()->score[0] == 0; },

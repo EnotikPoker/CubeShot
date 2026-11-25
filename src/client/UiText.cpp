@@ -10,29 +10,34 @@ namespace cubeshot::client
 {
 bool drawWeaponHud(SDL_Renderer* r, const Player& p)
 {
+    SDL_SetRenderDrawColor(r, 17, 26, 37, 255);
+    SDL_FRect footer{0, 476, 960, 64};
+    SDL_RenderFillRect(r, &footer);
     if (!drawAbilityHud(r, p))
         return false;
     const auto& d = weaponDefinition(p.weapon.kind);
-    std::u32string label(d.name);
-    if (d.capacity)
-    {
-        auto n = std::to_string(p.weapon.ammo) + "/" + std::to_string(p.weapon.capacity());
-        label += U"  " + std::u32string(n.begin(), n.end()) + U" · ∞";
-    }
-    if (!drawText(r, label, {948 - textWidth(r, label, 2), 490}, 2, {235, 241, 247, 255}))
+    std::u32string name(d.name);
+    if (!drawText(r, name, {948 - textWidth(r, name, 1), 482}, 1, {224, 235, 246, 255}))
+        return false;
+    auto ammo = d.capacity ? std::to_string(p.weapon.ammo) + "/" + std::to_string(p.weapon.capacity()) : "--";
+    std::u32string label(ammo.begin(), ammo.end());
+    if (!drawText(r, label, {948 - textWidth(r, label, 2), 505}, 2, {232, 241, 248, 255}))
         return false;
     if (p.weapon.reloading)
     {
-        if (!drawText(r, p.weapon.kind == WeaponKind::Flamethrower ? U"Смена баллона" : U"Перезарядка",
-                      {740, 518}, 1, {94, 177, 255, 255}))
-            return false;
-        SDL_FRect bar{740, 536,
-                      208 * (1 - std::clamp(p.weapon.reloadRemaining /
+        SDL_FRect bar{744, 532,
+                      204 * (1 - std::clamp(p.weapon.reloadRemaining /
                                                 (p.weapon.reloadDuration() + p.weapon.reloadSetup()),
                                             0.f, 1.f)),
-                      2};
+                      3};
         SDL_SetRenderDrawColor(r, 94, 177, 255, 255);
-        return SDL_RenderFillRect(r, &bar);
+        SDL_RenderFillRect(r, &bar);
+    }
+    if (p.weapon.kind == WeaponKind::Minigun)
+    {
+        SDL_FRect bar{744, 532, 204 * p.weapon.heat, 3};
+        SDL_SetRenderDrawColor(r, 245, 161, 75, 255);
+        SDL_RenderFillRect(r, &bar);
     }
     return true;
 }

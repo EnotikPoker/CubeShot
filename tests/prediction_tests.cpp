@@ -96,6 +96,19 @@ int main()
         prediction.advance({});
         expect(prediction.player()->health == 50 && prediction.player()->actives[1].cooldown > 13,
                "Healing HP remains authoritative while cooldown is predicted");
+        auto respawned = accepted;
+        respawned.rules.mode = GameMode::Control;
+        respawned.players[0].lifeRevision = 1;
+        respawned.players[0].position = {700, 200};
+        respawned.players[0].velocity = {};
+        respawned.players[0].setActives({ActiveKind::Overdrive, ActiveKind::Cleanse});
+        respawned.players[0].modifiers = chaosModifiers(ChaosKind::FastReload);
+        prediction.reconcile(respawned, 1);
+        expect(prediction.commands().empty() && prediction.bullets().empty() &&
+                   prediction.player()->position.x == 700 && prediction.player()->actives[1].cooldown == 0,
+               "Respawn discards old-life pending heal and movement without replay or blending");
+        prediction.advance({1, false, false, {1, 0}});
+        expect(prediction.commands().back().input.lifeRevision == 1, "New predicted movement carries current life revision");
         prediction.reset();
         expect(!prediction.player(), "Disconnect clears prediction");
         std::cout << "Prediction reconciliation checks passed\n";
