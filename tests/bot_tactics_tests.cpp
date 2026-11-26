@@ -82,6 +82,48 @@ void fireEscape()
     expect(std::isfinite(p.position.y), "Fire avoidance uses normal grounded/jump physics");
 }
 
+void staticHazardWithoutGunfire()
+{
+    auto arena = flat(100, 600);
+    arena.hazards.push_back({{{584, 437}, {96, 3}}, true});
+    World world(arena, 2);
+    BotController bot(arena, BotDifficulty::Medium, 42);
+    auto input = bot.update(observeBot(world, 2, 1), dt);
+    expect(input.jump,
+           "Static heat is an immediate danger even without bullets, fire particles or a perceived opponent");
+    world.requestAction(2, input.jump, false, input.aimDirection);
+    world.setPlayerInput(2, input);
+    world.update(dt);
+    bool held = false;
+    for (unsigned n = 0; n < 120; ++n)
+        tick(world, bot, held);
+    expect(world.players()[1].health >= 95 && world.players()[1].alive(),
+           "Bot escapes a damaging floor using actual jump physics rather than taking continuous damage");
+    World quiet(flat(100, 600), 2);
+    BotController idle(quiet.arena(), BotDifficulty::Medium, 42);
+    expect(!idle.update(observeBot(quiet, 2, 1), dt).jump,
+           "Environmental escape does not introduce jumps on safe ground");
+}
+
+void nearbyBarrelSafety()
+{
+    auto arena = flat(100, 600);
+    World world(arena, 2);
+    WorldEntity barrel;
+    barrel.id = 999;
+    barrel.position = {550, 412};
+    barrel.size = {24, 28};
+    barrel.life = -1;
+    const_cast<std::vector<WorldEntity>&>(world.entities()).push_back(barrel);
+    world.setHealth(2, 50);
+    BotController bot(arena, BotDifficulty::Medium, 42);
+    bool held = false;
+    for (unsigned n = 0; n < 120; ++n)
+        tick(world, bot, held);
+    expect(world.players()[1].health == 50,
+           "Bot checks the first barrel in its firing line and repositions instead of killing itself");
+}
+
 void enemyMeleeSpacing()
 {
     auto simulate = [](WeaponKind kind)
@@ -311,6 +353,8 @@ int main()
     {
         knowledgeAndMatrix();
         fireEscape();
+        staticHazardWithoutGunfire();
+        nearbyBarrelSafety();
         enemyMeleeSpacing();
         enemyFirearmSpacing();
         movingMelee();

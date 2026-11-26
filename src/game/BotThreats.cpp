@@ -210,7 +210,31 @@ void BotController::avoidBullets(const BotObservation& observation, PlayerInput&
         return hits;
     };
     if (known.empty() && perceived_.fires.empty())
+    {
+        // Route selection already avoids distant hazards. An immediate escape
+        // must still work without gunfire, and must preserve the route's direction.
+        if (observation.self.grounded && !input.jump && time_ >= nextDodgeJump_ &&
+            hazardCost(observation.self.position) > 0)
+        {
+            auto exposure = [&](const PlayerInput& candidate)
+            {
+                const auto body = predictBody(observation.self, candidate, tuning_.dodgeHorizon, arena_);
+                float total = 0;
+                for (std::size_t n = 0; n <= body.count; n += 8)
+                    total += hazardCost(body.points[n]);
+                return total;
+            };
+            auto escape = input;
+            escape.jump = true;
+            if (exposure(escape) < exposure(input))
+            {
+                cancelRoute(false);
+                input = escape;
+                nextDodgeJump_ = time_ + .9f;
+            }
+        }
         return;
+    }
     const auto initialBody = predictBody(observation.self, input, tuning_.dodgeHorizon, arena_);
     float initialRisk = risk(input);
     bool freshThreat = false;

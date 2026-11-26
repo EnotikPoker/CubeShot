@@ -438,6 +438,40 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
             break;
         }
     }
+    if (input.shoot &&
+        (ballisticWeapon(observation.self.weapon.kind) || observation.self.weapon.kind == WeaponKind::Beam ||
+         observation.self.weapon.kind == WeaponKind::Electric))
+    {
+        // Shots can hit a barrel before their intended target. Check the first
+        // obstruction using delayed observations, and keep a safe HP reserve.
+        const auto from = observation.self.weaponOrigin();
+        const Vec2 to{from.x + input.aimDirection.x * 300, from.y + input.aimDirection.y * 300};
+        const auto shot = observation.self.shotPrototype(input.aimDirection);
+        float nearest = terrainHit(from, to, arena_, shot.collisionRadius);
+        const WorldEntity* first = nullptr;
+        for (const auto& e : perceived_.entities)
+            if (e.health > 0 && !(e.attack.shooterId == observation.self.id && e.arm > 0 &&
+                                  e.kind != EntityKind::Screen && e.kind != EntityKind::Barrel))
+                if (auto hit = collision::segmentHit(from, to, e.bounds(), shot.collisionRadius);
+                    hit && *hit < nearest)
+                {
+                    nearest = *hit;
+                    first = &e;
+                }
+        if (first && first->kind == EntityKind::Barrel)
+        {
+            const Vec2 center{first->position.x + first->size.x / 2, first->position.y + first->size.y / 2};
+            const auto blast = blastEffect(center, observation.self, arena_, 0, 150, 70);
+            const int harm =
+                healthDamage(blast.damage, shot.power, observation.self, WeaponKind::GrenadeLauncher);
+            if (harm > 0 && observation.self.health - harm < 40)
+            {
+                input.shoot = input.triggerHeld = false;
+                repositionUntil_ = std::max(repositionUntil_, time_ + .6f);
+                intent_ = BotIntent::Reposition;
+            }
+        }
+    }
     useActives(observation, input);
     input.jetpackHeld = input.jetpackHeld || input.jump;
     return input;

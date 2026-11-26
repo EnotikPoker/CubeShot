@@ -69,6 +69,8 @@ void matches()
                 std::cerr << "map=" << static_cast<int>(info.id)
                           << " difficulty=" << static_cast<int>(difficulty) << " moved=" << moved
                           << " shot=" << shot << " hp=" << s.players[0].health
+                          << " bot_hp=" << s.players[1].health << " phase=" << unsigned(s.phase)
+                          << " score=" << s.score[0] << ":" << s.score[1]
                           << " bot=" << s.players[1].position.x << ',' << s.players[1].position.y << '\n';
                 throw std::runtime_error(
                     "Bot must navigate, fire and defeat stationary opponent on every map");
