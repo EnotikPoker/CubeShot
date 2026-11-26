@@ -16,24 +16,20 @@ using namespace botdetail;
 float BotController::hazardCost(Vec2 position) const
 {
     float cost = 0;
+    const auto abilities = movementAbilities_.value_or(Abilities{});
+    const float half = 24 * abilities.scale(), size = half * 2;
     for (const auto& fire : perceived_.fires)
     {
-        const float dx =
-            std::max(0.f, std::abs(position.x + 24 * movementAbilities_.value_or(Abilities{}).scale() -
-                                   fire.position.x) -
-                              24 * movementAbilities_.value_or(Abilities{}).scale());
-        const float dy =
-            std::max(0.f, std::abs(position.y + 24 * movementAbilities_.value_or(Abilities{}).scale() -
-                                   fire.position.y) -
-                              24 * movementAbilities_.value_or(Abilities{}).scale());
+        const float dx = std::max(0.f, std::abs(position.x + half - fire.position.x) - half);
+        const float dy = std::max(0.f, std::abs(position.y + half - fire.position.y) - half);
         const float distance = std::hypot(dx, dy);
         if (distance < fire.radius + 12)
             cost += 1.f + (fire.radius + 12 - distance) / 20;
     }
     for (auto hazard : arena_.hazards)
-        if (position.x + 48 > hazard.bounds.position.x &&
+        if (position.x + size > hazard.bounds.position.x &&
             position.x < hazard.bounds.position.x + hazard.bounds.size.x &&
-            std::abs(position.y + 48 - hazard.bounds.position.y) < 20)
+            std::abs(position.y + size - hazard.bounds.position.y) < 20)
             cost += 5;
     for (auto e : perceived_.entities)
     {
@@ -41,10 +37,9 @@ float BotController::hazardCost(Vec2 position) const
         const bool charge = e.kind == EntityKind::Sticky && e.anchored;
         const float radius = charge ? e.attack.blastRadius * e.attack.blastScale + 32.f : 140.f;
         if ((mine || charge) &&
-            std::hypot(position.x + 24 - e.position.x, position.y + 24 - e.position.y) < radius)
+            std::hypot(position.x + half - e.position.x, position.y + half - e.position.y) < radius)
             cost += charge ? 8.f : 5.f;
     }
-    auto abilities = movementAbilities_.value_or(Abilities{});
     return cost * (abilities.level(AbilityKind::FireResistance) ? .5f : 1.f) *
            (1 - .1f * abilities.level(AbilityKind::ToughSkin));
 }

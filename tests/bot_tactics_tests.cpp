@@ -99,6 +99,13 @@ void staticHazardWithoutGunfire()
         tick(world, bot, held);
     expect(world.players()[1].health >= 95 && world.players()[1].alive(),
            "Bot escapes a damaging floor using actual jump physics rather than taking continuous damage");
+    World tiny(arena, 2);
+    Abilities small;
+    small.add(AbilityKind::SmallBody);
+    tiny.setAbilities(2, small);
+    BotController smallBot(arena, BotDifficulty::Medium, 42);
+    expect(smallBot.update(observeBot(tiny, 2, 1), dt).jump,
+           "A half-size bot detects floor danger at its real feet, not 24 pixels below them");
     World quiet(flat(100, 600), 2);
     BotController idle(quiet.arena(), BotDifficulty::Medium, 42);
     expect(!idle.update(observeBot(quiet, 2, 1), dt).jump,
