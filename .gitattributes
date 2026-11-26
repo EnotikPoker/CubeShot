@@ -1,0 +1,2 @@
+# Keep dependency patches byte-for-byte on Windows (including blank context lines).
+*.patch -text
