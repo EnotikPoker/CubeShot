@@ -458,6 +458,16 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
                     nearest = *hit;
                     first = &e;
                 }
+        if (first && first->kind == EntityKind::Barrel && perceived_.target)
+        {
+            const auto target = predictBotTarget(*perceived_.target, perceived_.self,
+                                                 std::max(0.f, time_ - perceived_.time), arena_);
+            if (auto hit = hitPolygon({from.x - target.position.x, from.y - target.position.y},
+                                      {to.x - target.position.x, to.y - target.position.y},
+                                      target.bodyContour(), shot.collisionRadius);
+                hit && *hit < nearest)
+                first = nullptr; // The target absorbs the shot before it reaches the barrel.
+        }
         if (first && first->kind == EntityKind::Barrel)
         {
             const Vec2 center{first->position.x + first->size.x / 2, first->position.y + first->size.y / 2};

@@ -122,6 +122,17 @@ void nearbyBarrelSafety()
         tick(world, bot, held);
     expect(world.players()[1].health == 50,
            "Bot checks the first barrel in its firing line and repositions instead of killing itself");
+    auto frontArena = flat(530, 600);
+    World front(frontArena, 2);
+    barrel.position = {480, 412};
+    const_cast<std::vector<WorldEntity>&>(front.entities()).push_back(barrel);
+    front.setHealth(2, 20);
+    BotController shooter(frontArena, BotDifficulty::Medium, 42);
+    bool fired = false;
+    auto observation = observeBot(front, 2, 1);
+    for (unsigned n = 0; n < 120; ++n)
+        fired = shooter.update(observation, dt).shoot || fired;
+    expect(fired, "A target before the barrel absorbs the bullet and must not prevent firing");
 }
 
 void enemyMeleeSpacing()
