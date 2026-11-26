@@ -158,9 +158,11 @@ bool Application::handle(MenuAction action)
         menu_.completeTestEdit(accepted);
         if (accepted && (edit.operation == TestOperation::RestoreMap ||
                          edit.operation == TestOperation::Clear || edit.operation == TestOperation::Respawn))
+        {
             effects_.clear();
-        sounds_.clear();
-        audio_.clear();
+            sounds_.clear();
+            audio_.clear();
+        }
     }
     if (action == MenuAction::StartTest || action == MenuAction::ApplyTest)
     {
@@ -192,9 +194,11 @@ void Application::updateSession()
         if (bots_.match())
             return;
         if (wasConnected_)
+        {
             effects_.clear();
-        sounds_.clear();
-        audio_.clear();
+            sounds_.clear();
+            audio_.clear();
+        }
         wasConnected_ = false;
         lastRound_ = 0;
         return;
@@ -260,6 +264,39 @@ int Application::smokeTest()
     if (!initialize() || !renderMenu(renderer_, menu_) || !SDL_RenderPresent(renderer_) ||
         !renderScene(renderer_, world_))
         return 1;
+    // Exercise the application loop, not just the mixer: offline polling must
+    // preserve menu and Test sounds until all their samples have been mixed.
+    audio_.mixer.setSettings({100, 100, 100});
+    auto audibleAcrossUpdates = [&]
+    {
+        for (int frame = 0; frame < 4; ++frame)
+        {
+            updateSession();
+            std::array<float, 128> samples{};
+            audio_.mixer.mix(samples.data(), samples.size() / 2);
+            if (std::none_of(samples.begin(), samples.end(), [](float value) { return value != 0; }))
+                return false;
+        }
+        return true;
+    };
+    if (!audio_.mixer.play(SoundCue::Click) || !audibleAcrossUpdates())
+    {
+        SDL_Log("Portable audio test: menu sound was interrupted by application polling");
+        return 1;
+    }
+    audio_.clear();
+    world_.requestAction(World::localPlayerId, false, true, {0, -1});
+    world_.update(1.f / 120);
+    sounds_.update(1.f / 120, world_.players(), world_.arena(), world_.takeEvents(), World::localPlayerId,
+                   world_.entities(), world_.bullets());
+    if (!audibleAcrossUpdates())
+    {
+        SDL_Log("Portable audio test: Test shot was interrupted by application polling");
+        return 1;
+    }
+    audio_.clear();
+    sounds_.clear();
+    audio_.mixer.setSettings(settings_.active().audio);
     BotMatch bots(MapId::Duel, BotDifficulty::Medium, "Smoke", 42);
     for (int tick = 0; tick < 480; ++tick)
         bots.update(1.f / 120);
