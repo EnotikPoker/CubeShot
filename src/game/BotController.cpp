@@ -444,9 +444,19 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
     {
         // Shots can hit a barrel before their intended target. Check the first
         // obstruction using delayed observations, and keep a safe HP reserve.
-        const auto from = observation.self.weaponOrigin();
+        // World moves bodies before spawning the shot. Project that step too:
+        // a falling player can bring the muzzle into a barrel during this tick.
+        Player firing = observation.self;
+        auto movement = input;
+        movement.jump = movement.shoot = movement.triggerHeld = movement.reload = false;
+        movement.activeQ = movement.activeE = false;
+        movement.jetpackHeld = movement.jetpackHeld || input.jump;
+        firing.applyInput(movement);
+        firing.requestAction(input.jump, false, input.aimDirection);
+        firing.update(dt, arena_);
+        const auto from = firing.weaponOrigin();
         const Vec2 to{from.x + input.aimDirection.x * 300, from.y + input.aimDirection.y * 300};
-        const auto shot = observation.self.shotPrototype(input.aimDirection);
+        const auto shot = firing.shotPrototype(input.aimDirection);
         float nearest = terrainHit(from, to, arena_, shot.collisionRadius);
         const WorldEntity* first = nullptr;
         for (const auto& e : perceived_.entities)
@@ -471,7 +481,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
         if (first && first->kind == EntityKind::Barrel)
         {
             const Vec2 center{first->position.x + first->size.x / 2, first->position.y + first->size.y / 2};
-            const auto blast = blastEffect(center, observation.self, arena_, 0, 150, 70);
+            const auto blast = blastEffect(center, firing, arena_, 0, 150, 70);
             const int harm =
                 healthDamage(blast.damage, shot.power, observation.self, WeaponKind::GrenadeLauncher);
             if (harm > 0 && observation.self.health - harm < 40)

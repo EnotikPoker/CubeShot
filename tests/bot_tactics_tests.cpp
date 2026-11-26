@@ -140,6 +140,20 @@ void nearbyBarrelSafety()
     for (unsigned n = 0; n < 120; ++n)
         fired = shooter.update(observation, dt).shoot || fired;
     expect(fired, "A target before the barrel absorbs the bullet and must not prevent firing");
+    World falling(arena, 2);
+    barrel.position = {590, 412};
+    const_cast<std::vector<WorldEntity>&>(falling.entities()).push_back(barrel);
+    auto& body = const_cast<Player&>(falling.players()[1]);
+    body.position = {600, 380};
+    body.velocity = {0, 600};
+    body.grounded = false;
+    body.health = 50;
+    BotController fallingBot(arena, BotDifficulty::Medium, 42);
+    observation = observeBot(falling, 2, 1);
+    bool unsafe = false;
+    for (unsigned n = 0; n < 120; ++n)
+        unsafe = fallingBot.update(observation, dt).shoot || unsafe;
+    expect(!unsafe, "Barrel safety projects the falling body before spawning the shot");
 }
 
 void enemyMeleeSpacing()
