@@ -114,7 +114,8 @@ int main()
         expect(!decodeSnapshot(reviewWire), "Reject oversized result interval");
         reviewWire = encodeSnapshot(review);
         reviewWire.set_upgrade(0, static_cast<unsigned>(UpgradeKind::Weapon));
-        expect(!decodeSnapshot(reviewWire), "Weapon result cannot claim an ability reading interval");
+        expect(decodeSnapshot(reviewWire).has_value(),
+               "Weapon result preserves the full five-second reading interval");
         auto input = envelope();
         auto* command = input.mutable_control()->add_commands();
         command->set_sequence(1);

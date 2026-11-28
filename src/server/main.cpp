@@ -69,10 +69,18 @@ int main(int argc, char** argv)
                 ownerJoined = true;
             if (!ownerJoined && Clock::now() - started > std::chrono::seconds(10))
                 break;
-            const unsigned count = snapshot.connected[0] + snapshot.connected[1];
+            unsigned count = 0, bots = 0;
+            for (unsigned i = 0; i < snapshot.rules.participants; ++i)
+            {
+                count += snapshot.slots[i] == cubeshot::SlotKind::Human;
+                bots += snapshot.slots[i] == cubeshot::SlotKind::Bot;
+            }
             discovery.advertise(server.port(), count,
-                                count < 2 && snapshot.phase == cubeshot::MatchPhase::Lobby && ownerJoined &&
-                                    !server.hostLeft());
+                                count < snapshot.rules.participants &&
+                                    snapshot.phase == cubeshot::MatchPhase::Lobby && ownerJoined &&
+                                    !server.hostLeft(),
+                                snapshot.rules.participants, bots, unsigned(snapshot.rules.format),
+                                unsigned(snapshot.rules.mode));
             discovery.poll();
             const auto now = Clock::now();
             accumulator += std::min(std::chrono::duration<double>(now - previous).count(), .1);

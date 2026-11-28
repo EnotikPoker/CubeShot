@@ -48,11 +48,11 @@ public:
 
     Reservations(const ArenaPool& pool, std::chrono::milliseconds duration);
     Result reserve(const std::string& ip, const std::string& nickname, const std::string& request,
-                   const std::string& server);
+                   const std::string& server, MatchRules preferences = {});
     void cancel(const std::string& token);
     std::optional<network::Admission> admit(std::size_t room, const std::string& token,
                                             const std::string& nickname);
-    std::array<bool, 2> occupied(std::size_t room) const;
+    std::array<bool, maxPlayers> occupied(std::size_t room) const;
     void expire();
 
 private:

@@ -197,20 +197,20 @@ void reservationsAndCombat()
         },
         3, "Used token resolves");
     expect(!replay.connected(), "Reservation tokens are single use");
-    r.host.selectMap(MapId::Duel);
-    r.guest.selectMap(MapId::Duel);
+    r.host.selectMap(MapId::FactorySmall);
     r.until(
-        [&]
-        {
-            return r.host.snapshot()->votes[0] >= 0 && r.host.snapshot()->votes[1] >= 0 &&
-                   r.guest.snapshot()->votes[0] >= 0 && r.guest.snapshot()->votes[1] >= 0;
+        [&] {
+            return r.host.snapshot()->map == MapId::FactorySmall &&
+                   r.guest.snapshot()->map == MapId::FactorySmall;
         },
-        2, "Simultaneous map votes reach both clients");
+        2, "Online host selects room map");
+    r.host.selectMap(MapId::Duel);
+    r.until([&] { return r.host.snapshot()->map == MapId::Duel && r.guest.snapshot()->map == MapId::Duel; },
+            2, "Host can restore duel map");
     r.host.ready(true);
     r.guest.ready(true);
     r.until(
-        [&]
-        {
+        [&] {
             return r.host.snapshot()->phase == MatchPhase::Round &&
                    r.guest.snapshot()->phase == MatchPhase::Round;
         },
@@ -241,14 +241,62 @@ void reservationsAndCombat()
     expect(r.host.snapshot()->score[0] == 1 && r.guest.snapshot()->score[0] == 1,
            "Online clients agree on round score");
     r.guest.disconnect();
-    r.until([&] { return r.host.snapshot()->phase == MatchPhase::Lobby && r.host.snapshot()->score[0] == 0; },
-            2, "Disconnect aborts online match without ending the public arena");
+    r.until([&] { return r.host.snapshot()->slots[1] == SlotKind::Bot; }, 2,
+            "Disconnect keeps public match with bot replacement");
     auto replacement = r.api("POST", "/v1/reservations", r.body("Новый", first.body["server_id"]));
-    expect(replacement.status == 201, "Public server accepts a replacement after either player leaves");
+    expect(replacement.status == 409, "Public match is locked until completion");
+    r.host.disconnect();
+    r.run(.2);
+    replacement = r.api("POST", "/v1/reservations", r.body("Новый", first.body["server_id"]));
+    expect(replacement.status == 201, "Empty dedicated arena resets for the next match");
     r.api("DELETE", "/v1/reservations/" + replacement.body["token"].get<std::string>());
     r.api("DELETE", "/v1/reservations/" + third.body["token"].get<std::string>());
     auto freed = r.api("POST", "/v1/reservations", r.body("Замена", third.body["server_id"]));
     expect(freed.status == 201, "Cancellation releases an unconsumed reservation");
+}
+
+void fourPlayerReservations()
+{
+    Rig r;
+    auto request = r.body("Хозяин");
+    request["format"] = unsigned(MatchFormat::Teams);
+    request["participants"] = 4;
+    request["mode"] = unsigned(GameMode::Control);
+    auto first = r.api("POST", "/v1/reservations", request);
+    expect(first.status == 201, "Reserve a four-place control room");
+    const auto room = first.body["server_id"].get<std::string>();
+    auto guest = r.api("POST", "/v1/reservations", r.body("Гость", room));
+    auto a = r.asyncApi("POST", "/v1/reservations", r.body("Третий", room));
+    auto b = r.asyncApi("POST", "/v1/reservations", r.body("Четвертый", room));
+    auto third = r.finish(a), fourth = r.finish(b);
+    expect(guest.status == 201 && third.status == 201 && fourth.status == 201,
+           "Concurrent reservations allocate four distinct places");
+    expect(r.api("POST", "/v1/reservations", r.body("Пятый", room)).status == 409,
+           "No overbooking a four-place room");
+    auto list = r.api("GET", "/v1/servers");
+    bool found = false;
+    for (auto entry : list.body["servers"])
+        if (entry["id"] == room)
+        {
+            found = true;
+            expect(entry["capacity"] == 4 && entry["reserved"] == 4 && entry["format"] == 2 &&
+                       entry["mode"] == 2,
+                   "Directory exposes four-place rules and reservations");
+        }
+    expect(found, "Reserved room appears in catalog");
+    r.host.connect(first.body["address"], "", "Хозяин", first.body["token"]);
+    r.guest.connect(guest.body["address"], "", "Гость", guest.body["token"]);
+    r.until(
+        [&] {
+            return r.host.connected() && r.guest.connected() && r.host.snapshot() &&
+                   r.host.snapshot()->connected[1];
+        },
+        3, "Reserved users join expanded arena");
+    r.host.disconnect();
+    r.until([&] { return r.guest.snapshot() && r.guest.snapshot()->host == 2; }, 3,
+            "Dedicated ownership transfers to next human");
+    r.guest.disconnect();
+    r.run(.1);
 }
 
 void expiryAndAsyncCancellation()
@@ -322,6 +370,7 @@ int main()
     try
     {
         identity();
+        fourPlayerReservations();
         reservationsAndCombat();
         expiryAndAsyncCancellation();
         restartInvalidatesReservations();

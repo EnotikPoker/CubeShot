@@ -31,12 +31,15 @@ enum class Screen
     BotSetup,
     BotResult,
     Armory,
-    TestSetup
+    TestSetup,
+    Roster
 };
 enum class MenuAction
 {
     None,
     SelectRules,
+    ConfigureSlot,
+    SelectTeam,
     ApplyTest,
     EditTest,
     StartTest,
@@ -68,6 +71,7 @@ struct ListedRoom
     std::string address;
     unsigned players;
     bool joinable;
+    unsigned capacity = 2, bots = 0, format = 0, mode = 0;
 };
 
 class Menu
@@ -75,7 +79,37 @@ class Menu
 public:
     MatchRules matchRules() const
     {
-        return {wins_, gameMode_, stages_, controlGoal_};
+        return {wins_, gameMode_, stages_, controlGoal_, format_, participants_, friendlyFire_};
+    }
+
+    PlayerId editedSlot() const
+    {
+        return editedSlot_;
+    }
+
+    SlotKind editedKind() const
+    {
+        return editedKind_;
+    }
+
+    TeamId editedTeam() const
+    {
+        return editedTeam_;
+    }
+
+    unsigned editedDifficulty() const
+    {
+        return editedDifficulty_;
+    }
+
+    const std::array<unsigned, maxPlayers>& botDifficulties() const
+    {
+        return difficulties_;
+    }
+
+    const std::array<TeamId, maxPlayers>& botTeams() const
+    {
+        return teams_;
     }
 
     unsigned wins() const
@@ -237,9 +271,22 @@ public:
     }
 
 private:
+    MatchFormat format_ = MatchFormat::Duel;
+    unsigned participants_ = 2;
+    bool friendlyFire_ = false;
+    std::u32string formatLabel_ = U"Формат: Дуэль", fireLabel_ = U"Урон союзникам: выкл";
+    std::array<unsigned, maxPlayers> difficulties_{{1, 1, 1, 1}};
+    std::array<TeamId, maxPlayers> teams_{{1, 2, 1, 2}};
+    Screen rosterReturn_ = Screen::BotSetup;
+    PlayerId editedSlot_ = 1;
+    SlotKind editedKind_ = SlotKind::Empty;
+    TeamId editedTeam_ = 1;
+    unsigned editedDifficulty_ = 1;
+    mutable std::vector<std::u32string> rosterLabels_;
+    void cycleFormat();
     unsigned wins_ = 15, stages_ = 14, controlGoal_ = 180;
     GameMode gameMode_ = GameMode::Duel;
-    std::u32string modeLabel_ = U"Режим: Дуэль";
+    std::u32string modeLabel_ = U"Режим: Раунды";
     void updateRuleLabels();
     void cycleTarget();
     TestConfiguration test_;

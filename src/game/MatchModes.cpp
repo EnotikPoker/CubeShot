@@ -27,7 +27,7 @@ void Match::updateControl(float dt)
     auto before = world_.players();
     world_.update(dt);
     collectEvents();
-    for (unsigned i = 0; i < 2; ++i)
+    for (unsigned i = 0; i < rules_.participants; ++i)
     {
         const auto& p = world_.players()[i];
         auto& r = mode_.respawn[i];
@@ -54,7 +54,7 @@ void Match::updateControl(float dt)
         }
     }
     updateChoices(dt);
-    for (unsigned i = 0; i < 2; ++i)
+    for (unsigned i = 0; i < rules_.participants; ++i)
         if (!world_.players()[i].alive() && mode_.respawn[i].remaining == 0 &&
             weaponChoice_[i] == WeaponChoice::Ready)
         {
@@ -70,7 +70,24 @@ void Match::updateControl(float dt)
                 for (auto wall : world_.arena().platforms)
                     if (collision::overlaps(probe.bounds(), wall))
                         safe = false;
-                const auto& enemy = world_.players()[1 - i];
+                const Player* nearest = nullptr;
+                float distance = 1e20f;
+                for (const auto& candidate : world_.players())
+                    if (candidate.id != i + 1 && candidate.alive())
+                    {
+                        if (collision::overlaps(probe.bounds(), candidate.bounds()))
+                            safe = false;
+                        if (side(candidate.id - 1) != side(i))
+                        {
+                            float d = std::hypot(pos.x - candidate.position.x, pos.y - candidate.position.y);
+                            if (d < distance)
+                            {
+                                nearest = &candidate;
+                                distance = d;
+                            }
+                        }
+                    }
+                const auto& enemy = nearest ? *nearest : world_.players()[i];
                 if (enemy.alive() && collision::overlaps(probe.bounds(), enemy.bounds()))
                     safe = false;
                 if (!safe)
@@ -103,28 +120,42 @@ void Match::updateControl(float dt)
         }
     auto anchors = world_.arena().controlAnchors();
     auto at = anchors[mode_.zone];
-    bool inside[2]{};
-    for (unsigned i = 0; i < 2; ++i)
+    std::array<bool, maxPlayers> inside{};
+    for (unsigned i = 0; i < rules_.participants; ++i)
     {
-        auto p = world_.players()[i];
-        inside[i] = p.alive() && p.spawnProtection <= 0 &&
-                    std::hypot(p.position.x + p.size.x / 2 - at.x, p.position.y + p.size.y / 2 - at.y) <= 72;
+        const auto& p = world_.players()[i];
+        if (p.alive() && p.spawnProtection <= 0 &&
+            std::hypot(p.position.x + p.size.x / 2 - at.x, p.position.y + p.size.y / 2 - at.y) <= 72)
+            inside[side(i)] = true;
     }
-    for (unsigned i = 0; i < 2; ++i)
-        if (inside[i] && !inside[1 - i])
-        {
-            mode_.control[i] += dt;
-            score_[i] = std::min(rules_.controlGoal, unsigned(mode_.control[i] + .0001f));
-        }
-    bool end = mode_.control[0] >= rules_.controlGoal || mode_.control[1] >= rules_.controlGoal ||
-               mode_.elapsed >= 480;
+    if (std::count(inside.begin(), inside.end(), true) == 1)
+    {
+        unsigned winner = unsigned(std::find(inside.begin(), inside.end(), true) - inside.begin());
+        mode_.control[winner] += dt;
+        unsigned points = std::min(rules_.controlGoal, unsigned(mode_.control[winner] + .0001f));
+        if (rules_.format == MatchFormat::Teams)
+            teamScore_[winner] = points;
+        else
+            score_[winner] = points;
+    }
+    double best = *std::max_element(mode_.control.begin(), mode_.control.end());
+    bool end = best >= rules_.controlGoal || mode_.elapsed >= 480;
     if (end)
     {
-        winner_ = std::abs(mode_.control[0] - mode_.control[1]) < .001f ? 0
-                  : mode_.control[0] > mode_.control[1]                 ? 1
-                                                                        : 2;
+        unsigned index =
+            unsigned(std::max_element(mode_.control.begin(), mode_.control.end()) - mode_.control.begin());
+        bool tie = std::count_if(mode_.control.begin(), mode_.control.end(),
+                                 [&](double x) { return std::abs(x - best) < .001; }) > 1;
+        winner_ = winnerTeam_ = 0;
+        if (!tie)
+        {
+            if (rules_.format == MatchFormat::Teams)
+                winnerTeam_ = index + 1;
+            else
+                winner_ = index + 1;
+        }
         phase_ = MatchPhase::Finished;
-        for (PlayerId id : {1u, 2u})
+        for (PlayerId id = 1; id <= rules_.participants; ++id)
             world_.clearPlayerInput(id);
         ++selectionRevision_;
     }

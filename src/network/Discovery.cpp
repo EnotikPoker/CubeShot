@@ -103,7 +103,7 @@ struct Discovery::Impl
     Socket socket = invalidSocket;
     bool advertiser;
     std::uint16_t discovery, game = gamePort;
-    unsigned players = 0;
+    unsigned players = 0, capacity = 2, bots = 0, format = 0, mode = 0;
     bool joinable = false;
     std::uint64_t nonce =
         (static_cast<std::uint64_t>(std::random_device{}()) << 32) | std::random_device{}() | 1;
@@ -183,11 +183,16 @@ bool Discovery::available() const
     return impl_->socket != invalidSocket;
 }
 
-void Discovery::advertise(std::uint16_t port, unsigned players, bool joinable)
+void Discovery::advertise(std::uint16_t port, unsigned players, bool joinable, unsigned capacity,
+                          unsigned bots, unsigned format, unsigned mode)
 {
     impl_->game = port;
     impl_->players = players;
     impl_->joinable = joinable;
+    impl_->capacity = capacity;
+    impl_->bots = bots;
+    impl_->format = format;
+    impl_->mode = mode;
 }
 
 void Discovery::poll()
@@ -223,6 +228,10 @@ void Discovery::poll()
             reply.set_nonce(query.nonce());
             reply.set_port(impl_->game);
             reply.set_players(impl_->players);
+            reply.set_capacity(impl_->capacity);
+            reply.set_bots(impl_->bots);
+            reply.set_format(impl_->format);
+            reply.set_mode(impl_->mode);
             reply.set_joinable(impl_->joinable);
             reply.set_name("CubeShot LAN");
             const std::string output = "CSR1" + reply.SerializeAsString();
@@ -233,8 +242,9 @@ void Discovery::poll()
         {
             wire::DiscoveryRoom room;
             if (!room.ParseFromArray(bytes + 4, count - 4) || room.protocol() != protocolVersion ||
-                room.nonce() != impl_->nonce || !room.port() || room.port() > 65535 || room.players() > 2 ||
-                room.name().size() > 32)
+                room.nonce() != impl_->nonce || !room.port() || room.port() > 65535 || room.capacity() < 2 ||
+                room.capacity() > 4 || room.players() > room.capacity() || room.bots() > room.capacity() ||
+                room.format() > 2 || room.mode() > 3 || room.name().size() > 32)
                 continue;
             char ip[INET_ADDRSTRLEN];
             if (!inet_ntop(AF_INET, &source.sin_addr, ip, sizeof(ip)))
@@ -242,7 +252,9 @@ void Discovery::poll()
             const std::string address = std::string(ip) + ':' + std::to_string(room.port());
             // Список комнаты на одном ПК может содержать loopback и адрес LAN; это
             // разные пригодные пути подключения, их названия явно содержат IP.
-            impl_->found[address] = {{address, room.name(), room.players(), room.joinable()}, now};
+            impl_->found[address] = {{address, room.name(), room.players(), room.joinable(), room.capacity(),
+                                      room.bots(), room.format(), room.mode()},
+                                     now};
         }
     }
     for (auto it = impl_->found.begin(); it != impl_->found.end();)

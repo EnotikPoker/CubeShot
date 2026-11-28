@@ -192,7 +192,7 @@ void World::updateEntities(float dt)
         bool trigger = e.kind == EntityKind::Sticky && e.fuse <= 0;
         if (e.kind == EntityKind::Mine && e.arm <= 0)
             for (auto& p : players_)
-                if (p.alive() && p.id != e.attack.shooterId &&
+                if (canHarm(e.attack.shooterId, p.id) && p.alive() && p.id != e.attack.shooterId &&
                     std::hypot(p.weaponOrigin().x - e.position.x, p.weaponOrigin().y - e.position.y) < 100)
                     trigger = true;
         if (trigger)
@@ -256,7 +256,7 @@ void World::beam(const Bullet& shot)
     else
         object.reset();
     for (auto& p : players_)
-        if (p.id != shot.shooterId && p.alive())
+        if (canHarm(shot.shooterId, p.id) && p.id != shot.shooterId && p.alive())
             if (auto t = hitPolygon({from.x - p.position.x, from.y - p.position.y},
                                     {end.x - p.position.x, end.y - p.position.y}, p.bodyContour(), 0);
                 t && *t < nearest)

@@ -170,7 +170,7 @@ std::optional<BotAim> rocketAim(const Player& self, const BotTarget& target, con
         if (terrainHit(origin, rocket.position, arena, rocket.collisionRadius) <= 1)
             continue;
         auto enemy = predictedTarget(target);
-        enemy.id = self.id == 1 ? 2 : 1;
+        enemy.id = target.id;
         auto own = self;
         own.clearInput();
         std::vector<Player> bodies{own, enemy};
@@ -233,7 +233,7 @@ std::optional<BotAim> grenadeAim(const Player& self, const BotTarget& target, co
             continue;
         Player ownFuture = self;
         Player enemy = predictedTarget(target);
-        enemy.id = self.id == 1 ? 2 : 1;
+        enemy.id = target.id;
         for (int tick = 0; tick < 181; ++tick)
         {
             Vec2 from = b.position;
@@ -298,7 +298,7 @@ std::optional<BotAim> botAim(const Player& self, const BotTarget& target, const 
 {
     const auto origin = self.weaponOrigin();
     auto opponent = predictedTarget(target);
-    opponent.id = self.id == 1 ? 2 : 1;
+    opponent.id = target.id;
     if (meleeWeapon(self.weapon.kind))
     {
         auto at = center(target);

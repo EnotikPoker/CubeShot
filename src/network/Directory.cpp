@@ -15,7 +15,8 @@ namespace
 using Json = nlohmann::json;
 
 DirectoryResult request(const std::string& url, DirectoryResult::Kind kind, const std::string& name,
-                        const std::string& server, const std::string& token, const std::string& requestId)
+                        const std::string& server, const std::string& token, const std::string& requestId,
+                        MatchRules preferences = {})
 {
     DirectoryResult result;
     result.kind = kind;
@@ -42,7 +43,10 @@ DirectoryResult request(const std::string& url, DirectoryResult::Kind kind, cons
             Json body{{"protocol", protocolVersion},
                       {"nickname", name},
                       {"request_id", requestId},
-                      {"server_id", server}};
+                      {"server_id", server},
+                      {"format", unsigned(preferences.format)},
+                      {"participants", preferences.participants},
+                      {"mode", unsigned(preferences.mode)}};
             reply = http.Post("/v1/reservations", body.dump(), "application/json");
         }
         if (!reply)
@@ -86,8 +90,16 @@ DirectoryResult request(const std::string& url, DirectoryResult::Kind kind, cons
                 DirectoryRoom entry{room.at("id").get<std::string>(),   room.at("name").get<std::string>(),
                                     room.at("players").get<unsigned>(), room.at("reserved").get<unsigned>(),
                                     room.at("phase").get<unsigned>(),   room.at("joinable").get<bool>()};
-                if (entry.id.empty() || entry.id.size() > 64 || entry.name.size() > 32 || entry.players > 2 ||
-                    entry.reserved > 2 || entry.players + entry.reserved > 2 || entry.phase > 4)
+                entry.capacity = room.value("capacity", 2u);
+                entry.bots = room.value("bots", 0u);
+                entry.format = room.value("format", 0u);
+                entry.mode = room.value("mode", 0u);
+                if (entry.capacity < 2 || entry.capacity > 4 || entry.bots > 4 || entry.format > 2 ||
+                    entry.mode > 3)
+                    throw std::runtime_error("Invalid room rules");
+                if (entry.id.empty() || entry.id.size() > 64 || entry.name.size() > 32 ||
+                    entry.players > maxPlayers || entry.reserved > maxPlayers ||
+                    entry.players + entry.reserved > maxPlayers || entry.phase > 5)
                     throw std::runtime_error("Invalid server entry");
                 result.rooms.push_back(std::move(entry));
             }
@@ -124,7 +136,8 @@ struct Directory::Impl
     std::optional<DirectoryResult> immediate;
 
     void start(const std::string& url, DirectoryResult::Kind kind, const std::string& name = {},
-               const std::string& server = {}, const std::string& token = {}, bool background = false)
+               const std::string& server = {}, const std::string& token = {}, bool background = false,
+               MatchRules preferences = {})
     {
         if (jobs.size() >= 16)
         {
@@ -140,7 +153,7 @@ struct Directory::Impl
             std::async(std::launch::async,
                        [=]
                        {
-                           auto result = request(url, kind, name, server, token, id);
+                           auto result = request(url, kind, name, server, token, id, preferences);
                            if (*cancelled && !result.token.empty())
                            {
                                request(url, DirectoryResult::Kind::Released, "", "", result.token, "");
@@ -179,10 +192,11 @@ void Directory::list(const std::string& url)
     impl_->start(url, DirectoryResult::Kind::Rooms);
 }
 
-void Directory::reserve(const std::string& url, const std::string& name, const std::string& server)
+void Directory::reserve(const std::string& url, const std::string& name, const std::string& server,
+                        MatchRules preferences)
 {
     cancel();
-    impl_->start(url, DirectoryResult::Kind::Reserved, name, server);
+    impl_->start(url, DirectoryResult::Kind::Reserved, name, server, "", false, preferences);
 }
 
 void Directory::release(const std::string& url, const std::string& token)

@@ -1,6 +1,9 @@
 #include "game/Arena.h"
 
+#include "game/Collision.h"
 #include "game/Player.h"
+#include <algorithm>
+#include <cmath>
 
 namespace cubeshot
 {
@@ -28,13 +31,15 @@ const std::vector<MapInfo>& mapCatalog()
         {MapId::DocksLoading, U"Доки: Погрузочная", MapTheme::Docks},
         {MapId::DocksContainers, U"Доки: Контейнеры", MapTheme::Docks},
         {MapId::Foundry, U"Литейная", MapTheme::Foundry},
-        {MapId::Mine, U"Литейная: Шахта", MapTheme::Foundry}};
+        {MapId::Mine, U"Литейная: Шахта", MapTheme::Foundry},
+        {MapId::Crossroads, U"Перекрёсток", MapTheme::Factory},
+        {MapId::Terraces, U"Высокие террасы", MapTheme::Nature}};
     return maps;
 }
 
 bool validMap(MapId id, bool test)
 {
-    return static_cast<unsigned>(id) <= static_cast<unsigned>(MapId::Mine) && (test || id != MapId::Test);
+    return static_cast<unsigned>(id) <= static_cast<unsigned>(MapId::Terraces) && (test || id != MapId::Test);
 }
 
 std::vector<MapId> playableMaps(bool test)
@@ -59,6 +64,50 @@ Arena Arena::create(MapId id, bool test)
     {
         auto a = createDefault();
         a.decorate();
+        return a;
+    }
+    if (id == MapId::Crossroads || id == MapId::Terraces)
+    {
+        bool tall = id == MapId::Terraces;
+        Arena a = create(tall ? MapId::FactoryLarge : MapId::FactoryMedium, false);
+        a.map = id;
+        // Retain the full proven horizontal stair routes as permanent supports.
+        std::map<unsigned, Rect> routes;
+        for (auto cell : a.terrain)
+            if (!cell.object)
+            {
+                auto [it, added] = routes.emplace(cell.group, cell.bounds);
+                if (!added)
+                {
+                    auto& b = it->second;
+                    float right =
+                              std::max(b.position.x + b.size.x, cell.bounds.position.x + cell.bounds.size.x),
+                          bottom =
+                              std::max(b.position.y + b.size.y, cell.bounds.position.y + cell.bounds.size.y);
+                    b.position.x = std::min(b.position.x, cell.bounds.position.x);
+                    b.position.y = std::min(b.position.y, cell.bounds.position.y);
+                    b.size = {right - b.position.x, bottom - b.position.y};
+                }
+            }
+        a.platforms = a.fixedPlatforms;
+        for (auto [group, box] : routes)
+            if (box.size.x >= box.size.y)
+                a.platforms.push_back(box);
+        a.terrain.clear();
+        a.materials.clear();
+        a.spatial.clear();
+        a.nextTerrainGroup = 1;
+        float w = a.bounds.size.x, f = a.bounds.size.y - 100;
+        a.fixedPlatforms = a.platforms;
+        for (float side : {.32f, .68f})
+        {
+            a.addTerrain({{w * side - 12, f - 100}, {24, 100}}, Material::Wood);
+            a.addTerrain({{w * side - 30, f - 32}, {60, 32}}, Material::Glass, true);
+        }
+        a.addTerrain({{w / 2 - 40, f - 48}, {80, 48}}, Material::Stone, true);
+        a.rebuildTerrain();
+        if (test)
+            a.spawnPoints = a.combatSpawns();
         return a;
     }
     if (unsigned(id) >= unsigned(MapId::LabSectors))
@@ -176,6 +225,55 @@ Arena Arena::create(MapId id, bool test)
                          {w / 2 - 24, floor - 48}};
     a.decorate();
     return a;
+}
+
+std::vector<Vec2> Arena::combatSpawns() const
+{
+    std::vector<Vec2> out;
+    const float w = bounds.size.x, h = bounds.size.y;
+    // Search supported, unobstructed bodies on both sides, avoiding barrels/hazards.
+    for (float ratio : {.06f, .94f, .25f, .75f})
+    {
+        Vec2 best{bounds.position.x + w * ratio - 24, bounds.position.y + h - 148};
+        float cost = 1e20f;
+        for (auto floor : fixedPlatforms.empty() ? platforms : fixedPlatforms)
+        {
+            if (floor.size.x < 50)
+                continue;
+            for (float x = floor.position.x + 2; x + 48 <= floor.position.x + floor.size.x - 2; x += 12)
+            {
+                Vec2 at{x, floor.position.y - 48};
+                Rect body{at, {48, 48}};
+                bool safe = true;
+                for (auto wall : platforms)
+                    if (collision::overlaps(body, wall))
+                    {
+                        safe = false;
+                        break;
+                    }
+                for (auto p : out)
+                    if (std::hypot(at.x - p.x, at.y - p.y) < 90)
+                        safe = false;
+                for (auto p : barrelSpawns)
+                    if (std::hypot(at.x - p.x, at.y - p.y) < 165)
+                        safe = false;
+                for (auto hazard : hazards)
+                    if (collision::overlaps({{at.x - 12, at.y}, {72, 56}}, hazard.bounds))
+                        safe = false;
+                if (!safe)
+                    continue;
+                float c =
+                    std::abs(x - (bounds.position.x + w * ratio - 24)) + (h - 100 - floor.position.y) * .2f;
+                if (c < cost)
+                {
+                    cost = c;
+                    best = at;
+                }
+            }
+        }
+        out.push_back(best);
+    }
+    return out;
 }
 
 Arena Arena::createDuel()

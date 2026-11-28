@@ -186,16 +186,17 @@ void connectionAndTimeout()
     r.feedGuest = false;
     r.run(.4);
     expect(r.server.match().world().players()[1].velocity.x == 0, "Lost continuous input stops after 250ms");
-    r.until([&] { return !r.server.match().snapshot().connected[1]; }, 5.5, "Silent client times out");
+    r.until([&] { return r.server.match().snapshot().slots[1] == SlotKind::Bot; }, 5.5,
+            "Silent client times out");
     const auto stopped = r.server.match().snapshot();
-    expect(stopped.phase == MatchPhase::Lobby && stopped.score[0] == 0 && stopped.score[1] == 0 &&
-               !stopped.ready[0] && stopped.aborted == AbortReason::PeerTimeout,
-           "Timeout aborts and clears score/readiness");
+    expect(stopped.phase == MatchPhase::Round && stopped.slots[1] == SlotKind::Bot,
+           "Timed out participant transfers to bot without resetting match");
     r.guest.disconnect();
     r.feedGuest = true;
     r.guestInput = {};
     r.guest.connect(r.address());
-    r.until([&] { return r.guest.connected(); }, 3, "Replacement guest joins same host room");
+    r.until([&] { return !r.guest.connecting(); }, 3, "Active match replacement attempt resolves");
+    expect(!r.guest.connected(), "People cannot join an already started match");
     r.host.disconnect();
     r.until([&] { return r.server.hostLeft(); }, 3, "Owner leave marks server for shutdown");
 }
@@ -373,8 +374,8 @@ void impairedCombat()
                r.guest.snapshot()->players[0].actives[0].kind == ActiveKind::Barrier,
            "Both clients retain the authoritative active state");
     r.guest.disconnect();
-    r.until([&] { return r.host.snapshot()->phase == MatchPhase::Lobby && r.host.snapshot()->score[0] == 0; },
-            3, "Leaving game resets score without award");
+    r.until([&] { return r.host.snapshot()->slots[1] == SlotKind::Bot; }, 3,
+            "Leaving game transfers the participant to a bot");
     simulateNetwork(0, 0);
 }
 } // namespace

@@ -27,6 +27,8 @@ public:
     void selectMap(MapId map);
     void selectRules(unsigned wins);
     void selectRules(MatchRules rules);
+    void configureSlot(PlayerId slot, SlotKind kind, unsigned difficulty, TeamId team);
+    void selectTeam(TeamId team);
     void changeMap();
     std::vector<GameEvent> takeEvents();
     bool connected() const;

@@ -416,6 +416,16 @@ int Application::run()
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
             {
                 const auto key = event.key.scancode;
+                if ((session || menu_.bots()) && SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] &&
+                    (key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT))
+                {
+                    auto state = session ? *session->snapshot() : bots_.match()->snapshot();
+                    inspectedPlayer_ =
+                        (inspectedPlayer_ + state.players.size() + (key == SDL_SCANCODE_RIGHT ? 1 : -1)) %
+                        state.players.size();
+                    buildScroll_ = {};
+                    continue;
+                }
                 if (key == SDL_SCANCODE_TAB && !session && !menu_.bots() &&
                     (before == Screen::Playing || menu_.liveTestPanel()))
                 {
@@ -755,10 +765,11 @@ int Application::run()
             SDL_GetMouseState(&mx, &my);
             Vec2 logical;
             SDL_RenderCoordinatesFromWindow(renderer_, mx, my, &logical.x, &logical.y);
-            rendered = rendered && drawBuildInspector(renderer_, state.players,
-                                                      {network::nicknameText(state.names[0]),
-                                                       network::nicknameText(state.names[1])},
-                                                      buildScroll_, logical);
+            unsigned index = inspectedPlayer_ % state.players.size();
+            std::vector<Player> selected{state.players[index]};
+            std::array<std::u32string, 2> names{
+                {network::nicknameText(state.names[index]) + U" · Стрелки: участник", U""}};
+            rendered = rendered && drawBuildInspector(renderer_, selected, names, buildScroll_, logical);
         }
         if (!rendered || !SDL_RenderPresent(renderer_))
         {

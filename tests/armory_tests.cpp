@@ -88,7 +88,7 @@ void armory()
            "Other player independently keeps pistol");
     advance(m, 240);
     expect(m.phase() == MatchPhase::Armory, "Result remains visible before countdown begins");
-    advance(m, 90);
+    advance(m, unsigned((Match::spinSeconds - 2.5f) * 120) + 2);
     state = m.snapshot();
     expect(state.phase == MatchPhase::Countdown && state.round == death.round + 1 &&
                state.loadout[0] == rolled && state.players[0].weapon.kind == rolled &&

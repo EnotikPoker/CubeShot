@@ -32,7 +32,9 @@ enum class MapId : std::uint32_t
     DocksLoading,
     DocksContainers,
     Foundry,
-    Mine
+    Mine,
+    Crossroads,
+    Terraces
 };
 enum class MapTheme
 {
@@ -82,6 +84,7 @@ struct Arena
     std::vector<Rect> combatScreens;
     std::vector<Vec2> controlAnchors() const;
     std::vector<Vec2> respawnPoints() const;
+    std::vector<Vec2> combatSpawns() const;
     void addTerrain(Rect box, Material material, bool object = false);
     void decorate();
     void rebuildTerrain();

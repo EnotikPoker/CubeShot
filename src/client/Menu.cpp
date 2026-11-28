@@ -34,6 +34,39 @@ std::vector<MenuButton> Menu::buttons() const
     std::vector<MenuButton> result;
     switch (screen_)
     {
+        case Screen::Roster:
+            rosterLabels_.clear();
+            for (unsigned i = 0; i < participants_; ++i)
+            {
+                bool offline = rosterReturn_ == Screen::BotSetup;
+                auto kind = offline ? (i ? SlotKind::Bot : SlotKind::Human) : snapshot_.slots[i];
+                auto difficulty = offline ? difficulties_[i] : snapshot_.botDifficulty[i];
+                auto team = offline ? teams_[i] : snapshot_.teams[i];
+                std::u32string name =
+                    offline ? (i ? U"Бот" : U"Вы") : network::nicknameText(snapshot_.names[i]);
+                rosterLabels_.push_back(U"P" + asciiText(std::to_string(i + 1)) + U" · " +
+                                        (kind == SlotKind::Empty ? U"Свободно" : name));
+                rosterLabels_.push_back(kind == SlotKind::Human ? U"Человек"
+                                        : kind == SlotKind::Bot
+                                            ? U"Бот · " +
+                                                  std::u32string(botDifficultyName(BotDifficulty(difficulty)))
+                                            : U"Добавить бота");
+                rosterLabels_.push_back(U"Команда " + asciiText(std::to_string(team)));
+            }
+            for (unsigned i = 0; i < participants_; ++i)
+            {
+                bool offline = rosterReturn_ == Screen::BotSetup;
+                bool human = offline ? i == 0 : snapshot_.slots[i] == SlotKind::Human;
+                result.push_back({rosterLabels_[i * 3], {}, true});
+                result.push_back(
+                    {rosterLabels_[i * 3 + 1], {}, human || (!offline && own_ != snapshot_.host)});
+                result.push_back({rosterLabels_[i * 3 + 2],
+                                  {},
+                                  format_ != MatchFormat::Teams ||
+                                      (!offline && own_ != i + 1 && (own_ != snapshot_.host || human))});
+            }
+            result.push_back({U"Назад", {}});
+            break;
         case Screen::TestSetup:
             return testPanel_.buttons();
         case Screen::Main:
@@ -67,7 +100,11 @@ std::vector<MenuButton> Menu::buttons() const
             result.push_back({U"Назад", {}});
             break;
         case Screen::Online:
-            result = {{U"Быстрый матч", {}}, {U"Список серверов", {}}, {U"Назад", {}}};
+            result = {{U"Быстрый матч", {}},
+                      {U"Список серверов", {}},
+                      {U"Назад", {}},
+                      {formatLabel_, {}},
+                      {modeLabel_, {}}};
             break;
         case Screen::OnlineBrowser:
             if (onlineRooms_.empty())
@@ -107,10 +144,18 @@ std::vector<MenuButton> Menu::buttons() const
             break;
         }
         case Screen::BotSetup:
-            result = {
-                {U"Предыдущая карта", {}}, {U"Следующая карта", {}}, {botDifficultyName(botDifficulty_), {}},
-                {U"Начать", {}},           {U"Назад", {}},           {winsLabel_, {}},
-                {modeLabel_, {}}};
+            result = {{U"Предыдущая карта", {}},
+                      {U"Следующая карта", {}},
+                      {botDifficultyName(botDifficulty_), {}},
+                      {U"Начать", {}},
+                      {U"Назад", {}},
+                      {winsLabel_, {}},
+                      {modeLabel_, {}},
+                      {formatLabel_, {}},
+                      {fireLabel_, {}},
+                      {U"Состав", {}}};
+            if (format_ == MatchFormat::Teams && std::count(teams_.begin(), teams_.end(), 1u) != 2)
+                result[3].placeholder = true;
             break;
         case Screen::BotResult:
             result = {{U"Реванш", {}}, {U"Карта и сложность", {}}, {U"Выйти в главное меню", {}}};
@@ -121,14 +166,18 @@ std::vector<MenuButton> Menu::buttons() const
                        : screen_ == Screen::Result       ? U"Реванш"
                                                          : U"Готов",
                        {}},
-                      {U"Сменить карту", {}, !snapshot_.voting && own_ != 1},
+                      {U"Сменить карту", {}, !snapshot_.voting && own_ != snapshot_.host},
                       {U"Выйти из комнаты", {}}};
             if (screen_ == Screen::Lobby)
             {
-                result[1] = {U"Предыдущая карта", {}, !snapshot_.voting && own_ != 1};
-                result.insert(result.begin() + 2, {U"Следующая карта", {}, !snapshot_.voting && own_ != 1});
-                result.insert(result.begin() + 3, {winsLabel_, {}, own_ != 1});
-                result.insert(result.begin() + 4, {modeLabel_, {}, own_ != 1});
+                result[1] = {U"Предыдущая карта", {}, !snapshot_.voting && own_ != snapshot_.host};
+                result.insert(result.begin() + 2,
+                              {U"Следующая карта", {}, !snapshot_.voting && own_ != snapshot_.host});
+                result.insert(result.begin() + 3, {winsLabel_, {}, own_ != snapshot_.host});
+                result.insert(result.begin() + 4, {modeLabel_, {}, own_ != snapshot_.host});
+                result.push_back({formatLabel_, {}, own_ != snapshot_.host});
+                result.push_back({fireLabel_, {}, own_ != snapshot_.host});
+                result.push_back({U"Состав / команды", {}});
                 if (snapshot_.voting && own_ && snapshot_.votes[own_ - 1] < 0)
                     result[0].label = U"Голосовать за карту";
                 else if (snapshot_.voting && (snapshot_.votes[0] < 0 || snapshot_.votes[1] < 0))
@@ -177,6 +226,21 @@ std::vector<MenuButton> Menu::buttons() const
         for (unsigned i = 0; i < result.size(); ++i)
             result[i].bounds = i < 3 ? Rect{{166.f + i * 214, 432}, {200, 30}}
                                      : Rect{{166.f + (i - 3) * 320, 472}, {308, 30}};
+    if (screen_ == Screen::BotSetup || screen_ == Screen::Lobby)
+    {
+        for (unsigned i = 0; i < result.size(); ++i)
+            result[i].bounds = {{32.f + (i % 2) * 464, 242.f + (i / 2) * 48}, {432, 40}};
+    }
+    if (screen_ == Screen::Online)
+        for (unsigned i = 0; i < result.size(); ++i)
+            result[i].bounds = {{264, 180.f + i * 56}, {432, 46}};
+    if (screen_ == Screen::Roster)
+    {
+        for (unsigned i = 0; i < participants_; ++i)
+            for (unsigned j = 0; j < 3; ++j)
+                result[i * 3 + j].bounds = {{24.f + j * 310, 150.f + i * 72}, {300, 48}};
+        result.back().bounds = {{264, 460}, {432, 36}};
+    }
     return result;
 }
 
@@ -288,6 +352,45 @@ MenuAction Menu::activate()
                    : screen_ == Screen::Modes ? U"Этот режим пока недоступен"
                                               : U"Настройки пока недоступны";
     }
+    else if (screen_ == Screen::Roster)
+    {
+        if (selection_ == int(participants_ * 3))
+        {
+            open(rosterReturn_);
+            return MenuAction::None;
+        }
+        unsigned slot = unsigned(selection_) / 3, column = unsigned(selection_) % 3;
+        bool offline = rosterReturn_ == Screen::BotSetup;
+        editedSlot_ = slot + 1;
+        editedKind_ = offline ? SlotKind::Bot : snapshot_.slots[slot];
+        editedDifficulty_ = offline ? difficulties_[slot] : snapshot_.botDifficulty[slot];
+        editedTeam_ = offline ? teams_[slot] : snapshot_.teams[slot];
+        if (column == 1)
+        {
+            if (editedKind_ == SlotKind::Empty)
+            {
+                editedKind_ = SlotKind::Bot;
+                editedDifficulty_ = 1;
+            }
+            else if (editedDifficulty_ < 2)
+                ++editedDifficulty_;
+            else
+            {
+                editedDifficulty_ = 0;
+                if (!offline)
+                    editedKind_ = SlotKind::Empty;
+            }
+        }
+        if (column == 2)
+            editedTeam_ = 3 - editedTeam_;
+        if (offline)
+        {
+            difficulties_[slot] = editedDifficulty_;
+            teams_[slot] = editedTeam_;
+        }
+        else
+            return slot + 1 == own_ ? MenuAction::SelectTeam : MenuAction::ConfigureSlot;
+    }
     else if (screen_ == Screen::Main)
     {
         if (selection_ == 1)
@@ -344,6 +447,17 @@ MenuAction Menu::activate()
     }
     else if (screen_ == Screen::Online)
     {
+        if (selection_ == 3)
+        {
+            cycleFormat();
+            return MenuAction::None;
+        }
+        if (selection_ == 4)
+        {
+            gameMode_ = GameMode((unsigned(gameMode_) + 1) % 4);
+            updateRuleLabels();
+            return MenuAction::None;
+        }
         if (selection_ == 0)
             return MenuAction::QuickMatch;
         if (selection_ == 1)
@@ -456,7 +570,10 @@ MenuAction Menu::activate()
             botMap_ = maps[(index + (selection_ == 0 ? maps.size() - 1 : 1)) % maps.size()];
         }
         else if (selection_ == 2)
+        {
             botDifficulty_ = static_cast<BotDifficulty>((static_cast<int>(botDifficulty_) + 1) % 3);
+            difficulties_.fill(unsigned(botDifficulty_));
+        }
         else if (selection_ == 3)
         {
             bots_ = true;
@@ -466,6 +583,18 @@ MenuAction Menu::activate()
         else if (selection_ == 5)
         {
             cycleTarget();
+        }
+        else if (selection_ == 7)
+            cycleFormat();
+        else if (selection_ == 8)
+        {
+            friendlyFire_ = !friendlyFire_;
+            updateRuleLabels();
+        }
+        else if (selection_ == 9)
+        {
+            rosterReturn_ = Screen::BotSetup;
+            open(Screen::Roster);
         }
         else if (selection_ == 6)
         {
@@ -519,6 +648,23 @@ MenuAction Menu::activate()
             updateRuleLabels();
             return MenuAction::SelectRules;
         }
+        if (selection_ == 6)
+        {
+            cycleFormat();
+            return MenuAction::SelectRules;
+        }
+        if (selection_ == 7)
+        {
+            friendlyFire_ = !friendlyFire_;
+            updateRuleLabels();
+            return MenuAction::SelectRules;
+        }
+        if (selection_ == 8)
+        {
+            rosterReturn_ = Screen::Lobby;
+            open(Screen::Roster);
+            return MenuAction::None;
+        }
         return MenuAction::LeaveRoom;
     }
     return MenuAction::None;
@@ -526,6 +672,11 @@ MenuAction Menu::activate()
 
 void Menu::escape()
 {
+    if (screen_ == Screen::Roster)
+    {
+        open(rosterReturn_);
+        return;
+    }
     if (screen_ == Screen::TestSetup)
     {
         open(testReturn_);
@@ -575,7 +726,9 @@ void Menu::setRooms(std::vector<ListedRoom> rooms)
     if (roomPage_ * 3 >= rooms_.size())
         roomPage_ = 0;
     for (const auto& room : rooms_)
-        labels_.push_back(asciiText(room.address + "  " + std::to_string(room.players) + "/2") +
+        labels_.push_back(asciiText(room.address + "  " + std::to_string(room.players) + "/" +
+                                    std::to_string(room.capacity) + " [bots " + std::to_string(room.bots) +
+                                    "]") +
                           (room.joinable ? U"" : U" Занята"));
     selection_ = std::min(selection_, static_cast<int>(buttons().size()) - 1);
     cancelClick();
@@ -589,7 +742,8 @@ void Menu::setOnlineRooms(std::vector<network::DirectoryRoom> rooms)
         const auto& a = rooms[i];
         const auto& b = onlineRooms_[i];
         changed = a.id != b.id || a.name != b.name || a.players != b.players || a.reserved != b.reserved ||
-                  a.joinable != b.joinable || a.phase != b.phase;
+                  a.joinable != b.joinable || a.phase != b.phase || a.capacity != b.capacity ||
+                  a.bots != b.bots || a.format != b.format || a.mode != b.mode;
     }
     if (!changed)
         return;
@@ -598,7 +752,9 @@ void Menu::setOnlineRooms(std::vector<network::DirectoryRoom> rooms)
     if (onlinePage_ * 3 >= onlineRooms_.size())
         onlinePage_ = 0;
     for (const auto& room : onlineRooms_)
-        onlineLabels_.push_back(asciiText(room.name + "  " + std::to_string(room.players) + "/2") +
+        onlineLabels_.push_back(asciiText(room.name + "  " + std::to_string(room.players) + "/" +
+                                          std::to_string(room.capacity) + " [bots " +
+                                          std::to_string(room.bots) + "]") +
                                 (room.reserved ? U" Бронь" : U"") + (room.joinable ? U"" : U" Занят"));
     selection_ = std::min(selection_, static_cast<int>(buttons().size()) - 1);
     cancelClick();
@@ -625,6 +781,9 @@ void Menu::backspace()
 void Menu::botState(const WorldSnapshot& snapshot)
 {
     snapshot_ = snapshot;
+    format_ = snapshot.rules.format;
+    participants_ = snapshot.rules.participants;
+    friendlyFire_ = snapshot.rules.friendlyFire;
     gameMode_ = snapshot.rules.mode;
     wins_ = snapshot.rules.wins;
     stages_ = snapshot.rules.stages;
@@ -649,6 +808,9 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
                 ? static_cast<MapId>(snapshot.votes[own - 1])
                 : snapshot.map;
     snapshot_ = snapshot;
+    format_ = snapshot.rules.format;
+    participants_ = snapshot.rules.participants;
+    friendlyFire_ = snapshot.rules.friendlyFire;
     gameMode_ = snapshot.rules.mode;
     wins_ = snapshot.rules.wins;
     stages_ = snapshot.rules.stages;
@@ -662,6 +824,8 @@ void Menu::networkState(const WorldSnapshot& snapshot, PlayerId own)
     const auto phase = snapshot.phase;
     if (phase == MatchPhase::Lobby)
     {
+        if (screen_ == Screen::Roster)
+            return;
         if (screen_ != Screen::Lobby)
             open(Screen::Lobby);
         if (snapshot.aborted != AbortReason::None)
@@ -717,11 +881,38 @@ namespace cubeshot::client
 {
 void Menu::updateRuleLabels()
 {
+    formatLabel_ = format_ == MatchFormat::Duel ? U"Формат: Дуэль"
+                   : format_ == MatchFormat::Teams
+                       ? U"Формат: 2×2"
+                       : U"Каждый за себя · " + asciiText(std::to_string(participants_));
+    fireLabel_ = friendlyFire_ ? U"Урон союзникам: вкл" : U"Урон союзникам: выкл";
     modeLabel_ = U"Режим: " + std::u32string(modeName(gameMode_));
     winsLabel_ = gameMode_ == GameMode::ArmsRace ? U"Цепочка: " + asciiText(std::to_string(stages_))
                  : gameMode_ == GameMode::Control
                      ? U"Цель: " + asciiText(std::to_string(controlGoal_)) + U" · 8 мин"
                      : U"До " + asciiText(std::to_string(wins_)) + U" побед";
+}
+
+void Menu::cycleFormat()
+{
+    if (format_ == MatchFormat::Duel)
+    {
+        format_ = MatchFormat::FreeForAll;
+        participants_ = 3;
+    }
+    else if (format_ == MatchFormat::FreeForAll && participants_ == 3)
+        participants_ = 4;
+    else if (format_ == MatchFormat::FreeForAll)
+    {
+        format_ = MatchFormat::Teams;
+        participants_ = 4;
+    }
+    else
+    {
+        format_ = MatchFormat::Duel;
+        participants_ = 2;
+    }
+    updateRuleLabels();
 }
 
 void Menu::cycleTarget()

@@ -95,12 +95,16 @@ BotObservation observeBot(const World& world, PlayerId self, PlayerId opponent)
                 t.spawnProtection = p.spawnProtection;
                 t.lifeRevision = p.lifeRevision;
             }
-    result.entities = world.entities();
+    for (auto entity : world.entities())
+        if (entity.kind != EntityKind::Mine || world.canHarm(entity.attack.shooterId, self))
+            result.entities.push_back(entity);
     for (const auto& b : world.bullets())
-        if (b.shooterId != self || explosiveWeapon(b.weapon) ||
+        if ((world.canHarm(b.shooterId, self) && b.shooterId != self) || explosiveWeapon(b.weapon) ||
             (b.weapon == WeaponKind::Disc && b.bounces > 0))
             result.bullets.push_back(b);
-    result.fires = world.fires();
+    for (auto fire : world.fires())
+        if (world.canHarm(fire.owner, self))
+            result.fires.push_back(fire);
     return result;
 }
 
@@ -154,7 +158,7 @@ Player predictBotTarget(const BotTarget& target, const Player& observer, float s
 {
     Player other = predictedTarget(target), self = observer;
     self.id = observer.id ? observer.id : 1;
-    other.id = self.id == 1 ? 2 : 1;
+    other.id = target.id;
     self.clearInput();
     self.applyInput({std::clamp((observer.velocity.x - observer.pushX) / observer.movementSpeed(), -1.f, 1.f),
                      false, false, observer.aimDirection, false, false, observer.jetpackActive});

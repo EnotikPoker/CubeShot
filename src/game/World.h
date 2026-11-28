@@ -27,6 +27,10 @@ public:
     // Zero retains support for custom test arenas using every spawn.
     explicit World(Arena arena = Arena::createDefault(), std::size_t playerCount = 0);
 
+    void setTeams(const std::array<TeamId, maxPlayers>& teams, bool friendlyFire);
+    bool allied(PlayerId a, PlayerId b) const;
+    bool canHarm(PlayerId source, PlayerId target) const;
+    void arrangeSpawns(const std::array<TeamId, maxPlayers>& teams, bool teamMode, unsigned rotation);
     void setPlayerInput(PlayerId id, const PlayerInput& input);
     void clearPlayerInput(PlayerId id);
     void requestAction(PlayerId id, bool jump, bool shoot, Vec2 aim, std::uint64_t sequence = 0,
@@ -73,6 +77,8 @@ public:
     }
 
 private:
+    std::array<TeamId, maxPlayers> teams_{};
+    bool friendlyFire_ = false;
     void resetEntities();
     void updateEntities(float dt);
     void syncScreens();

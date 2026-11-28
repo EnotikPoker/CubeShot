@@ -123,9 +123,9 @@ void rules()
     expect(m.phase() == MatchPhase::Countdown && m.snapshot().score[0] == 0, "Rematch resets score");
     advance(m, 360);
     m.disconnect(1, AbortReason::PeerTimeout);
-    expect(m.phase() == MatchPhase::Lobby && m.snapshot().score[0] == 0 && m.snapshot().score[1] == 0 &&
-               m.snapshot().aborted == AbortReason::PeerTimeout,
-           "Disconnect aborts without winner");
+    expect(m.phase() == MatchPhase::Round && m.snapshot().slots[0] == SlotKind::Bot &&
+               m.snapshot().score[0] == 0,
+           "Disconnected combat participant keeps its state under bot control");
 }
 
 void mapChangeAfterMatch()
@@ -218,11 +218,8 @@ void actionsAndDraw()
            "Shot uses aim at press, even if control arrives afterward");
     const auto oldId = captured.world().bullets()[0].id;
     captured.disconnect(2);
-    ready(captured);
-    approach(captured);
-    captured.action(1, captured.round(), 1, false, true, {1, 0});
-    advance(captured, 1);
-    expect(captured.world().bullets()[0].id > oldId, "Bullet IDs survive round resets");
+    expect(captured.snapshot().slots[1] == SlotKind::Bot && captured.world().bullets()[0].id == oldId,
+           "Replacement preserves in-flight bullets and their IDs");
 }
 } // namespace
 

@@ -139,7 +139,7 @@ void World::radialActive(Player& p, ActiveKind kind)
     emit(EventKind::ActiveCast, b, at);
     events_.back().radius = radius;
     for (auto& victim : players_)
-        if (victim.id != p.id && victim.alive())
+        if (canHarm(p.id, victim.id) && victim.id != p.id && victim.alive())
         {
             auto effect = blastEffect(at, victim, arena_, 0, radius, b.damage);
             if (effect.damage > 0)

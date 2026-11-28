@@ -437,7 +437,11 @@ void staticScene(const Painter& p, const Arena& arena)
 
 SDL_FColor ownerColor(PlayerId id, PlayerId own)
 {
-    return id == own ? SDL_FColor{.23f, .67f, .98f, 1} : SDL_FColor{.96f, .21f, .29f, 1};
+    if (id == own)
+        return {.23f, .67f, .98f, 1};
+    static constexpr SDL_FColor colors[]{
+        {.96f, .21f, .29f, 1}, {.96f, .21f, .29f, 1}, {.95f, .75f, .2f, 1}, {.69f, .38f, .94f, 1}};
+    return colors[(id - 1) % maxPlayers];
 }
 
 void remains(const Painter& p, const PhysicsPiece& piece, PlayerId own, bool blood, bool fragment)
@@ -1050,6 +1054,23 @@ bool renderSnapshot(SDL_Renderer* r, const WorldSnapshot& s, PlayerId own, const
     cached.applyTerrain(s.terrain);
     bool ok = renderWorld(r, cached, s.players, s.bullets, own, false, effects, s.corpses, s.pieces, s.fires,
                           s.entities);
+    {
+        WorldView view(cached.bounds);
+        for (const auto& player : s.players)
+            if (player.alive())
+            {
+                auto at = view.toScreen(player.position);
+                auto label = U"P" + std::u32string(1, char32_t(U'0' + player.id));
+                SDL_Color color{215, 230, 245, 255};
+                if (s.rules.format == MatchFormat::Teams)
+                {
+                    label += U" · К" + std::u32string(1, char32_t(U'0' + s.teams[player.id - 1]));
+                    color = s.teams[player.id - 1] == 1 ? SDL_Color{90, 190, 255, 255}
+                                                        : SDL_Color{255, 174, 80, 255};
+                }
+                ok = ok && drawText(r, label, {at.x, at.y - 25}, 1, color);
+            }
+    }
     if (s.rules.mode == GameMode::Control)
     {
         WorldView view(cached.bounds);

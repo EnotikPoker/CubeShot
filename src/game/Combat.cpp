@@ -61,10 +61,11 @@ bool World::damage(Player& player, const Bullet& bullet, Vec2 at, int amount, bo
                    DamageContext flags)
 {
     const bool periodic = flags.periodic, reflected = flags.reflected;
-    if (!damageLiving_ || amount <= 0 || !player.alive() || player.invulnerability > 0 ||
-        player.spawnProtection > 0)
+    if (!canHarm(bullet.shooterId, player.id) || !damageLiving_ || amount <= 0 || !player.alive() ||
+        player.invulnerability > 0 || player.spawnProtection > 0)
         return false;
-    if (bullet.shooterId && bullet.shooterId != player.id && !flags.environmental)
+    if (bullet.shooterId && bullet.shooterId != player.id && !allied(bullet.shooterId, player.id) &&
+        !flags.environmental)
         player.lastHostileAgo = 0;
     const auto shields = player.shields;
     if (!periodic && !reflected && !flags.environmental && player.absorb(bullet))
@@ -266,7 +267,7 @@ void World::explode(const Bullet& bullet, Vec2 at, PlayerId direct)
     debris_.blast(at, radius);
     for (auto& player : players_)
     {
-        if (!player.alive())
+        if (!canHarm(bullet.shooterId, player.id) || !player.alive())
             continue;
         auto effect = blastEffect(at, player, arena_, direct, radius, explosion.damage);
         if (bullet.shooterId != player.id && player.abilities.level(AbilityKind::Stability))
@@ -369,7 +370,7 @@ void World::updateFire(float dt)
         for (auto& player : players_)
         {
             const auto point = nearestPoint(fire.position, player.bounds());
-            if (player.alive() && player.cleanse <= 0 &&
+            if (canHarm(fire.owner, player.id) && player.alive() && player.cleanse <= 0 &&
                 std::hypot(point.x - fire.position.x, point.y - fire.position.y) < fire.radius &&
                 damageLiving_)
             {
@@ -420,7 +421,7 @@ void World::melee(const Bullet& attack)
     const Vec2 aim{attack.velocity.x / speed, attack.velocity.y / speed};
     for (auto& player : players_)
     {
-        if (!player.alive() || player.id == attack.shooterId)
+        if (!canHarm(attack.shooterId, player.id) || !player.alive() || player.id == attack.shooterId)
             continue;
         if (auto contact = meleeContact(attack.position, aim, reach, player, arena_, stats.halfAngle))
             if (damage(player, attack, contact->point, attack.damage))

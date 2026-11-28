@@ -94,6 +94,20 @@ bool decodeBulletExpansion(const wire::Bullet& v, Bullet& b)
 
 void encodeExpansion(wire::Snapshot& v, const WorldSnapshot& s)
 {
+    v.set_format(unsigned(s.rules.format));
+    v.set_participants(s.rules.participants);
+    v.set_friendly_fire(s.rules.friendlyFire);
+    for (unsigned i = 0; i < maxPlayers; ++i)
+    {
+        v.add_slots(unsigned(s.slots[i]));
+        v.add_teams(s.teams[i]);
+        v.add_difficulty(s.botDifficulty[i]);
+    }
+    for (auto x : s.teamScore)
+        v.add_team_score(x);
+    v.set_winner_team(s.winnerTeam);
+    v.set_host(s.host);
+    v.set_decision_remaining(s.decisionRemaining);
     v.set_rules_mode(unsigned(s.rules.mode));
     v.set_stages(s.rules.stages);
     v.set_control_goal(s.rules.controlGoal);
@@ -145,21 +159,55 @@ void encodeExpansion(wire::Snapshot& v, const WorldSnapshot& s)
 
 bool decodeExpansion(const wire::Snapshot& v, WorldSnapshot& s)
 {
+    s.rules.format = MatchFormat(v.format());
+    s.rules.participants = v.participants();
+    s.rules.friendlyFire = v.friendly_fire();
+    if (v.slots_size() != maxPlayers || v.teams_size() != maxPlayers || v.difficulty_size() != maxPlayers ||
+        v.team_score_size() != 2 || v.winner_team() > 2 || !v.host() || v.host() > maxPlayers ||
+        !bounded(v.decision_remaining(), 0, 30))
+        return false;
+    s.host = v.host();
+    s.winnerTeam = v.winner_team();
+    s.decisionRemaining = v.decision_remaining();
+    for (unsigned i = 0; i < maxPlayers; ++i)
+    {
+        if (v.slots(i) > 2 || v.teams(i) < 1 || v.teams(i) > 2 || v.difficulty(i) > 2)
+            return false;
+        s.slots[i] = SlotKind(v.slots(i));
+        s.teams[i] = v.teams(i);
+        s.botDifficulty[i] = v.difficulty(i);
+    }
+    for (unsigned i = 0; i < 2; ++i)
+    {
+        if (v.team_score(i) > 240)
+            return false;
+        s.teamScore[i] = v.team_score(i);
+    }
     s.rules.mode = GameMode(v.rules_mode());
     s.rules.stages = v.stages();
     s.rules.controlGoal = v.control_goal();
-    if (!s.rules.valid())
+    if (!s.rules.valid() || s.host > s.rules.participants ||
+        (s.rules.format != MatchFormat::Teams && s.winnerTeam) ||
+        (s.rules.format == MatchFormat::Teams && v.winner()) || v.winner() > s.rules.participants)
         return false;
+    for (unsigned i = 0; i < maxPlayers; ++i)
+    {
+        if (i >= s.rules.participants && s.slots[i] != SlotKind::Empty)
+            return false;
+        if (v.connected_size() == maxPlayers && v.connected(i) != (s.slots[i] != SlotKind::Empty))
+            return false;
+    }
     auto m = v.mode_state();
-    if (m.chaos() > 6 || m.next_chaos() > 6 || m.zone() > 2 || m.control_size() != 2 ||
-        m.respawn_size() != 2 || !bounded(m.elapsed(), 0, 480.1f) || !bounded(m.zone_remaining(), 0, 30))
+    if (m.chaos() > 6 || m.next_chaos() > 6 || m.zone() > 2 || m.control_size() != maxPlayers ||
+        m.respawn_size() != maxPlayers || !bounded(m.elapsed(), 0, 480.1f) ||
+        !bounded(m.zone_remaining(), 0, 30))
         return false;
     s.mode.chaos = ChaosKind(m.chaos());
     s.mode.nextChaos = ChaosKind(m.next_chaos());
     s.mode.elapsed = m.elapsed();
     s.mode.zoneRemaining = m.zone_remaining();
     s.mode.zone = m.zone();
-    for (unsigned i = 0; i < 2; ++i)
+    for (unsigned i = 0; i < maxPlayers; ++i)
     {
         if (!bounded(m.control(i), 0, 241) || !bounded(m.respawn(i).remaining(), 0, 3) ||
             !bounded(m.respawn(i).decision(), 0, 10))
@@ -177,10 +225,10 @@ bool decodeExpansion(const wire::Snapshot& v, WorldSnapshot& s)
             !finite(x.velocity()) || !finite(x.size()) || !finite(x.anchor()) ||
             !bounded(x.size().x(), 1, 32) || !bounded(x.size().y(), 1, 112) || !bounded(x.life(), -1, 12) ||
             !bounded(x.fuse(), 0, 1.251f) || !bounded(x.arm(), 0, .601f) || !x.health() || x.health() > 90 ||
-            x.attached() > 2)
+            x.attached() > maxPlayers)
             return false;
         auto b = x.source();
-        if (b.shooter() > 2 || b.weapon() >= weaponCount || !validActive(ActiveKind(b.active())) ||
+        if (b.shooter() > maxPlayers || b.weapon() >= weaponCount || !validActive(ActiveKind(b.active())) ||
             !bounded(b.power(), 1, 2.72f) || !bounded(b.terrain_power(), 1, 3.75f) ||
             !bounded(b.blast_scale(), 1, 1.4f) || b.damage() > 100)
             return false;

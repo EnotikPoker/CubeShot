@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(CubeShot VERSION 0.23.1 LANGUAGES C CXX)
+project(CubeShot VERSION 0.24.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -7,6 +7,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 option(CUBESHOT_BUILD_CLIENT "Build the SDL3 client and interface tests" ON)
 
 add_library(cubeshot_game STATIC
+    src/game/BotRoster.cpp
     src/game/MatchModes.cpp
     src/game/ExpansionMaps.cpp
     src/game/WorldEntities.cpp

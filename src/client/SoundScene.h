@@ -17,8 +17,8 @@ public:
     void update(float dt, const std::vector<Player>& players, const Arena& arena,
                 const std::vector<GameEvent>& events, PlayerId own, const std::vector<WorldEntity>& entities,
                 const std::vector<Bullet>& bullets);
-    void match(MatchPhase phase, unsigned round, float remaining, const std::array<WeaponChoice, 2>& choices,
-               PlayerId own);
+    void match(MatchPhase phase, unsigned round, float remaining,
+               const std::array<WeaponChoice, maxPlayers>& choices, PlayerId own);
 
 private:
     void at(SoundCue cue, Vec2 position, const Arena& arena, float gain = 1, unsigned priority = 1);

@@ -90,38 +90,39 @@ void Prediction::simulate(const PredictedCommand& command, bool visuals)
 void Prediction::advanceRockets()
 {
     flight_.erase(
-        std::remove_if(flight_.begin(), flight_.end(),
-                       [&](Bullet& b)
-                       {
-                           Vec2 from = b.position;
-                           b.update(step);
-                           float fraction = 2;
-                           for (const auto& wall : arena_.platforms)
-                               if (auto t = collision::segmentHit(from, b.position, wall, b.collisionRadius))
-                                   fraction = std::min(fraction, *t);
-                           for (const auto& other : others_)
-                               if (other.alive())
-                                   if (auto t = hitPolygon(
-                                           {from.x - other.position.x, from.y - other.position.y},
-                                           {b.position.x - other.position.x, b.position.y - other.position.y},
-                                           other.bodyContour(), b.collisionRadius))
-                                       fraction = std::min(fraction, *t);
-                           bool outside = b.position.x < arena_.bounds.position.x ||
-                                          b.position.y < arena_.bounds.position.y ||
-                                          b.position.x > arena_.bounds.position.x + arena_.bounds.size.x ||
-                                          b.position.y > arena_.bounds.position.y + arena_.bounds.size.y;
-                           if (fraction <= 1 || outside || b.lifetime <= 0)
-                           {
-                               Vec2 at{from.x + (b.position.x - from.x) * std::min(1.f, fraction),
-                                       from.y + (b.position.y - from.y) * std::min(1.f, fraction)};
-                               auto effect =
-                                   blastEffect(at, *player_, arena_, 0, explosionRadius * b.blastScale);
-                               if (phase_ == MatchPhase::Round && effect.damage < player_->health)
-                                   player_->applyImpulse(effect.impulse);
-                               return true;
-                           }
-                           return false;
-                       }),
+        std::remove_if(
+            flight_.begin(), flight_.end(),
+            [&](Bullet& b)
+            {
+                Vec2 from = b.position;
+                b.update(step);
+                float fraction = 2;
+                for (const auto& wall : arena_.platforms)
+                    if (auto t = collision::segmentHit(from, b.position, wall, b.collisionRadius))
+                        fraction = std::min(fraction, *t);
+                for (const auto& other : others_)
+                    if (canHarm(b.shooterId, other.id))
+                        if (other.alive())
+                            if (auto t = hitPolygon(
+                                    {from.x - other.position.x, from.y - other.position.y},
+                                    {b.position.x - other.position.x, b.position.y - other.position.y},
+                                    other.bodyContour(), b.collisionRadius))
+                                fraction = std::min(fraction, *t);
+                bool outside = b.position.x < arena_.bounds.position.x ||
+                               b.position.y < arena_.bounds.position.y ||
+                               b.position.x > arena_.bounds.position.x + arena_.bounds.size.x ||
+                               b.position.y > arena_.bounds.position.y + arena_.bounds.size.y;
+                if (fraction <= 1 || outside || b.lifetime <= 0)
+                {
+                    Vec2 at{from.x + (b.position.x - from.x) * std::min(1.f, fraction),
+                            from.y + (b.position.y - from.y) * std::min(1.f, fraction)};
+                    auto effect = blastEffect(at, *player_, arena_, 0, explosionRadius * b.blastScale);
+                    if (phase_ == MatchPhase::Round && effect.damage < player_->health)
+                        player_->applyImpulse(effect.impulse);
+                    return true;
+                }
+                return false;
+            }),
         flight_.end());
 }
 
@@ -129,7 +130,7 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
 {
     const auto found = std::find_if(snapshot.players.begin(), snapshot.players.end(),
                                     [own](const Player& p) { return p.id == own; });
-    if (found == snapshot.players.end() || own < 1 || own > 2)
+    if (found == snapshot.players.end() || own < 1 || own > maxPlayers)
     {
         reset();
         return;
@@ -141,6 +142,8 @@ void Prediction::reconcile(const WorldSnapshot& snapshot, PlayerId own)
         phase_ != snapshot.phase || !found->alive();
     if (arena_.map != snapshot.map || !player_)
         arena_ = Arena::create(snapshot.map);
+    teams_ = snapshot.rules.format == MatchFormat::Teams ? snapshot.teams : std::array<TeamId, maxPlayers>{};
+    friendlyFire_ = snapshot.rules.friendlyFire;
     others_.clear();
     for (const auto& p : snapshot.players)
         if (p.id != own)
@@ -304,9 +307,10 @@ std::optional<GameEvent> Prediction::presentShot(const Bullet& prototype)
             if (auto hit = collision::segmentHit(prototype.position, end, screen, 0))
                 fraction = std::min(fraction, *hit);
         for (auto& other : others_)
-            if (other.alive())
-                if (auto hit = collision::segmentHit(prototype.position, end, other.bounds(), 0))
-                    fraction = std::min(fraction, *hit);
+            if (canHarm(prototype.shooterId, other.id))
+                if (other.alive())
+                    if (auto hit = collision::segmentHit(prototype.position, end, other.bounds(), 0))
+                        fraction = std::min(fraction, *hit);
         GameEvent arc{0,
                       0,
                       prototype.shotSequence,

@@ -17,6 +17,8 @@ namespace cubeshot
 World::World(Arena arena, std::size_t playerCount)
     : arena_(std::move(arena)), playerCount_(playerCount ? playerCount : arena_.spawnPoints.size())
 {
+    if (playerCount_ > 2 && arena_.spawnPoints.size() == 2)
+        arena_.spawnPoints = arena_.combatSpawns();
     if (playerCount_ > arena_.spawnPoints.size())
         throw std::invalid_argument("Not enough arena spawn points");
     resetPlayers();
@@ -55,6 +57,41 @@ void World::resetPlayers(bool swapSpawns)
     pendingCauses_.assign(players_.size(), {});
     pendingContacts_.assign(players_.size(), {});
     pendingImpact_.assign(players_.size(), {});
+}
+
+void World::setTeams(const std::array<TeamId, maxPlayers>& teams, bool friendlyFire)
+{
+    teams_ = teams;
+    friendlyFire_ = friendlyFire;
+}
+
+bool World::allied(PlayerId a, PlayerId b) const
+{
+    return a && b && a <= maxPlayers && b <= maxPlayers && a != b && teams_[a - 1] &&
+           teams_[a - 1] == teams_[b - 1];
+}
+
+bool World::canHarm(PlayerId source, PlayerId target) const
+{
+    return friendlyFire_ || !allied(source, target);
+}
+
+void World::arrangeSpawns(const std::array<TeamId, maxPlayers>& teams, bool teamMode, unsigned rotation)
+{
+    auto points = arena_.combatSpawns();
+    unsigned left = 0, right = 0;
+    for (unsigned i = 0; i < players_.size(); ++i)
+    {
+        unsigned at = (i + rotation) % players_.size();
+        if (teamMode)
+        {
+            bool l = (teams[i] == 1) != bool(rotation % 2);
+            at = l ? (left++ ? 2 : 0) : (right++ ? 3 : 1);
+        }
+        players_[i].position = points[at];
+        players_[i].grounded = collision::isSupported(players_[i].bounds(), arena_.bounds, arena_.platforms);
+        players_[i].aimDirection = {points[at].x < arena_.bounds.size.x / 2 ? 1.f : -1.f, 0};
+    }
 }
 
 void World::setHealth(PlayerId id, unsigned percent)
@@ -275,7 +312,7 @@ bool World::moveBullet(Bullet& bullet, Vec2 destination)
         entityHit.reset();
     for (Player& player : players_)
     {
-        if (!player.alive() ||
+        if (!canHarm(bullet.shooterId, player.id) || !player.alive() ||
             (player.id == bullet.shooterId && !(bullet.weapon == WeaponKind::Disc && bullet.bounces > 0)) ||
             (bullet.weapon == WeaponKind::FireBoomerang && (bullet.hitMask & (1u << player.id))))
         {

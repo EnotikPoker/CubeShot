@@ -64,6 +64,15 @@ private:
     std::set<std::uint32_t> shown_;
     Arena arena_ = Arena::createDuel();
     std::vector<Player> others_;
+    std::array<TeamId, maxPlayers> teams_{};
+    bool friendlyFire_ = false;
+
+    bool canHarm(PlayerId a, PlayerId b) const
+    {
+        return friendlyFire_ || !a || !b || a > maxPlayers || b > maxPlayers || a == b || !teams_[a - 1] ||
+               teams_[a - 1] != teams_[b - 1];
+    }
+
     float visualCooldown_ = 0;
     std::optional<Player> player_;
     std::deque<PredictedCommand> commands_;

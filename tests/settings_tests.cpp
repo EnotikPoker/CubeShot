@@ -403,7 +403,7 @@ void menuAndTiming()
     menu.networkState(match.snapshot(), 1);
     expect(menu.screen() == Screen::Settings, "Peer left updates data without discarding edits");
     menu.closeSettings();
-    expect(menu.screen() == Screen::Lobby, "Return respects current server phase");
+    expect(menu.screen() == Screen::Paused, "Disconnect replacement keeps current combat phase");
     menu.open(Screen::Settings);
     menu.open(Screen::OnlineBrowser);
     expect(menu.screen() == Screen::OnlineBrowser, "Connection error can force browser outside overlay");

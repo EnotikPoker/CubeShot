@@ -62,6 +62,7 @@ private:
     InputEventState eventInput_;
     SettingsController settings_;
     std::unique_ptr<WindowSettings> windowSettings_;
+    unsigned inspectedPlayer_ = 0;
     FramePacer pacer_;
     ConnectionController connections_;
     Profile profile_;

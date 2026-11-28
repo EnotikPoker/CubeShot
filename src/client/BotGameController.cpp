@@ -6,8 +6,9 @@ namespace cubeshot::client
 void BotGameController::handle(MenuAction action, Menu& menu, const std::string& nickname)
 {
     if (action == MenuAction::StartBots)
-        match_ = std::make_unique<BotMatch>(menu.botMap(), menu.botDifficulty(), nickname,
-                                            std::random_device{}(), menu.matchRules());
+        match_ =
+            std::make_unique<BotMatch>(menu.botMap(), menu.botDifficulty(), nickname, std::random_device{}(),
+                                       menu.matchRules(), menu.botDifficulties(), menu.botTeams());
     if (action == MenuAction::BotRematch && match_)
         match_->rematch(nickname);
     if (match_ && (action == MenuAction::RollWeapon || action == MenuAction::KeepWeapon ||

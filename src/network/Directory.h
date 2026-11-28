@@ -1,4 +1,5 @@
 #pragma once
+#include "game/Match.h"
 #include <memory>
 #include <optional>
 #include <string>
@@ -11,6 +12,7 @@ struct DirectoryRoom
     std::string id, name;
     unsigned players = 0, reserved = 0, phase = 0;
     bool joinable = false;
+    unsigned capacity = 2, bots = 0, format = 0, mode = 0;
 };
 
 struct DirectoryResult
@@ -34,7 +36,8 @@ public:
     Directory();
     ~Directory();
     void list(const std::string& url);
-    void reserve(const std::string& url, const std::string& nickname, const std::string& serverId = {});
+    void reserve(const std::string& url, const std::string& nickname, const std::string& serverId = {},
+                 MatchRules preferences = {});
     void release(const std::string& url, const std::string& token);
     void cancel();
     std::optional<DirectoryResult> poll();

@@ -388,7 +388,7 @@ PlayerInput BotController::update(const BotObservation& observation, float dt)
                                    }),
                     known.end());
         Player opponent = predictedTarget(*perceived_.target);
-        opponent.id = observation.self.id == 1 ? 2 : 1;
+        opponent.id = perceived_.target->id;
         opponent.position = perceived_.target->position;
         opponent.velocity = perceived_.target->velocity;
         opponent.pushX = perceived_.target->pushX;

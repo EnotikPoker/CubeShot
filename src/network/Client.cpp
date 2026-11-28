@@ -146,7 +146,7 @@ void Client::poll()
             invalid = true;
         else if (e.has_welcome())
         {
-            if (impl_->id || e.welcome().player_id() < 1 || e.welcome().player_id() > 2)
+            if (impl_->id || e.welcome().player_id() < 1 || e.welcome().player_id() > maxPlayers)
                 invalid = true;
             else
             {
@@ -332,6 +332,32 @@ void Client::selectMap(MapId map)
     send(impl_->connection, e, true);
 }
 
+void Client::configureSlot(PlayerId slot, SlotKind kind, unsigned difficulty, TeamId team)
+{
+    if (!impl_->latest)
+        return;
+    auto e = envelope();
+    auto c = e.mutable_slot_choice();
+    c->set_slot(slot);
+    c->set_kind(unsigned(kind));
+    c->set_difficulty(difficulty);
+    c->set_team(team);
+    c->set_revision(impl_->latest->selectionRevision);
+    send(impl_->connection, e, true);
+}
+
+void Client::selectTeam(TeamId team)
+{
+    if (!impl_->latest)
+        return;
+    auto e = envelope();
+    auto c = e.mutable_slot_choice();
+    c->set_own_team(true);
+    c->set_team(team);
+    c->set_revision(impl_->latest->selectionRevision);
+    send(impl_->connection, e, true);
+}
+
 void Client::selectRules(unsigned wins)
 {
     auto r = impl_->latest ? impl_->latest->rules : MatchRules{};
@@ -344,6 +370,9 @@ void Client::selectRules(MatchRules rules)
     if (!connected() || !impl_->latest || impl_->id != 1)
         return;
     auto e = envelope();
+    e.mutable_rule_choice()->set_format(unsigned(rules.format));
+    e.mutable_rule_choice()->set_participants(rules.participants);
+    e.mutable_rule_choice()->set_friendly_fire(rules.friendlyFire);
     e.mutable_rule_choice()->set_wins(rules.wins);
     e.mutable_rule_choice()->set_mode(unsigned(rules.mode));
     e.mutable_rule_choice()->set_stages(rules.stages);

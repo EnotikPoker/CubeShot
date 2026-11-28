@@ -61,7 +61,8 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
         if (!network::validNickname(sessionNickname_))
             sessionNickname_ = "Игрок";
         directory_.reserve(directoryUrl_, sessionNickname_,
-                           action == MenuAction::JoinOnline ? menu.selectedServer() : std::string{});
+                           action == MenuAction::JoinOnline ? menu.selectedServer() : std::string{},
+                           menu.matchRules());
         menu.open(Screen::Connecting);
     }
     if (action == MenuAction::StartTest || action == MenuAction::StartBots)
@@ -105,6 +106,11 @@ void ConnectionController::handle(MenuAction action, Menu& menu, const std::stri
                                : action == MenuAction::RollActiveE ? UpgradeKind::ActiveE
                                : action == MenuAction::RollAbility ? UpgradeKind::Ability
                                                                    : UpgradeKind::Continue);
+    if (action == MenuAction::ConfigureSlot && client_)
+        client_->configureSlot(menu.editedSlot(), menu.editedKind(), menu.editedDifficulty(),
+                               menu.editedTeam());
+    if (action == MenuAction::SelectTeam && client_)
+        client_->selectTeam(menu.editedTeam());
     if (action == MenuAction::SelectRules && client_)
         client_->selectRules(menu.matchRules());
     if (action == MenuAction::SelectMap && client_)
@@ -209,7 +215,7 @@ void ConnectionController::update(Menu& menu)
         discovery_->poll();
         std::vector<ListedRoom> rooms;
         for (const auto& r : discovery_->rooms())
-            rooms.push_back({r.address, r.players, r.joinable});
+            rooms.push_back({r.address, r.players, r.joinable, r.capacity, r.bots, r.format, r.mode});
         menu.setRooms(std::move(rooms));
     }
     if (!client_)

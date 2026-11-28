@@ -432,28 +432,31 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
                     title.clear();
                     hint.clear();
                     break;
+                case Screen::Roster:
+                    title = U"Состав и команды";
+                    hint = U"Бот: сложность / убрать · Команда: сменить";
+                    break;
                 case Screen::TestSetup:
                     title = U"Способности и мишени";
                     hint.clear();
                     break;
                 case Screen::BotSetup:
-                    title = U"Игра с ботом";
+                    title = U"Игра с ботами";
                     hint = U"Выберите карту, режим и сложность";
                     break;
                 case Screen::BotResult:
                     title = U"Матч завершён";
-                    hint = menu.networkSnapshot().winner == 1 ? U"Вы победили!" : U"Победил бот";
+                    hint = U"Итог матча";
                     break;
                 case Screen::Lobby:
                     title = menu.online() ? U"Лобби интернета" : U"Лобби LAN";
                     hint = menu.networkSnapshot().voting
                                ? U"Выберите карту, затем оба нажмите Готов"
-                               : U"Карту выбирает хозяин. Для старта оба нажимают Готов";
+                               : U"Настройте состав. Все люди подтверждают готовность";
                     break;
                 case Screen::Result:
                     title = U"Матч завершён";
-                    hint =
-                        menu.networkSnapshot().winner == menu.ownId() ? U"Вы победили!" : U"Победил соперник";
+                    hint = U"Итог матча";
                     break;
                 default:
                     break;
@@ -465,14 +468,15 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             {
                 if (!wheel(renderer, menu.networkSnapshot(), menu.ownId()))
                     return false;
-                const auto other = menu.ownId() == 1 ? 1 : 0;
-                const auto choice = menu.networkSnapshot().weaponChoice[other];
-                if (!centeredText(renderer,
-                                  choice == WeaponChoice::Ready ? U"Соперник готов"
-                                  : choice == WeaponChoice::Revealing ? U"Соперник получил улучшение"
-                                  : choice == WeaponChoice::Spinning ? U"Соперник крутит рулетку"
-                                                                     : U"Соперник выбирает",
-                                  140, 1, muted))
+                const auto& state = menu.networkSnapshot();
+                std::u32string ready = U"Готовность: ";
+                for (unsigned i = 0; i < state.rules.participants; ++i)
+                    ready += U"P" + asciiText(std::to_string(i + 1)) +
+                             (state.weaponChoice[i] == WeaponChoice::Ready ? U" готов  " : U" …  ");
+                if (state.phase == MatchPhase::Armory)
+                    ready +=
+                        U" · " + asciiText(std::to_string(int(std::ceil(state.decisionRemaining)))) + U" с";
+                if (!centeredText(renderer, ready, 140, 1, muted))
                     return false;
             }
             if (menu.screen() == Screen::BotSetup)
@@ -484,13 +488,20 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             if (menu.screen() == Screen::BotResult)
             {
                 const auto& s = menu.networkSnapshot();
-                if (!centeredText(renderer, network::nicknameText(s.names[0]) + U" / Бот", 170, 2, white) ||
-                    !centeredText(renderer,
-                                  U"Счёт " + asciiText(std::to_string(s.score[0])) + U":" +
-                                      asciiText(std::to_string(s.score[1])),
-                                  210, 3, blue) ||
-                    !centeredText(renderer, mapInfo(menu.botMap()).name, 250, 2, muted))
+                std::u32string result =
+                    s.winnerTeam ? U"Победила команда " + asciiText(std::to_string(s.winnerTeam))
+                    : s.winner ? U"Победитель: " + network::nicknameText(s.names[s.winner - 1])
+                               : U"Ничья";
+                if (!centeredText(renderer, result, 170, 2, blue))
                     return false;
+                for (unsigned i = 0; i < s.rules.participants; ++i)
+                    if (!centeredText(renderer,
+                                      network::nicknameText(s.names[i]) + U" · " +
+                                          asciiText(std::to_string(s.rules.format == MatchFormat::Teams
+                                                                       ? s.teamScore[s.teams[i] - 1]
+                                                                       : s.score[i])),
+                                      205 + i * 20, 1, white))
+                        return false;
             }
             if (menu.screen() == Screen::Maps)
             {
@@ -508,35 +519,36 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
             if (menu.screen() == Screen::Lobby || menu.screen() == Screen::Result)
             {
                 const auto& s = menu.networkSnapshot();
-                for (unsigned i = 0; i < 2; ++i)
+                for (unsigned i = 0; i < s.rules.participants; ++i)
                 {
-                    const auto label = network::nicknameText(s.names[i]) +
-                                       (i + 1 == menu.ownId() ? U" / Вы" : U"") +
-                                       (!s.connected[i] ? U" — ожидается"
-                                        : s.ready[i]    ? U" — готов"
-                                                        : U" — не готов");
-                    if (!centeredText(renderer, label, 160 + i * 30, 2, white))
+                    auto label =
+                        U"P" + asciiText(std::to_string(i + 1)) + U" " + network::nicknameText(s.names[i]);
+                    if (label.size() > 24)
+                        label = label.substr(0, 23) + U"…";
+                    label += s.slots[i] == SlotKind::Empty ? U" · свободно"
+                             : s.slots[i] == SlotKind::Bot ? U" · бот"
+                             : s.ready[i]                  ? U" · готов"
+                                                           : U" · ждёт";
+                    if (s.rules.format == MatchFormat::Teams)
+                        label += U" · К" + asciiText(std::to_string(s.teams[i]));
+                    if (menu.screen() == Screen::Result)
+                        label += U" · " + asciiText(std::to_string(s.rules.format == MatchFormat::Teams
+                                                                       ? s.teamScore[s.teams[i] - 1]
+                                                                       : s.score[i]));
+                    if (!centeredText(renderer, label, 153 + i * 20, 1, white))
                         return false;
                 }
-                const auto score = U"Счёт " + asciiText(std::to_string(s.score[0])) + U":" +
-                                   asciiText(std::to_string(s.score[1])) + U". До " +
-                                   asciiText(std::to_string(s.rules.wins)) + U" побед";
-                if (!centeredText(renderer, mapInfo(menu.selectedMap()).name, 225, 2, blue) ||
-                    !preview(renderer, menu.selectedMap(), {{35, 162}, {190, 106.875f}}))
+                if (!centeredText(renderer, mapInfo(s.map).name, 222, 1, blue))
                     return false;
-                if (s.voting && menu.screen() == Screen::Lobby)
+                if (menu.screen() == Screen::Result)
                 {
-                    auto vote = [&](int index)
-                    {
-                        return s.votes[index] < 0
-                                   ? std::u32string(U"не выбран")
-                                   : std::u32string(mapInfo(static_cast<MapId>(s.votes[index])).name);
-                    };
-                    if (!centeredText(renderer, U"Голоса: " + vote(0) + U" / " + vote(1), 252, 1, muted))
+                    auto result = s.winnerTeam
+                                      ? U"Победила команда " + asciiText(std::to_string(s.winnerTeam))
+                                  : s.winner ? U"Победитель: " + network::nicknameText(s.names[s.winner - 1])
+                                             : U"Ничья";
+                    if (!centeredText(renderer, result, 258, 2, blue))
                         return false;
                 }
-                if (!centeredText(renderer, score, 277, 2, blue))
-                    return false;
             }
         }
     }
@@ -564,6 +576,7 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
         if (button.placeholder && menu.screen() != Screen::Armory && menu.screen() != Screen::Lobby &&
             menu.screen() != Screen::Result && menu.screen() != Screen::Browser &&
             menu.screen() != Screen::OnlineBrowser && menu.screen() != Screen::TestSetup &&
+            menu.screen() != Screen::Roster && menu.screen() != Screen::BotSetup &&
             !drawText(renderer, U"Скоро", {bounds.position.x + bounds.size.x - 44, bounds.position.y + 40}, 1,
                       muted))
             return false;
@@ -581,8 +594,18 @@ bool renderMenu(SDL_Renderer* renderer, const Menu& menu)
 
 bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own)
 {
-    auto score = std::u32string(modeName(s.rules.mode)) + U" · " + asciiText(std::to_string(s.score[0])) +
-                 U" : " + asciiText(std::to_string(s.score[1]));
+    auto score = (s.rules.format == MatchFormat::Teams        ? std::u32string(U"2×2 · ")
+                  : s.rules.format == MatchFormat::FreeForAll ? std::u32string(U"FFA · ")
+                                                              : std::u32string{}) +
+                 std::u32string(modeName(s.rules.mode)) + U" · ";
+    unsigned count = s.rules.format == MatchFormat::Teams ? 2 : s.rules.participants;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        if (i)
+            score += U" : ";
+        score +=
+            asciiText(std::to_string(s.rules.format == MatchFormat::Teams ? s.teamScore[i] : s.score[i]));
+    }
     if (s.rules.mode == GameMode::ArmsRace)
         score += U" / " + asciiText(std::to_string(s.rules.stages));
     else if (s.rules.mode == GameMode::Control)
@@ -605,12 +628,20 @@ bool renderMatchHud(SDL_Renderer* renderer, const WorldSnapshot& s, PlayerId own
     if (s.rules.mode == GameMode::Control && own && !s.players[own - 1].alive())
         status =
             U"Возрождение: " + asciiText(std::to_string(int(std::ceil(s.mode.respawn[own - 1].remaining))));
+    if (own && own <= s.players.size() && !s.players[own - 1].alive() && s.rules.mode != GameMode::Control)
+    {
+        unsigned alive = 0;
+        for (auto& p : s.players)
+            alive += p.alive();
+        status = U"Наблюдение · Живых: " + asciiText(std::to_string(alive));
+    }
     if (s.phase == MatchPhase::Countdown)
         status = U"Начало через " + asciiText(std::to_string(static_cast<int>(std::ceil(s.remaining))));
     if (s.phase == MatchPhase::RoundEnd)
-        status = (s.winner == 0     ? std::u32string(U"Ничья")
-                  : s.winner == own ? std::u32string(U"Раунд выигран")
-                                    : std::u32string(U"Раунд проигран")) +
+        status = ((s.winner == 0 && s.winnerTeam == 0) ? std::u32string(U"Ничья")
+                  : (s.winner == own || (s.winnerTeam && own && s.winnerTeam == s.teams[own - 1]))
+                      ? std::u32string(U"Раунд выигран")
+                      : std::u32string(U"Раунд проигран")) +
                  U" — " + asciiText(std::to_string(static_cast<int>(std::ceil(s.remaining))));
     return status.empty() || centeredText(renderer, status, 450, 1, blue);
 }

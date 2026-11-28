@@ -24,6 +24,7 @@ public:
     ~Server();
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
+    bool prepareRoom(MatchRules rules);
     void poll();
     void step(float dt = 1.0f / 120);
     const Match& match() const;

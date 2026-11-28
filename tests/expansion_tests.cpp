@@ -28,7 +28,7 @@ void tick(World& w, unsigned n)
 
 void catalogs()
 {
-    expect(weaponCount == 21 && abilityCount == 47 && activeCount == 14 && playableMaps().size() == 19,
+    expect(weaponCount == 21 && abilityCount == 47 && activeCount == 14 && playableMaps().size() == 21,
            "Complete expansion catalogs");
     for (auto id : playableMaps())
     {

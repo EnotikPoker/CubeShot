@@ -178,14 +178,24 @@ struct HttpApi::Impl
             {
                 const auto snapshot = rooms[i].server->match().snapshot();
                 const auto slots = reservations.occupied(i);
-                list.push_back(
-                    {{"id", rooms[i].id},
-                     {"name", "CubeShot " + std::to_string(i + 1)},
-                     {"players", int(snapshot.connected[0]) + int(snapshot.connected[1])},
-                     {"reserved", int(slots[0]) + int(slots[1]) - int(snapshot.connected[0]) -
-                                      int(snapshot.connected[1])},
-                     {"phase", static_cast<unsigned>(snapshot.phase)},
-                     {"joinable", snapshot.phase == MatchPhase::Lobby && (!slots[0] || !slots[1])}});
+                unsigned humans = 0, bots = 0, pending = 0;
+                for (unsigned n = 0; n < snapshot.rules.participants; ++n)
+                {
+                    humans += snapshot.slots[n] == SlotKind::Human;
+                    bots += snapshot.slots[n] == SlotKind::Bot;
+                    pending += slots[n] && snapshot.slots[n] != SlotKind::Human;
+                }
+                list.push_back({{"id", rooms[i].id},
+                                {"name", "CubeShot " + std::to_string(i + 1)},
+                                {"players", humans},
+                                {"bots", bots},
+                                {"capacity", snapshot.rules.participants},
+                                {"format", unsigned(snapshot.rules.format)},
+                                {"mode", unsigned(snapshot.rules.mode)},
+                                {"reserved", pending},
+                                {"phase", unsigned(snapshot.phase)},
+                                {"joinable", snapshot.phase == MatchPhase::Lobby &&
+                                                 humans + pending < snapshot.rules.participants}});
             }
             return {
                 200,
@@ -209,7 +219,13 @@ struct HttpApi::Impl
         const auto server = body.value("server_id", std::string{});
         if (!network::validNickname(name) || !hexToken(request))
             return error(400, "invalid_nickname_or_request");
-        const auto result = reservations.reserve(task.ip, name, request, server);
+        MatchRules preferences;
+        preferences.format = MatchFormat(body.value("format", 0u));
+        preferences.participants = body.value("participants", 2u);
+        preferences.mode = GameMode(body.value("mode", 0u));
+        if (!preferences.valid())
+            return error(400, "invalid_rules");
+        const auto result = reservations.reserve(task.ip, name, request, server, preferences);
         switch (result.error)
         {
             case Reservations::Error::Conflict:

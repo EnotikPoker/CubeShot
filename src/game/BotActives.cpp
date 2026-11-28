@@ -39,7 +39,7 @@ std::optional<BotAim> bombPlan(const Player& self, const BotTarget& target, cons
         b.collisionRadius = 5;
         b.ricochets = b.penetrations = 0;
         Player enemy = predictedTarget(target);
-        enemy.id = self.id == 1 ? 2 : 1;
+        enemy.id = target.id;
         auto own = self;
         own.clearInput();
         std::vector<Player> bodies{own, enemy};
@@ -82,7 +82,7 @@ void BotController::useActives(const BotObservation& observation, PlayerInput& i
     const auto& self = observation.self;
     const auto& target = *perceived_.target;
     auto enemy = predictedTarget(target);
-    enemy.id = self.id == 1 ? 2 : 1;
+    enemy.id = target.id;
     auto origin = self.weaponOrigin(), at = center(target);
     float gap = distance(origin, at);
     auto profile = abilityProfile(self.weapon.kind, self.abilities);

@@ -24,7 +24,7 @@ bool drawBuildInspector(SDL_Renderer* r, const std::vector<Player>& players,
     SDL_FRect panel{16, 16, 928, 452};
     bool ok = SDL_RenderFillRect(r, &panel);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    std::u32string description = U"Отпустите Tab, чтобы закрыть · колёсико прокручивает колонку под курсором";
+    std::u32string description = U"Tab — закрыть · Влево/вправо — участник · Колёсико — список";
     for (unsigned slot = 0; slot < 2 && slot < players.size(); ++slot)
     {
         const auto& p = players[slot];

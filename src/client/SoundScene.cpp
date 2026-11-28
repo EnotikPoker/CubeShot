@@ -52,7 +52,7 @@ bool SoundScene::fresh(const GameEvent& e, PlayerId own)
 }
 
 void SoundScene::match(MatchPhase phase, unsigned round, float remaining,
-                       const std::array<WeaponChoice, 2>& choices, PlayerId own)
+                       const std::array<WeaponChoice, maxPlayers>& choices, PlayerId own)
 {
     if (round != round_)
     {
@@ -75,7 +75,7 @@ void SoundScene::match(MatchPhase phase, unsigned round, float remaining,
             mixer_.play(SoundCue::RoundEnd, .65f, 0, 3);
         phase_ = phase;
     }
-    if (own >= 1 && own <= 2)
+    if (own >= 1 && own <= maxPlayers)
     {
         auto choice = choices[own - 1];
         if (choice == WeaponChoice::Spinning && time_ - rollAt_ > .13f)

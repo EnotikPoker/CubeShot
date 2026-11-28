@@ -1,6 +1,7 @@
 #include "online/Reservations.h"
 #include "network/Identity.h"
 #include "online/ArenaPool.h"
+#include <algorithm>
 
 namespace cubeshot::online
 {
@@ -21,9 +22,12 @@ void Reservations::expire()
     }
 }
 
-std::array<bool, 2> Reservations::occupied(std::size_t room) const
+std::array<bool, maxPlayers> Reservations::occupied(std::size_t room) const
 {
-    auto slots = pool_.rooms()[room].server->match().snapshot().connected;
+    const auto state = pool_.rooms()[room].server->match().snapshot();
+    std::array<bool, maxPlayers> slots{};
+    for (unsigned i = 0; i < state.rules.participants; ++i)
+        slots[i] = state.slots[i] == SlotKind::Human;
     for (const auto& entry : leases_)
     {
         const auto& lease = entry.second;
@@ -34,9 +38,12 @@ std::array<bool, 2> Reservations::occupied(std::size_t room) const
 }
 
 Reservations::Result Reservations::reserve(const std::string& ip, const std::string& nickname,
-                                           const std::string& request, const std::string& server)
+                                           const std::string& request, const std::string& server,
+                                           MatchRules preferences)
 {
     expire();
+    if (!preferences.valid())
+        return {nullptr, Error::Conflict};
     const auto& rooms = pool_.rooms();
     unsigned pending = 0;
     for (const auto& entry : leases_)
@@ -63,8 +70,13 @@ Reservations::Result Reservations::reserve(const std::string& ip, const std::str
             rooms[i].server->match().phase() != MatchPhase::Lobby)
             continue;
         const auto slots = occupied(i);
-        const auto used = unsigned(slots[0]) + unsigned(slots[1]);
-        if (used >= 2)
+        const auto state = rooms[i].server->match().snapshot();
+        const auto used = unsigned(std::count(slots.begin(), slots.end(), true));
+        if (server.empty() && used &&
+            (state.rules.format != preferences.format ||
+             state.rules.participants != preferences.participants || state.rules.mode != preferences.mode))
+            continue;
+        if (used >= (used || !server.empty() ? state.rules.participants : preferences.participants))
             continue;
         if (!selected || used > best)
         {
@@ -76,8 +88,18 @@ Reservations::Result Reservations::reserve(const std::string& ip, const std::str
         return {nullptr, Error::Full};
     if (pending >= 4)
         return {nullptr, Error::Limit};
-    const auto slots = occupied(*selected);
-    const PlayerId player = slots[0] ? 2 : 1;
+    auto slots = occupied(*selected);
+    if (server.empty() && std::none_of(slots.begin(), slots.end(), [](bool x) { return x; }))
+        rooms[*selected].server->prepareRoom(preferences);
+    PlayerId player = 0;
+    for (unsigned i = 0; i < rooms[*selected].server->match().snapshot().rules.participants; ++i)
+        if (!slots[i])
+        {
+            player = i + 1;
+            break;
+        }
+    if (!player)
+        return {nullptr, Error::Full};
     Lease lease{network::randomToken(), request, ip, nickname, *selected, player, Clock::now() + duration_};
     const auto inserted = leases_.emplace(lease.token, lease);
     return {&inserted.first->second, Error::None, true};
@@ -100,7 +122,9 @@ std::optional<network::Admission> Reservations::admit(std::size_t room, const st
     auto& lease = found->second;
     const auto& match = pool_.rooms()[room].server->match();
     if (lease.state != State::Pending || lease.room != room || lease.nickname != nickname ||
-        match.phase() != MatchPhase::Lobby || match.snapshot().connected[lease.player - 1])
+        match.phase() != MatchPhase::Lobby ||
+        (lease.player > match.snapshot().rules.participants ||
+         match.snapshot().slots[lease.player - 1] == SlotKind::Human))
         return {};
     lease.state = State::Consumed;
     return network::Admission{lease.player, lease.nickname};

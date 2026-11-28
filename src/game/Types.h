@@ -2,18 +2,23 @@
 
 #include <cstdint>
 
-namespace cubeshot {
+namespace cubeshot
+{
 
 using PlayerId = std::uint32_t;
+inline constexpr unsigned maxPlayers = 4;
+using TeamId = std::uint32_t;
 using BulletId = std::uint64_t;
 
-struct Vec2 {
+struct Vec2
+{
     float x = 0.0f;
     float y = 0.0f;
 };
 
 // Координаты в пикселях: X направлена вправо, Y — вниз.
-struct Rect {
+struct Rect
+{
     Vec2 position;
     Vec2 size;
 };

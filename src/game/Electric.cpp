@@ -1,11 +1,16 @@
 #include "game/AttackQueries.h"
 #include "game/World.h"
+#include <algorithm>
 
 namespace cubeshot
 {
 void World::electric(const Bullet& attack)
 {
-    auto contacts = electricContacts(attack, arena_, players_);
+    auto targets = players_;
+    targets.erase(std::remove_if(targets.begin(), targets.end(),
+                                 [&](const auto& p) { return !canHarm(attack.shooterId, p.id); }),
+                  targets.end());
+    auto contacts = electricContacts(attack, arena_, targets);
     unsigned hop = 0;
     for (const auto& contact : contacts)
     {

@@ -129,10 +129,23 @@ float score(WeaponKind weapon, const Abilities& a, const ActiveLoadout& active, 
 UpgradeKind chooseBotUpgrade(const WorldSnapshot& state, PlayerId own,
                              const std::deque<BotRoundStats>& history)
 {
-    if (own < 1 || own > 2 || state.players.size() != 2)
+    if (own < 1 || own > state.players.size() || state.players.size() < 2)
         return UpgradeKind::Continue;
     unsigned index = own - 1;
-    auto enemy = state.players[1 - index];
+    auto enemy = state.players[own == 1 ? 1 : 0];
+    float nearest = 1e20f;
+    for (const auto& p : state.players)
+        if (p.id != own &&
+            (state.rules.format != MatchFormat::Teams || state.teams[p.id - 1] != state.teams[index]))
+        {
+            float gap = std::hypot(p.position.x - state.players[index].position.x,
+                                   p.position.y - state.players[index].position.y);
+            if (gap < nearest)
+            {
+                nearest = gap;
+                enemy = p;
+            }
+        }
     auto weapon = state.loadout[index];
     auto traits = state.abilities[index];
     auto active = state.activeLoadout[index];

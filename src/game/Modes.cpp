@@ -4,7 +4,7 @@ namespace cubeshot
 {
 std::u32string_view modeName(GameMode m)
 {
-    static constexpr std::u32string_view n[]{U"Дуэль", U"Гонка вооружений", U"Контроль точки", U"Хаос"};
+    static constexpr std::u32string_view n[]{U"Раунды", U"Гонка вооружений", U"Контроль точки", U"Хаос"};
     return unsigned(m) < 4 ? n[unsigned(m)] : U"Дуэль";
 }
 

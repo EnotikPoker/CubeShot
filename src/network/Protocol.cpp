@@ -72,10 +72,10 @@ void encodePiece(wire::Piece* out, const PhysicsPiece& p)
 
 std::optional<PhysicsPiece> decodePiece(const wire::Piece& p, bool allowEmpty = false)
 {
-    if (!p.id() || p.owner() < 1 || p.owner() > 2 || !finite(p.position()) || !finite(p.velocity()) ||
-        !finite(p.size()) || p.size().x() <= 0 || p.size().y() <= 0 || p.size().x() > 128 ||
-        p.size().y() > 128 || !std::isfinite(p.angle()) || std::abs(p.angle()) > 3.15f ||
-        !std::isfinite(p.spin()) || std::abs(p.spin()) > 40)
+    if (!p.id() || p.owner() < 1 || p.owner() > maxPlayers || !finite(p.position()) ||
+        !finite(p.velocity()) || !finite(p.size()) || p.size().x() <= 0 || p.size().y() <= 0 ||
+        p.size().x() > 128 || p.size().y() > 128 || !std::isfinite(p.angle()) ||
+        std::abs(p.angle()) > 3.15f || !std::isfinite(p.spin()) || std::abs(p.spin()) > 40)
         return {};
     PhysicsPiece out{p.id(),        p.owner(), vec(p.position()), vec(p.velocity()),
                      vec(p.size()), p.angle(), p.spin()};
@@ -158,7 +158,7 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
         out.add_connected(n);
     for (auto n : s.ready)
         out.add_ready(n);
-    for (unsigned i = 0; i < 2; ++i)
+    for (unsigned i = 0; i < maxPlayers; ++i)
     {
         out.add_loadout(static_cast<unsigned>(s.loadout[i]));
         out.add_rolled(static_cast<unsigned>(s.rolled[i]));
@@ -321,22 +321,26 @@ wire::Snapshot encodeSnapshot(const WorldSnapshot& s)
 
 std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
 {
-    if (in.phase() > static_cast<unsigned>(MatchPhase::Armory) || in.aborted() > 2 || in.winner() > 2 ||
-        in.score_size() != 2 || in.connected_size() != 2 || in.ready_size() != 2 || in.players_size() != 2 ||
-        in.names_size() != 2 || in.input_ack_size() != 2 || in.action_ack_size() != 2 ||
-        in.bullets_size() > 256 || !std::isfinite(in.remaining()) || in.remaining() < 0 ||
-        in.remaining() > 4.01f)
+    if (in.phase() > static_cast<unsigned>(MatchPhase::Armory) || in.aborted() > 2 ||
+        in.winner() > maxPlayers || in.score_size() != int(maxPlayers) ||
+        in.connected_size() != int(maxPlayers) || in.ready_size() != int(maxPlayers) ||
+        (in.players_size() < 2 || in.players_size() > int(maxPlayers)) ||
+        in.names_size() != int(maxPlayers) || in.input_ack_size() != int(maxPlayers) ||
+        in.action_ack_size() != int(maxPlayers) || in.bullets_size() > 256 ||
+        !std::isfinite(in.remaining()) || in.remaining() < 0 || in.remaining() > 4.01f)
         return {};
-    if (!validMap(static_cast<MapId>(in.map())) || in.votes_size() != 2)
+    if (!validMap(static_cast<MapId>(in.map())) || in.votes_size() != int(maxPlayers))
         return {};
     for (auto vote : in.votes())
         if (vote < -1 || (vote >= 0 && !validMap(static_cast<MapId>(vote))))
             return {};
-    if (in.active_loadout_size() != 4 || in.rolled_active_size() != 2 || in.abilities_size() != 2 ||
-        in.upgrade_size() != 2 || in.rolled_ability_size() != 2)
+    if (in.active_loadout_size() != int(maxPlayers * 2) || in.rolled_active_size() != int(maxPlayers) ||
+        in.abilities_size() != int(maxPlayers) || in.upgrade_size() != int(maxPlayers) ||
+        in.rolled_ability_size() != int(maxPlayers))
         return {};
-    if (in.loadout_size() != 2 || in.rolled_size() != 2 || in.weapon_choice_size() != 2 ||
-        in.spin_remaining_size() != 2 || in.corpses_size() > 6 || in.pieces_size() > Debris::maxPieces)
+    if (in.loadout_size() != int(maxPlayers) || in.rolled_size() != int(maxPlayers) ||
+        in.weapon_choice_size() != int(maxPlayers) || in.spin_remaining_size() != int(maxPlayers) ||
+        in.corpses_size() > 6 || in.pieces_size() > Debris::maxPieces)
         return {};
     if (in.fires_size() > static_cast<int>(maxFires))
         return {};
@@ -345,6 +349,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     if (!decodeExpansion(in, s))
         return {};
     if (!s.rules.valid())
+        return {};
+    if (in.players_size() != int(s.rules.participants))
         return {};
     // Validate against immutable layout metadata; do not rebuild a collision mesh for every packet.
     static thread_local std::map<MapId, Arena> layouts;
@@ -363,7 +369,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     std::set<std::uint64_t> fires;
     for (const auto& f : in.fires())
     {
-        if (!f.id() || !fires.insert(f.id()).second || f.owner() < 1 || f.owner() > 2 ||
+        if (!f.id() || !fires.insert(f.id()).second || f.owner() < 1 || f.owner() > maxPlayers ||
             !finite(f.position()) || !std::isfinite(f.life()) || f.life() <= 0 || f.life() > 3.01f ||
             !std::isfinite(f.radius()) || f.radius() < 12 || f.radius() > 34.01f)
             return {};
@@ -371,7 +377,8 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     }
     s.map = static_cast<MapId>(in.map());
     s.voting = in.voting();
-    s.votes = {{in.votes(0), in.votes(1)}};
+    for (unsigned i = 0; i < maxPlayers; ++i)
+        s.votes[i] = in.votes(i);
     s.selectionRevision = in.selection_revision();
     s.stateSequence = in.state_sequence();
     s.tick = in.tick();
@@ -380,7 +387,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     s.remaining = in.remaining();
     s.winner = in.winner();
     s.aborted = static_cast<AbortReason>(in.aborted());
-    for (int i = 0; i < 2; ++i)
+    for (unsigned i = 0; i < maxPlayers; ++i)
     {
         if (!validNickname(in.names(i)))
             return {};
@@ -432,7 +439,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     std::set<PlayerId> players;
     for (const auto& v : in.players())
     {
-        if (v.id() < 1 || v.id() > 2 || !players.insert(v.id()).second ||
+        if (v.id() < 1 || v.id() > s.rules.participants || !players.insert(v.id()).second ||
             v.health() > 100 + 50 * maximumAbilityStacks || !finite(v.position()) || !finite(v.velocity()) ||
             !validAim(v.aim()) || !std::isfinite(v.cooldown()) || v.cooldown() < 0 || v.cooldown() > 2.21f ||
             v.weapon() >= weaponCount || !std::isfinite(v.preparation()) || v.preparation() < 0 ||
@@ -440,7 +447,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             return {};
         if (!std::isfinite(v.spin()) || v.spin() < 0 || v.spin() > 1 || !std::isfinite(v.heat()) ||
             v.heat() < 0 || v.heat() > 1 || !std::isfinite(v.burning()) || v.burning() < 0 ||
-            v.burning() > 2.51f || v.burn_owner() > 2 || v.surface().marks_size() > 12 ||
+            v.burning() > 2.51f || v.burn_owner() > maxPlayers || v.surface().marks_size() > 12 ||
             v.surface().outline_size() > 64)
             return {};
         Player p;
@@ -478,9 +485,9 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
         auto bounded = [](float f, float hi) { return std::isfinite(f) && f >= 0 && f <= hi + .001f; };
         if (!bounded(v.barrier(), 60) || !bounded(v.barrier_time(), 2) || !bounded(v.bleeding(), 3) ||
             !bounded(v.bleed_tick(), 1) || !bounded(v.bleed_power(), 2.168f) || v.bleed_power() < 1 ||
-            v.bleed_owner() > 2 || !bounded(v.dash_time(), .16f) || !validAim(v.dash_direction()) ||
+            v.bleed_owner() > maxPlayers || !bounded(v.dash_time(), .16f) || !validAim(v.dash_direction()) ||
             !bounded(v.slam_time(), 2) || !bounded(v.lunge_cooldown(), .5f) || v.combo_hits() > 3 ||
-            v.combo_target() > 2 || !bounded(v.combo_time(), 2))
+            v.combo_target() > maxPlayers || !bounded(v.combo_time(), 2))
             return {};
         p.barrier = v.barrier();
         p.barrierTime = v.barrier_time();
@@ -561,7 +568,7 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
             if (!finite(m.local()) || m.local().x() < -6 || m.local().x() > 54 || m.local().y() < -6 ||
                 m.local().y() > 54 || !std::isfinite(m.width()) || m.width() < 0 || m.width() > 48 ||
                 !std::isfinite(m.depth()) || m.depth() < 0 || m.depth() > 16 || m.weapon() >= weaponCount ||
-                m.shooter() > 2)
+                m.shooter() > maxPlayers)
                 return {};
             p.surface.marks.push_back({vec(m.local()), m.width(), m.depth(),
                                        static_cast<WeaponKind>(m.weapon()), m.shooter(), m.volley()});
@@ -579,9 +586,9 @@ std::optional<WorldSnapshot> decodeSnapshot(const wire::Snapshot& in)
     for (const auto& v : in.bullets())
     {
         if (!v.id() || !bullets.insert(v.id()).second || !finite(v.position()) || !finite(v.velocity()) ||
-            v.shooter() < 1 || v.shooter() > 2 || !std::isfinite(v.lifetime()) || v.lifetime() <= 0 ||
-            v.lifetime() > 10.01f || v.weapon() >= weaponCount || !v.damage() || v.damage() > 100 ||
-            !std::isfinite(v.gravity()) || v.gravity() < -35 || v.gravity() > 900)
+            v.shooter() < 1 || v.shooter() > maxPlayers || !std::isfinite(v.lifetime()) ||
+            v.lifetime() <= 0 || v.lifetime() > 10.01f || v.weapon() >= weaponCount || !v.damage() ||
+            v.damage() > 100 || !std::isfinite(v.gravity()) || v.gravity() < -35 || v.gravity() > 900)
             return {};
         if (!std::isfinite(v.age()) || v.age() < 0 || v.age() > 10.01f || v.hit_mask() > 0x6)
             return {};
@@ -710,9 +717,10 @@ std::optional<std::vector<GameEvent>> decodeEvents(const wire::Events& in)
             !validActive(ActiveKind(e.active())) ||
             ((e.actor() == 0) &&
              (e.kind() == unsigned(EventKind::Shot) || e.kind() == unsigned(EventKind::ActiveCast))) ||
-            e.actor() > 2 || e.target() > 2 || !finite(e.position()) || !validAim(e.direction()) ||
-            e.damage() > 1000 || e.weapon() >= weaponCount || !finite(e.local()) ||
-            !std::isfinite(e.radius()) || e.radius() < 0 || e.radius() > 400 || e.volley_damage() > 1000)
+            e.actor() > maxPlayers || e.target() > maxPlayers || !finite(e.position()) ||
+            !validAim(e.direction()) || e.damage() > 1000 || e.weapon() >= weaponCount ||
+            !finite(e.local()) || !std::isfinite(e.radius()) || e.radius() < 0 || e.radius() > 400 ||
+            e.volley_damage() > 1000)
             return {};
         result.push_back({e.id(), e.tick(), e.shot_sequence(), e.round(), static_cast<EventKind>(e.kind()),
                           e.actor(), e.target(), vec(e.position()), vec(e.direction()),

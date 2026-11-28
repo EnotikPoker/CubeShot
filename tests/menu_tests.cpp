@@ -199,7 +199,7 @@ void testOnlineNavigation()
     menu.moveSelection(1);
     expect(menu.activate() == MenuAction::None && !menu.message().empty(), "Occupied server is disabled");
     menu.escape();
-    expect(menu.buttons().size() == 3, "Nickname editor moved out of online menu");
+    expect(menu.buttons().size() == 5, "Online menu includes format and mode filters");
     Match m;
     m.connect(1);
     m.connect(2);

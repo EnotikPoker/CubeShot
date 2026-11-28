@@ -1,4 +1,5 @@
 #include "network/Server.h"
+#include "game/BotRoster.h"
 #include "network/Identity.h"
 #include "network/detail/GnsRuntime.h"
 #include <algorithm>
@@ -35,15 +36,16 @@ struct Server::Impl
 
     std::map<HSteamNetConnection, Peer> peers;
     Match match;
+    BotRoster bots;
     std::string token;
     AdmitPlayer admission;
-    std::array<std::string, 2> names{"Игрок 1", "Игрок 2"};
+    std::array<std::string, maxPlayers> names{"Игрок 1", "Игрок 2", "Игрок 3", "Игрок 4"};
     std::uint16_t port = 0;
     bool hostGone = false;
     std::uint64_t stateSequence = 0;
 
     explicit Impl(std::uint16_t requested, std::string owner, AdmitPlayer admit)
-        : match(static_cast<bool>(admit)), token(std::move(owner)), admission(std::move(admit))
+        : match(false), token(std::move(owner)), admission(std::move(admit))
     {
         // LAN v1 uses IPv4. An unspecified IPv6 address lets GNS retry IPv4
         // after a failed bind; on Windows that can hide an occupied dual-stack port.
@@ -94,6 +96,25 @@ struct Server::Impl
         detail::removeConnectionHandler(c);
         SteamNetworkingSockets()->CloseConnection(c, 1000, reason, false);
         peers.erase(found);
+        if (token.empty() && id)
+        {
+            PlayerId next = 0;
+            auto first = Clock::time_point::max();
+            for (const auto& p : peers)
+                if (p.second.id && p.second.created < first)
+                {
+                    next = p.second.id;
+                    first = p.second.created;
+                }
+            if (next)
+                match.transferHost(next);
+            else
+            {
+                match = Match(false);
+                bots.reset();
+                names = {"Игрок 1", "Игрок 2", "Игрок 3", "Игрок 4"};
+            }
+        }
         broadcast(true);
     }
 
@@ -126,6 +147,9 @@ struct Server::Impl
         auto snapshot = match.snapshot();
         snapshot.stateSequence = ++stateSequence;
         snapshot.names = names;
+        for (unsigned i = 0; i < snapshot.rules.participants; ++i)
+            if (snapshot.slots[i] == SlotKind::Bot)
+                snapshot.names[i] = "Бот " + std::to_string(i + 1);
         for (const auto& entry : peers)
             if (entry.second.id)
             {
@@ -164,23 +188,29 @@ struct Server::Impl
             {
                 if (auto accepted = admission(e.hello().reservation_token(), nickname))
                 {
-                    if (accepted->player >= 1 && accepted->player <= 2 && !occupied(accepted->player))
+                    if (accepted->player >= 1 && accepted->player <= match.snapshot().rules.participants &&
+                        !occupied(accepted->player))
                     {
                         id = accepted->player;
                         nickname = accepted->nickname;
                     }
                 }
             }
-            else if (!token.empty())
+            else if (match.phase() == MatchPhase::Lobby || match.phase() == MatchPhase::Finished)
             {
-                if (e.hello().owner_token() == token && !occupied(1))
+                if (!token.empty() && e.hello().owner_token() == token && !occupied(1))
                     id = 1;
-                else if (e.hello().owner_token().empty() && occupied(1) && !occupied(2) &&
-                         match.phase() == MatchPhase::Lobby)
-                    id = 2;
+                else if (e.hello().owner_token().empty() && (token.empty() || occupied(1)))
+                {
+                    for (PlayerId candidate = 1; candidate <= match.snapshot().rules.participants;
+                         ++candidate)
+                        if (!occupied(candidate))
+                        {
+                            id = candidate;
+                            break;
+                        }
+                }
             }
-            else if (match.phase() == MatchPhase::Lobby)
-                id = !occupied(1) ? 1 : !occupied(2) ? 2 : 0;
             if (!id)
             {
                 remove(c, admission ? "Reservation invalid or expired" : "Room full or match in progress");
@@ -190,6 +220,9 @@ struct Server::Impl
             peer.hello = true;
             names[id - 1] = nickname;
             match.connect(id);
+            if (token.empty() && std::count_if(peers.begin(), peers.end(),
+                                               [](const auto& p) { return p.second.id != 0; }) == 1)
+                match.transferHost(id);
             auto welcome = envelope();
             welcome.mutable_welcome()->set_player_id(id);
             send(c, welcome, true);
@@ -274,11 +307,23 @@ struct Server::Impl
             match.setReady(peer.id, e.ready().ready());
             broadcast(true);
         }
+        else if (e.has_slot_choice())
+        {
+            const auto& c = e.slot_choice();
+            if (c.own_team())
+                match.selectTeam(peer.id, c.team(), c.revision());
+            else
+                match.configureSlot(peer.id, c.slot(), SlotKind(c.kind()), c.difficulty(), c.team(),
+                                    c.revision());
+            broadcast(true);
+        }
         else if (e.has_rule_choice())
         {
             match.selectRules(peer.id,
                               MatchRules{e.rule_choice().wins(), GameMode(e.rule_choice().mode()),
-                                         e.rule_choice().stages(), e.rule_choice().control_goal()},
+                                         e.rule_choice().stages(), e.rule_choice().control_goal(),
+                                         MatchFormat(e.rule_choice().format()),
+                                         e.rule_choice().participants(), e.rule_choice().friendly_fire()},
                               e.rule_choice().selection_revision());
             broadcast(true);
         }
@@ -335,6 +380,19 @@ void Server::poll()
         impl_->remove(c, "Peer timed out", AbortReason::PeerTimeout);
 }
 
+bool Server::prepareRoom(MatchRules rules)
+{
+    if (!rules.valid() || impl_->match.phase() != MatchPhase::Lobby)
+        return false;
+    auto s = impl_->match.snapshot();
+    if (std::any_of(s.slots.begin(), s.slots.end(), [](auto x) { return x == SlotKind::Human; }))
+        return false;
+    impl_->match.connect(1);
+    bool ok = impl_->match.selectRules(1, rules, impl_->match.snapshot().selectionRevision);
+    impl_->match.disconnect(1, AbortReason::None);
+    return ok;
+}
+
 void Server::step(float dt)
 {
     const auto before = impl_->match.phase();
@@ -371,6 +429,7 @@ void Server::step(float dt)
             peer.actionSequence = action.sequence();
         }
     }
+    impl_->bots.step(impl_->match, dt);
     impl_->match.update(dt);
     const auto events = impl_->match.takeEvents();
     if (!events.empty())
